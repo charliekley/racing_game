@@ -111,11 +111,13 @@ export type HostToController =
       item: ItemDisplay;
     }
   | { t: 'haptic'; pattern: number[] }
+  /** Drift state for the DRIFT button glow: null = not drifting, 0 = charging, 1 = blue, 2 = orange. */
+  | { t: 'drift'; tier: number | null }
   | { t: 'ping'; id: number; sentAt: number }
   | { t: 'pong'; id: number; sentAt: number };
 
 const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'ping', 'pong']);
-const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'ping', 'pong']);
+const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'drift', 'ping', 'pong']);
 
 /** Cheap structural check; data from the network is untrusted. */
 export function isControllerMessage(m: unknown): m is ControllerToHost {

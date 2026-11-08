@@ -58,6 +58,40 @@ export const KART = {
   /** Pressing gas too early in the countdown floods the engine for this long (s). */
   startStallTime: 0.9,
 
+  // --- Hop & drift ------------------------------------------------------------------
+  /** Upward speed of the little hop when DRIFT is pressed (m/s). */
+  hopSpeed: 4.2,
+  /** Minimum speed to start/keep a drift (m/s). */
+  driftMinSpeed: 9,
+  /** How hard you must be steering when the hop lands to start a drift (0..1). */
+  driftSteerThreshold: 0.25,
+  /** Drift turn rate as a multiple of normal steering: steering OUT of the drift (wide) … INTO it (tight). */
+  driftTurnWide: 0.45,
+  driftTurnTight: 1.35,
+  /** Grip while drifting (1/s): low = the kart slides, velocity lags behind where it points. */
+  driftGrip: 3.2,
+  /** Drift charge per second, plus a bonus for steering into the drift. */
+  driftChargeRate: 0.9,
+  driftChargeSteerBonus: 1.3,
+  /** Charge needed for blue (tier 1) and orange (tier 2) sparks. */
+  driftTier1: 1.0,
+  driftTier2: 2.4,
+  /** Mini-turbo boost length on release, for tier 1 and tier 2 (s). */
+  miniTurboTime: [0.6, 1.2] as readonly number[],
+
+  // --- Tricks & respawn ---------------------------------------------------------------
+  /** Leaving the ground faster than this upward (m/s) – i.e. off a ramp, not a hop – allows a trick. */
+  trickMinLaunchSpeed: 3,
+  /** Boost on landing after a trick (s). */
+  trickBoostTime: 0.9,
+  /** Falling below this height (m) triggers a respawn. */
+  respawnFallY: -3,
+  /** Being this far (m) outside the track's edge for `offTrackRespawnTime` s also respawns you. */
+  offTrackDistance: 45,
+  offTrackRespawnTime: 2.5,
+  /** How long the carrier takes to lower you back onto the track (s). */
+  respawnTime: 1.8,
+
   // --- Collisions -----------------------------------------------------------------
   /** Fraction of the impact velocity bounced back off walls (0 = dead stop on the wall, 1 = superball). */
   wallBounce: 0.35,

@@ -71,13 +71,13 @@ racing_game/
    │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
    │  ├─ loop.ts               ✅ fixed-timestep accumulator
    │  ├─ kart.ts               ✅ arcade kart controller (raycast ground, slopes/jumps,
-   │  │                           boosts; drift in M5)
+   │  │                           boosts, hop → drift → mini-turbo, ramp tricks)
    │  ├─ ground.ts             ✅ Ground interface (+ flat test oval used by tests)
    │  ├─ track.ts              ✅ spline → samples, banking, walls, ramps, boost pads,
    │  │                           project(), Ground implementation
    │  ├─ collision.ts          ✅ wall + kart-vs-kart bounces
    │  ├─ race.ts               ✅ countdown/rocket start, checkpoints, laps, ranking, finish
-   │  ├─ world.ts              ✅ track + karts + race, tick() → events
+   │  ├─ world.ts              ✅ track + karts + race, respawn carrier, tick() → events
    │  ├─ autopilot.ts          ✅ computer driver (bots, tests)
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   ✅ track DATA only
@@ -87,7 +87,8 @@ racing_game/
    ├─ render/                  ✅ Three.js: scene/sky, procedural textures, kart model,
    │                              interpolated kart view (tilts with the road), chase camera,
    │                              trackView (road/curbs/walls/ramp/pads/gantry/scenery),
-   │                              layout.ts (split-screen rects), minimap.ts, quality presets
+   │                              layout.ts (split-screen rects), minimap.ts, quality presets,
+   │                              effects.ts (drift sparks, boost flames, carrier drone)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

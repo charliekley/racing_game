@@ -21,8 +21,12 @@ export interface TrackDef {
   maxBankDeg: number;
   /** Barriers. 'outer' = on the outside of whichever way the track is curving. */
   walls: { from: number; to: number; side: 'left' | 'right' | 'both' | 'outer' }[];
-  /** Jump ramps spanning the road: rise linearly over `length` m to `height` m, then drop. */
-  ramps: { at: number; length: number; height: number }[];
+  /**
+   * Jump ramps spanning the road: rise linearly over `length` m to `height` m,
+   * then drop. Optional `gap`: metres of water right after the ramp – too slow
+   * and you fall in (and the carrier drone brings you back).
+   */
+  ramps: { at: number; length: number; height: number; gap?: number }[];
   /** Boost pads: `offset` is lateral position, -1 = left edge … 1 = right edge. */
   boostPads: { at: number; offset: number; length: number; width: number }[];
   laps: number;

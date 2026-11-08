@@ -38,7 +38,12 @@ export function autopilot(k: KartState, track: Track, style: BotStyle): ControlI
   // Ease off for sharp corners coming up and when above our target pace.
   let sharp = 0;
   for (let o = 5; o <= 25; o += 5) sharp = Math.max(sharp, Math.abs(track.samples[(p.i + o) % n].curvature));
-  const target = KART.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
+  // Flat out before a jump so we clear any water gap behind it.
+  const jumpAhead = track.ramps.some((r) => {
+    const d = track.deltaS(p.s, r.s0);
+    return d > -2 && d < 80;
+  });
+  const target = jumpAhead ? Infinity : KART.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

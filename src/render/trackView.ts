@@ -14,6 +14,7 @@ import {
   roadTexture,
   seededRandom,
   wallTexture,
+  waterTexture,
 } from './textures';
 
 interface Edge {
@@ -86,6 +87,7 @@ function samplesBetween(track: Track, s0: number, s1: number): TrackSample[] {
 export class TrackView {
   readonly group = new THREE.Group();
   private boostTex: THREE.Texture;
+  private waterTex: THREE.Texture | null = null;
 
   constructor(readonly track: Track) {
     const def = track.def;
@@ -104,17 +106,32 @@ export class TrackView {
     const terrain = add(new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: grassTex }));
     terrain.position.y = -0.05;
 
+    // Surfaces that run along the whole loop, interrupted only by water gaps.
+    const solidRuns = track.gaps.length ? runs(track.samples, (p) => !track.inGap(p.s)) : null;
+    const alongTrack = (edges: (p: TrackSample) => [Edge, Edge], vRepeat: number, mat: THREE.Material) => {
+      if (!solidRuns) return void add(strip(track.samples, true, edges, vRepeat), mat);
+      for (const run of solidRuns) add(strip(run, false, edges, vRepeat), mat);
+    };
+
     // Road (banked), curbs, off-road strips
-    add(strip(track.samples, true, (p) => [{ d: -hw, h: lift(p, -hw) + 0.02 }, { d: hw, h: lift(p, hw) + 0.02 }], 12), new THREE.MeshLambertMaterial({ map: roadTexture() }));
+    alongTrack((p) => [{ d: -hw, h: lift(p, -hw) + 0.02 }, { d: hw, h: lift(p, hw) + 0.02 }], 12, new THREE.MeshLambertMaterial({ map: roadTexture() }));
     const curbMat = new THREE.MeshLambertMaterial({ map: curbTexture() });
-    add(strip(track.samples, true, (p) => [{ d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.03 }, { d: -hw, h: lift(p, -hw) + 0.03 }], 3), curbMat);
-    add(strip(track.samples, true, (p) => [{ d: hw, h: lift(p, hw) + 0.03 }, { d: hw + CURB_WIDTH, h: lift(p, hw) + 0.03 }], 3), curbMat);
+    alongTrack((p) => [{ d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.03 }, { d: -hw, h: lift(p, -hw) + 0.03 }], 3, curbMat);
+    alongTrack((p) => [{ d: hw, h: lift(p, hw) + 0.03 }, { d: hw + CURB_WIDTH, h: lift(p, hw) + 0.03 }], 3, curbMat);
     const offTex = grassTexture(def.theme.offroad, 3);
     offTex.repeat.set(1, 1);
     const offMat = new THREE.MeshLambertMaterial({ map: offTex });
     const outer = hw + def.offroadWidth;
-    add(strip(track.samples, true, (p) => [{ d: -outer, h: 0.01 }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }], 8), offMat);
-    add(strip(track.samples, true, (p) => [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: outer, h: 0.01 }], 8), offMat);
+    alongTrack((p) => [{ d: -outer, h: 0.01 }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }], 8, offMat);
+    alongTrack((p) => [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: outer, h: 0.01 }], 8, offMat);
+
+    // Water in the gaps after jumps (flush with the ground; karts that fall in sink below it).
+    this.waterTex = waterTexture();
+    const waterMat = new THREE.MeshLambertMaterial({ map: this.waterTex, emissive: '#0b3a66' });
+    for (const g of track.gaps) {
+      const ss = samplesBetween(track, g.s0 - track.spacing, g.s1 + track.spacing);
+      add(strip(ss, false, () => [{ d: -outer - 1, h: 0.0 }, { d: outer + 1, h: 0.0 }], 6), waterMat, false);
+    }
 
     // Walls (tire barriers): vertical strips at the outer edge of the off-road.
     const wallMat = new THREE.MeshLambertMaterial({ map: wallTexture(), side: THREE.DoubleSide });
@@ -181,6 +198,7 @@ export class TrackView {
   /** Animate (boost arrows). */
   update(time: number): void {
     this.boostTex.offset.y = -time * 2;
+    if (this.waterTex) this.waterTex.offset.set(Math.sin(time * 0.6) * 0.05, time * 0.08);
   }
 }
 

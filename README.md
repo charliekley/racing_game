@@ -4,12 +4,13 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 4 of 7.** Phones connect with a room code + QR code and
+> **Status: Milestone 5 of 7.** Drifting with blue/orange mini-turbos, ramp
+> tricks, a water jump and a respawn drone are in. Phones connect with a room code + QR code and
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
 > each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
 > start, 3 laps on "Meadow Ring", results and "race again". Computer drivers can
-> fill empty slots. Drifting arrives in M5, items in M6.
+> fill empty slots. Items arrive in M6.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -129,13 +130,26 @@ serves the files.
 | Tilt / rotate the phone | Steer (45° = full lock by default) |
 | **GAS** (right, bottom, big) | Accelerate (hold) |
 | **BRAKE** (right, top) | Brake / reverse (hold) |
-| **DRIFT** (left, bottom, big) | Hop / drift (hold) – drifting arrives in M5 |
+| **DRIFT** (left, bottom, big) | Hop; hold while steering to drift (see below). Glows blue/orange with your drift charge |
 | **ITEM** (left, top) | Tap to use, hold to drag behind you (M6) |
-| Quick flick/shake | Trick when airborne |
+| Quick flick/shake | Trick when airborne off a ramp → boost on landing |
 | ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, flip 180°, recenter |
 | ping chip (top left) | Toggle debug overlay |
 
 You can slide your thumb between GAS and BRAKE without lifting it.
+
+**Drifting:** tap DRIFT to hop. If you're steering when you land (and keep
+holding DRIFT), you go into a drift in that direction. The kart slides with its
+nose pointing into the corner. Tilt **into** the drift to tighten it (and charge
+faster), **out** of it to widen it. Sparks turn **blue**, then **orange**;
+**let go of DRIFT** for a mini-turbo (orange lasts twice as long). Drifting on
+grass charges at half speed.
+
+**Tricks:** when you fly off a ramp, flick the phone (or press the trick key)
+while in the air: "TRICK!" and a boost when you land. The jump on Meadow Ring
+clears a water gap: hit it too slowly and you fall in, and a little yellow
+carrier drone lowers you back at your last checkpoint. The drone also comes if
+you wander far off the course.
 
 **Racing:** hold GAS just as the countdown hits **1** for a **rocket start**.
 Holding it from the very beginning floods the engine. Laps only count if you
@@ -187,9 +201,10 @@ Retina/4K resolution and sharper shadows.
 * **Flick/trick sensitivity:** `DEFAULT_TRICK` in [`src/controller/trick.ts`](src/controller/trick.ts).
 * **Kart handling and camera:** [`src/sim/config.ts`](src/sim/config.ts) – top
   speed, acceleration curve, braking, reverse, turn rates at low/high speed,
-  grip, off-road penalties, boosts (pads, rocket start), wall/kart bounce,
-  gravity, plus chase-camera distance/lag/FOV. Save the file and the dev server
-  reloads. Drift and item numbers will go here too.
+  grip, off-road penalties, boosts (pads, rocket start), **drift** (hop height,
+  turn tightness, slide grip, charge rates, blue/orange thresholds, mini-turbo
+  lengths), **tricks and respawn**, wall/kart bounce, gravity, plus chase-camera
+  distance/lag/FOV. Save the file and the dev server reloads.
 * **Race rules:** countdown length, rocket-start window, finish grace period in
   [`src/sim/race.ts`](src/sim/race.ts).
 * **Tracks:** [`src/track/tracks/meadowRing.ts`](src/track/tracks/meadowRing.ts).
@@ -201,7 +216,24 @@ Retina/4K resolution and sharper shadows.
 
 ---
 
-## 6. Milestone 4 test checklist
+## 6. Milestone 5 test checklist
+
+1. `/host/?drive`, wait for GO. Hold W and A (or D) and **press Space**: the kart
+   hops and lands in a drift, sliding with the nose turned in. White dust while
+   charging, then blue sparks, then orange. Release Space: flames from the
+   exhausts and a speed burst (orange lasts longer).
+2. While drifting, compare holding the steer key toward the corner vs letting
+   go/steering out: tight vs wide arc. Pressing Space without steering = just a hop.
+3. With the phone: hold DRIFT and tilt; the DRIFT button glows white → blue →
+   orange to match, and Android buzzes on each new color and on the mini-turbo.
+4. The jump near the end of the lap now has water after it. Take it at speed and
+   press **R** (or flick the phone) in the air: "TRICK!" and a boost on landing.
+   Take it slowly: you drop into the water and the yellow drone lowers you back
+   onto the road a little earlier in the lap. Laps still count correctly.
+5. Drive far out into the fields: after ~2.5 s the drone brings you back.
+6. Bump other karts (`?drive=4`): you bounce off each other without stopping.
+
+## 7. Milestone 4 test checklist
 
 1. Open `/host/?drive=4`: four views in quadrants, each with its own position,
    lap, time, speed, item box (empty until M6) and a colored "P2 Bot 1" tag. You
@@ -219,7 +251,7 @@ Retina/4K resolution and sharper shadows.
    views on your laptop it should stay near 60; if not, Esc → Q → Low and
    compare.
 
-## 7. Milestone 3 test checklist
+## 8. Milestone 3 test checklist
 
 1. Open `/host/?drive` (or the GitHub Pages link with `?drive`). You're on the
    grid at the start line under a checkered gantry, and **3-2-1-GO!** counts down.
@@ -242,7 +274,7 @@ Retina/4K resolution and sharper shadows.
 
 ---
 
-## 8. Milestone 2 test checklist
+## 9. Milestone 2 test checklist
 
 1. `npm run dev`, open `https://localhost:5173/host/?drive`. You're in a green
    kart on the start straight. W = gas, S = brake/reverse, A/D = steer.
@@ -259,7 +291,7 @@ Retina/4K resolution and sharper shadows.
 5. Try the ⚙ sensitivity / full-lock sliders mid-drive; changes apply instantly.
 6. Press **C** to cycle the camera between karts, **Esc** to go back to the lobby.
 
-## 9. Milestone 1 test checklist
+## 10. Milestone 1 test checklist
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
@@ -282,7 +314,7 @@ Retina/4K resolution and sharper shadows.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Fix |
 |---|---|

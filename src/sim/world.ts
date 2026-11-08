@@ -1,13 +1,13 @@
 /**
  * The simulation world: track, karts, collisions and race rules. The host
  * calls `tick(getInput)` exactly SIM_HZ times per second; it returns events
- * (lap done, wall hit, …) for the UI, audio and phone haptics.
+ * (lap done, wall hit, drift sparks, …) for the UI, audio and phone haptics.
  */
 import type { ControlInput } from '../shared/protocol';
 import { KART, SIM_DT } from './config';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import type { Ground } from './ground';
-import { applyBoost, cloneKart, createKart, stepKart, type KartState } from './kart';
+import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartState } from './kart';
 import { Race, type RaceEvent } from './race';
 import type { Track } from './track';
 
@@ -17,10 +17,17 @@ export interface SpawnPoint {
   heading: number;
 }
 
-export type WorldEvent = RaceEvent | CollisionEvent | { kind: 'boostPad'; slot: number };
+export type WorldEvent =
+  | RaceEvent
+  | CollisionEvent
+  | { kind: 'boostPad'; slot: number }
+  | { kind: 'respawn'; slot: number }
+  | (KartEvent & { slot: number });
 
 /** Wall hits softer than this (m/s) aren't reported. */
 const WALL_EVENT_MIN_IMPACT = 3;
+/** The carrier starts this high above the drop point (m). */
+export const CARRIER_HEIGHT = 7;
 
 export class World {
   /** Karts by player slot index. */
@@ -28,6 +35,8 @@ export class World {
   /** State at the previous tick (for render interpolation). */
   readonly prevKarts = new Map<number, KartState>();
   race: Race | null = null;
+  /** Where each respawning kart is being lowered to. */
+  private respawnTargets = new Map<number, { x: number; y: number; z: number }>();
 
   constructor(
     readonly ground: Ground,
@@ -47,6 +56,7 @@ export class World {
     if (!this.track) throw new Error('startRace needs a track');
     this.karts.clear();
     this.prevKarts.clear();
+    this.respawnTargets.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
   }
@@ -60,7 +70,11 @@ export class World {
     for (const [slot, kart] of this.karts) {
       this.prevKarts.set(slot, cloneKart(kart));
       if (frozen) continue; // everyone waits on the grid during the countdown
-      stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT);
+      if (kart.respawnTime > 0) {
+        this.lowerByCarrier(slot, kart);
+        continue;
+      }
+      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT)) events.push({ ...e, slot });
       if (kart.grounded && kart.surface === 'boost') {
         if (kart.boostTime < KART.boostPadTime * 0.5) events.push({ kind: 'boostPad', slot });
         applyBoost(kart, KART.boostPadTime);
@@ -68,9 +82,16 @@ export class World {
       if (this.track) {
         const impact = collideWalls(kart, this.track);
         if (impact > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact });
+        if (this.needsRespawn(kart)) {
+          this.startRespawn(slot, kart);
+          events.push({ kind: 'respawn', slot });
+        }
       }
     }
-    if (!frozen) events.push(...collideKarts(this.karts));
+    if (!frozen) {
+      const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0));
+      events.push(...collideKarts(active));
+    }
 
     if (this.race && this.track) {
       const positions = new Map<number, number>();
@@ -84,5 +105,73 @@ export class World {
       }
     }
     return events;
+  }
+
+  /** Fell into water / off the world, or wandered far off course for a while. */
+  private needsRespawn(k: KartState): boolean {
+    if (k.pos.y < KART.respawnFallY) return true;
+    const track = this.track!;
+    const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+    const outside = Math.abs(p.d) - (p.width / 2 + track.def.offroadWidth);
+    k.offTrackTime = outside > KART.offTrackDistance ? k.offTrackTime + SIM_DT : 0;
+    return k.offTrackTime > KART.offTrackRespawnTime;
+  }
+
+  /**
+   * Respawn point: the start of the last checkpoint section the kart has
+   * reached (so no progress is gained), a little way in, on the centerline.
+   */
+  private startRespawn(slot: number, k: KartState): void {
+    const track = this.track!;
+    let s: number;
+    const racer = this.race?.racers.get(slot);
+    if (racer && this.race!.phase !== 'countdown') {
+      const cps = track.checkpoints;
+      s = cps[(racer.next - 1 + cps.length) % cps.length] + 6;
+    } else {
+      s = track.project(k.pos.x, k.pos.z, k.trackIndex).s - 20;
+    }
+    // Never drop anyone into the water.
+    while (track.inGap(s)) s -= 4;
+    const lateral = ((slot % 3) - 1) * 2.5; // don't stack karts that fall in together
+    const p = track.pointAt(s, lateral);
+    const ground = track.sample(p.x, p.z, p.index);
+    const y = ground?.height ?? p.y;
+    Object.assign(k, {
+      pos: { x: p.x, y: y + CARRIER_HEIGHT, z: p.z },
+      vel: { x: 0, y: 0, z: 0 },
+      heading: p.heading,
+      speed: 0,
+      yawRate: 0,
+      grounded: false,
+      boostTime: 0,
+      driftDir: 0,
+      driftCharge: 0,
+      driftTier: 0,
+      hopping: false,
+      trickable: false,
+      trickDone: false,
+      offTrackTime: 0,
+      trackIndex: p.index,
+      respawnTime: KART.respawnTime,
+    });
+    this.respawnTargets.set(slot, { x: p.x, y, z: p.z });
+  }
+
+  /** Carrier phase: ease the kart down onto the track, then hand back control. */
+  private lowerByCarrier(slot: number, k: KartState): void {
+    const target = this.respawnTargets.get(slot);
+    k.respawnTime = Math.max(0, k.respawnTime - SIM_DT);
+    if (!target) return;
+    const t = k.respawnTime / KART.respawnTime; // 1 -> 0
+    k.pos.x = target.x;
+    k.pos.z = target.z;
+    k.pos.y = target.y + CARRIER_HEIGHT * t * t; // slows down as it nears the ground
+    if (k.respawnTime === 0) {
+      k.pos.y = target.y;
+      k.grounded = true;
+      k.surface = 'road';
+      this.respawnTargets.delete(slot);
+    }
   }
 }

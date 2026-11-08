@@ -50,6 +50,10 @@ const HAPTICS = {
   stall: [250],
   lap: [60, 60, 60],
   finish: [120, 60, 120, 60, 250],
+  driftTier: [12],
+  miniTurbo: [30, 30, 70],
+  trick: [20, 25, 20],
+  respawn: [200],
 } as const;
 
 export interface GameCallbacks {
@@ -292,6 +296,27 @@ export class Game {
           break;
         case 'done':
           this.doneAt = this.elapsed;
+          break;
+        case 'driftStart':
+          this.players.sendTo(e.slot, { t: 'drift', tier: 0 });
+          break;
+        case 'driftTier':
+          this.players.sendTo(e.slot, { t: 'drift', tier: e.tier });
+          if (e.tier > 0) this.haptic(e.slot, HAPTICS.driftTier);
+          break;
+        case 'driftEnd':
+          this.players.sendTo(e.slot, { t: 'drift', tier: null });
+          break;
+        case 'miniTurbo':
+          this.haptic(e.slot, HAPTICS.miniTurbo);
+          break;
+        case 'trick':
+          this.haptic(e.slot, HAPTICS.trick);
+          this.toast(e.slot, 'TRICK!', 0.8);
+          break;
+        case 'respawn':
+          this.haptic(e.slot, HAPTICS.respawn);
+          this.players.sendTo(e.slot, { t: 'drift', tier: null });
           break;
       }
     }

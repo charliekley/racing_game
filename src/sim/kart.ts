@@ -8,6 +8,15 @@
  *
  * Pure functions on plain data: no Three.js, no DOM, no randomness. Same
  * inputs -> same outputs, which keeps it testable and replay-friendly.
+ *
+ * Drifting (MKWii-style):
+ *  1. Press DRIFT -> the kart hops.
+ *  2. If you're steering when it lands (and still holding DRIFT), it enters a
+ *     drift in that direction. The kart slides: it points into the corner
+ *     while its velocity lags behind (low grip).
+ *  3. Steering INTO the drift tightens it and charges faster; steering OUT
+ *     widens it. Charge passes tier 1 (blue sparks) then tier 2 (orange).
+ *  4. Release DRIFT -> mini-turbo boost, longer for tier 2.
  */
 import { Buttons, type ControlInput } from '../shared/protocol';
 import { KART, type KartConfig } from './config';
@@ -31,13 +40,44 @@ export interface KartState {
   surface: Surface;
   /** Steer value the kart is applying (-1..1), for wheel visuals. */
   steer: number;
-  /** Seconds of boost left (boost pads, rocket start, …). */
+  /** Seconds of boost left (boost pads, rocket start, mini-turbo, tricks). */
   boostTime: number;
   /** Seconds left where the engine gives no power (flooded start). */
   stallTime: number;
   /** Track sample index from the last ground hit (lookup hint), -1 if unknown. */
   trackIndex: number;
+
+  // Drift
+  /** -1 = drifting left, 1 = drifting right, 0 = not drifting. */
+  driftDir: number;
+  driftCharge: number;
+  /** 0 = no sparks yet, 1 = blue, 2 = orange. */
+  driftTier: number;
+  /** In the air because of a drift hop (not a ramp). */
+  hopping: boolean;
+
+  // Tricks & respawn
+  /** Launched off a ramp: a trick is allowed until landing. */
+  trickable: boolean;
+  trickDone: boolean;
+  /** Seconds left of the respawn carrier lowering the kart (0 = normal driving). */
+  respawnTime: number;
+  /** Time spent far outside the track (s), for the out-of-bounds respawn. */
+  offTrackTime: number;
+
+  /** Previous button states, to detect presses (edges). */
+  prevButtons: number;
 }
+
+export type KartEvent =
+  | { kind: 'hop' }
+  | { kind: 'driftStart'; dir: number }
+  | { kind: 'driftTier'; tier: number }
+  | { kind: 'driftEnd' }
+  | { kind: 'miniTurbo'; tier: number }
+  | { kind: 'trick' }
+  | { kind: 'trickBoost' }
+  | { kind: 'land'; fallSpeed: number };
 
 export function createKart(x: number, z: number, heading: number, y = 0): KartState {
   return {
@@ -52,6 +92,15 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     boostTime: 0,
     stallTime: 0,
     trackIndex: -1,
+    driftDir: 0,
+    driftCharge: 0,
+    driftTier: 0,
+    hopping: false,
+    trickable: false,
+    trickDone: false,
+    respawnTime: 0,
+    offTrackTime: 0,
+    prevButtons: 0,
   };
 }
 
@@ -131,18 +180,57 @@ export function applyBoost(k: KartState, seconds: number): void {
   k.boostTime = Math.max(k.boostTime, seconds);
 }
 
+/** Stop drifting; with `reward` a charged drift gives its mini-turbo. */
+function endDrift(k: KartState, reward: boolean, events: KartEvent[], c: KartConfig): void {
+  if (k.driftDir === 0) return;
+  if (reward && k.driftTier > 0) {
+    applyBoost(k, c.miniTurboTime[k.driftTier - 1]);
+    events.push({ kind: 'miniTurbo', tier: k.driftTier });
+  }
+  k.driftDir = 0;
+  k.driftCharge = 0;
+  k.driftTier = 0;
+  events.push({ kind: 'driftEnd' });
+}
+
 /**
- * Advance one kart by one fixed step. Mutates and returns `k`.
+ * Advance one kart by one fixed step. Mutates `k`; returns what happened
+ * (for sounds, sparks, haptics).
  */
-export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: number, c: KartConfig = KART): KartState {
+export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: number, c: KartConfig = KART): KartEvent[] {
+  const events: KartEvent[] = [];
   const steer = clamp(Number.isFinite(input.steer) ? input.steer : 0, -1, 1);
   k.steer = steer;
+  const driftHeld = (input.buttons & Buttons.DRIFT) !== 0;
+  const pressed = input.buttons & ~k.prevButtons;
+  k.prevButtons = input.buttons;
+
   const boosting = k.boostTime > 0;
   k.boostTime = Math.max(0, k.boostTime - dt);
   const stalled = k.stallTime > 0;
   k.stallTime = Math.max(0, k.stallTime - dt);
 
-  // Split current horizontal velocity into forward / sideways parts.
+  // --- Hop (start of a drift) ---------------------------------------------------
+  if (k.grounded && pressed & Buttons.DRIFT && k.speed > 2) {
+    k.grounded = false;
+    k.hopping = true;
+    k.vel.y = c.hopSpeed;
+    events.push({ kind: 'hop' });
+  }
+
+  // --- Drift bookkeeping -----------------------------------------------------------
+  if (k.driftDir !== 0) {
+    if (!driftHeld) endDrift(k, true, events, c);
+    else if (k.speed < c.driftMinSpeed * 0.6) endDrift(k, false, events, c); // too slow: fizzles out
+  }
+
+  // --- Tricks: allowed in the air after a ramp launch ------------------------------
+  if (!k.grounded && k.trickable && !k.trickDone && pressed & Buttons.TRICK) {
+    k.trickDone = true;
+    events.push({ kind: 'trick' });
+  }
+
+  // --- Speed ----------------------------------------------------------------------
   let f = forwardOf(k.heading);
   let r = rightOf(k.heading);
   let lateral = k.vel.x * r.x + k.vel.z * r.z;
@@ -151,20 +239,56 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
     k.speed = updateSpeed(k.speed, input, { surface: k.surface, boosting, stalled }, dt, c);
   }
 
-  // Steering: reversing turns the other way, like a real car.
-  const authority = k.grounded ? 1 : c.airSteer;
-  k.yawRate = -steer * turnRateFor(k.speed, c) * Math.sign(k.speed) * authority;
+  // --- Steering -------------------------------------------------------------------
+  const authority = k.grounded || k.hopping ? 1 : c.airSteer;
+  if (k.driftDir !== 0) {
+    // Steering into the drift (inward = +1) tightens it, out (inward = -1) widens it.
+    const inward = clamp(steer * k.driftDir, -1, 1);
+    const factor = lerp(c.driftTurnWide, c.driftTurnTight, (inward + 1) / 2);
+    k.yawRate = -k.driftDir * turnRateFor(k.speed, c) * factor * authority;
+    if (k.grounded) {
+      const rate = (c.driftChargeRate + c.driftChargeSteerBonus * Math.max(0, inward)) * (k.surface === 'offroad' ? 0.5 : 1);
+      k.driftCharge += rate * dt;
+      const tier = k.driftCharge >= c.driftTier2 ? 2 : k.driftCharge >= c.driftTier1 ? 1 : 0;
+      if (tier !== k.driftTier) {
+        k.driftTier = tier;
+        events.push({ kind: 'driftTier', tier });
+      }
+    }
+  } else {
+    // Reversing turns the other way, like a real car.
+    k.yawRate = -steer * turnRateFor(k.speed, c) * Math.sign(k.speed) * authority;
+  }
   k.heading += k.yawRate * dt;
-
-  // Grip kills sideways sliding; forward speed is carried into the new heading
-  // (that's what makes arcade turning feel responsive).
-  lateral *= Math.exp(-c.grip * dt);
   f = forwardOf(k.heading);
   r = rightOf(k.heading);
-  k.vel.x = f.x * k.speed + r.x * lateral;
-  k.vel.z = f.z * k.speed + r.z * lateral;
 
+  if (k.driftDir !== 0) {
+    // Sliding: the velocity direction swings toward the heading only slowly,
+    // so the kart's nose points into the corner while it travels wider.
+    const mag = Math.max(0, k.speed);
+    const vx = k.vel.x;
+    const vz = k.vel.z;
+    const vm = Math.hypot(vx, vz);
+    const a = 1 - Math.exp(-c.driftGrip * dt);
+    let dx = vm > 0.1 ? vx / vm : f.x;
+    let dz = vm > 0.1 ? vz / vm : f.z;
+    dx += (f.x - dx) * a;
+    dz += (f.z - dz) * a;
+    const dl = Math.hypot(dx, dz) || 1;
+    k.vel.x = (dx / dl) * mag;
+    k.vel.z = (dz / dl) * mag;
+  } else {
+    // Normal grip kills sideways sliding; forward speed is carried into the new
+    // heading (that's what makes arcade turning feel responsive).
+    lateral *= Math.exp(-c.grip * dt);
+    k.vel.x = f.x * k.speed + r.x * lateral;
+    k.vel.z = f.z * k.speed + r.z * lateral;
+  }
+
+  // --- Move + ground following --------------------------------------------------------
   const prevY = k.pos.y;
+  const wasGrounded = k.grounded;
   k.pos.x += k.vel.x * dt;
   k.pos.z += k.vel.z * dt;
 
@@ -180,20 +304,38 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
       k.pos.y = hit.height;
       k.surface = hit.surface;
     } else {
-      k.grounded = false; // ground fell away (ramp lip, ledge): keep current vel.y
+      k.grounded = false; // ground fell away (ramp lip, ledge, gap)
+      k.trickable = k.vel.y > c.trickMinLaunchSpeed;
+      k.trickDone = false;
     }
   }
   if (!k.grounded) {
     k.vel.y -= c.gravity * dt;
     k.pos.y += k.vel.y * dt;
-    if (hit && k.pos.y <= hit.height) {
+    if (hit && k.pos.y <= hit.height && k.vel.y <= 0) {
+      const fallSpeed = -k.vel.y;
       k.pos.y = hit.height;
       k.vel.y = 0;
       k.grounded = true;
       k.surface = hit.surface;
+      if (!wasGrounded) events.push({ kind: 'land', fallSpeed });
+      // Landing from a drift hop while steering -> drift!
+      if (k.hopping && driftHeld && k.driftDir === 0 && Math.abs(steer) >= c.driftSteerThreshold && k.speed >= c.driftMinSpeed) {
+        k.driftDir = Math.sign(steer);
+        k.driftCharge = 0;
+        k.driftTier = 0;
+        events.push({ kind: 'driftStart', dir: k.driftDir });
+      }
+      k.hopping = false;
+      if (k.trickDone) {
+        applyBoost(k, c.trickBoostTime);
+        events.push({ kind: 'trickBoost' });
+      }
+      k.trickable = false;
+      k.trickDone = false;
     }
   }
-  return k;
+  return events;
 }
 
 /** Copy of a kart's state, used to keep the previous tick for interpolation. */

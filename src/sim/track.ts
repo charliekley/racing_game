@@ -85,6 +85,11 @@ export interface Ramp {
   s1: number;
   height: number;
 }
+/** Stretch of water (no ground) across the whole track width. */
+export interface Gap {
+  s0: number;
+  s1: number;
+}
 export interface BoostPad {
   s0: number;
   s1: number;
@@ -100,6 +105,7 @@ export class Track implements Ground {
   /** s at each control point. */
   readonly controlS: number[] = [];
   readonly ramps: Ramp[] = [];
+  readonly gaps: Gap[] = [];
   readonly boostPads: BoostPad[] = [];
   /** s where each checkpoint segment starts; checkpoint 0 = start/finish line (s = 0). */
   readonly checkpoints: number[] = [];
@@ -203,6 +209,7 @@ export class Track implements Ground {
     for (const r of def.ramps) {
       const s0 = this.sAt(r.at);
       this.ramps.push({ s0, s1: s0 + r.length, height: r.height });
+      if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap });
     }
     for (const b of def.boostPads) {
       const s0 = this.sAt(b.at);
@@ -307,8 +314,18 @@ export class Track implements Ground {
     return 0;
   }
 
-  /** Height and surface at a projected point. */
-  surfaceAt(p: Projection): GroundHit {
+  /** True if distance s along the track is over water. */
+  inGap(s: number): boolean {
+    for (const g of this.gaps) {
+      const into = this.deltaS(g.s0, s);
+      if (into >= 0 && into <= g.s1 - g.s0) return true;
+    }
+    return false;
+  }
+
+  /** Height and surface at a projected point (null = water, no ground). */
+  surfaceAt(p: Projection): GroundHit | null {
+    if (this.gaps.length && Math.abs(p.d) <= p.width / 2 + this.def.offroadWidth + 1 && this.inGap(p.s)) return null;
     const hw = p.width / 2;
     const ad = Math.abs(p.d);
     const edgeLift = Track.bankLift(p.bank, hw, p.d);
@@ -332,9 +349,18 @@ export class Track implements Ground {
   }
 
   /** Ground interface (vertical raycast). The track is surrounded by endless flat terrain. */
-  sample(x: number, z: number, hint = -1): GroundHit & { index: number } {
+  sample(x: number, z: number, hint = -1): (GroundHit & { index: number }) | null {
     const p = this.project(x, z, hint);
-    return { ...this.surfaceAt(p), index: p.i };
+    const hit = this.surfaceAt(p);
+    return hit ? { ...hit, index: p.i } : null;
+  }
+
+  /** Safe spot on the centerline at distance s (for respawns). */
+  pointAt(s: number, lateral = 0): { x: number; y: number; z: number; heading: number; index: number } {
+    const n = this.samples.length;
+    const i = ((Math.floor(s / this.spacing) % n) + n) % n;
+    const p = this.samples[i];
+    return { x: p.x + p.rx * lateral, y: p.y, z: p.z + p.rz * lateral, heading: p.heading, index: i };
   }
 
   /** Lateral position of the wall on each side (m from centerline), or null if no wall here. */

@@ -51,9 +51,13 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
   it('road surface: road in the middle, offroad outside, banking never digs below the base', () => {
     for (let i = 0; i < track.samples.length; i += 13) {
       const p = track.samples[i];
-      expect(track.sample(p.x, p.z).surface).not.toBe('offroad');
+      if (track.inGap(p.s)) {
+        expect(track.sample(p.x, p.z)).toBeNull(); // water
+        continue;
+      }
+      expect(track.sample(p.x, p.z)!.surface).not.toBe('offroad');
       const far = def.width / 2 + def.offroadWidth - 0.5;
-      expect(track.sample(p.x + p.rx * far, p.z + p.rz * far).surface).toBe('offroad');
+      expect(track.sample(p.x + p.rx * far, p.z + p.rz * far)!.surface).toBe('offroad');
       for (const d of [-def.width / 2, 0, def.width / 2]) {
         expect(Track.bankLift(p.bank, def.width / 2, d)).toBeGreaterThanOrEqual(0);
       }

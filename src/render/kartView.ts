@@ -7,6 +7,12 @@ import type { KartState } from '../sim/kart';
 import type { Ground } from '../sim/ground';
 import { KART } from '../sim/config';
 import { WHEEL_RADIUS, buildKartModel, type KartModel } from './kartModel';
+import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
+import { CARRIER_HEIGHT } from '../sim/world';
+
+/** Local positions (kart space) of the rear tire contact patches and exhausts. */
+const REAR_CONTACTS = [new THREE.Vector3(0.74, 0.05, -0.75), new THREE.Vector3(-0.74, 0.05, -0.75)];
+const EXHAUSTS = [new THREE.Vector3(0.18, 0.55, -1.2), new THREE.Vector3(-0.18, 0.55, -1.2)];
 
 /** Shortest-path angle interpolation (handles wrap-around at ±π). */
 export function lerpAngle(a: number, b: number, t: number): number {
@@ -31,6 +37,12 @@ export class KartView {
   private pitch = 0;
   private roll = 0;
   private wheelSpin = 0;
+  private driftYaw = 0;
+  private sparks: SparkEmitter;
+  private flames: THREE.Group[] = [];
+  private drone: CarrierDrone;
+  private tmp = new THREE.Vector3();
+  private back = new THREE.Vector3();
   /** Interpolated pose from the last `update` (the camera reads this). */
   readonly pose: InterpolatedKart = { x: 0, y: 0, z: 0, heading: 0, speed: 0, yawRate: 0 };
 
@@ -38,6 +50,14 @@ export class KartView {
     this.model = buildKartModel(colorHex);
     this.model.root.rotation.order = 'YXZ'; // yaw first, then pitch/roll in the kart's own frame
     scene.add(this.model.root);
+    this.sparks = new SparkEmitter(scene);
+    for (const at of EXHAUSTS) {
+      const f = buildFlame();
+      f.position.copy(at);
+      this.model.body.add(f);
+      this.flames.push(f);
+    }
+    this.drone = new CarrierDrone(scene);
   }
 
   update(prev: KartState, cur: KartState, alpha: number, dt: number, ground?: Ground): void {
@@ -51,7 +71,11 @@ export class KartView {
 
     const m = this.model;
     m.root.position.set(p.x, p.y, p.z);
-    m.root.rotation.y = p.heading;
+    // While drifting, the body swings a bit further into the corner than the
+    // heading (purely visual exaggeration of the slide).
+    const targetDriftYaw = cur.driftDir === 0 ? 0 : -cur.driftDir * 0.22;
+    this.driftYaw += (targetDriftYaw - this.driftYaw) * (1 - Math.exp(-dt / 0.1));
+    m.root.rotation.y = p.heading + this.driftYaw;
 
     // Tilt with the ground (slopes, banking, ramp) or nose up/down in the air.
     let targetPitch = 0;
@@ -86,9 +110,39 @@ export class KartView {
     this.wheelSpin += (p.speed / WHEEL_RADIUS) * dt;
     for (const w of m.wheels) w.rotation.x = this.wheelSpin;
     for (const pivot of m.frontPivots) pivot.rotation.y = -cur.steer * 0.45;
+
+    // Drift sparks from the rear wheels (dust while charging, then blue/orange).
+    m.root.updateMatrixWorld();
+    if (cur.driftDir !== 0 && cur.grounded) {
+      this.sparks.setTier(cur.driftTier);
+      this.back.set(-fx, 0, -fz);
+      for (const c of REAR_CONTACTS) {
+        this.tmp.copy(c);
+        m.root.localToWorld(this.tmp);
+        this.sparks.emit(this.tmp, this.back, cur.driftTier === 0 ? 1 : 2);
+      }
+    }
+    this.sparks.update(dt);
+
+    // Boost flames flicker out of the exhausts.
+    const boosting = cur.boostTime > 0;
+    for (const f of this.flames) {
+      f.visible = boosting;
+      if (boosting) {
+        const s = 0.8 + Math.random() * 0.5 + Math.min(1, cur.boostTime) * 0.4;
+        f.scale.set(1, 1, s);
+      }
+    }
+
+    // Respawn carrier: hovers above and lowers the kart back onto the track.
+    this.tmp.set(p.x, p.y, p.z);
+    const lowering = cur.respawnTime > 0;
+    this.drone.update(this.tmp, p.heading, lowering ? 2.4 + CARRIER_HEIGHT * 0.15 : 0, dt, lowering);
   }
 
   dispose(scene: THREE.Scene): void {
     scene.remove(this.model.root);
+    this.sparks.dispose(scene);
+    this.drone.dispose(scene);
   }
 }

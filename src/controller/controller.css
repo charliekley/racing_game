@@ -151,6 +151,10 @@ body:not(.playing) #stage { display: none; }
 .btn.brake { flex: 1; background: #8a2330; }
 .btn.drift { flex: 1.6; background: #8a5a00; }
 .btn.item { flex: 1; background: #3a2f8a; }
+/* DRIFT glows with the drift charge (sent by the host): charging, blue, orange. */
+.btn.drift.drift-t0 { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5) inset; }
+.btn.drift.drift-t1 { box-shadow: 0 0 0 6px #45c8ff inset, 0 0 24px #45c8ff; }
+.btn.drift.drift-t2 { box-shadow: 0 0 0 6px #ff8a1a inset, 0 0 30px #ff8a1a; }
 
 .center { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 0; min-width: 0; }
 .topbar { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: space-between; }

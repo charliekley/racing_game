@@ -35,8 +35,9 @@ export const meadowRing: TrackDef = {
     { from: 8.2, to: 10.2, side: 'both' }, // S-bend chicane
     { from: 12, to: 14, side: 'outer' },
     { from: 16, to: 17.5, side: 'outer' },
+    { from: 15.3, to: 15.8, side: 'both' }, // fence in the jump so you can't drive around the water
   ],
-  ramps: [{ at: 15.45, length: 9, height: 1.9 }],
+  ramps: [{ at: 15.45, length: 9, height: 1.9, gap: 8 }],
   boostPads: [
     { at: 10.55, offset: 0, length: 6, width: 5 },
     { at: 1.4, offset: -0.45, length: 6, width: 4 },

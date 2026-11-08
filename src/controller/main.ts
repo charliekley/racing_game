@@ -372,6 +372,13 @@ function handleHostMessage(msg: HostToController) {
     case 'haptic':
       vibrate(msg.pattern);
       break;
+    case 'drift': {
+      // Glow the DRIFT button with the current spark color.
+      const btn = document.querySelector('[data-button="DRIFT"]')!;
+      btn.classList.remove('drift-t0', 'drift-t1', 'drift-t2');
+      if (msg.tier !== null) btn.classList.add(`drift-t${msg.tier}`);
+      break;
+    }
     case 'ping':
       link?.sendEvent({ t: 'pong', id: msg.id, sentAt: msg.sentAt });
       break;

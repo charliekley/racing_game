@@ -145,3 +145,16 @@ export function boostTexture(): THREE.CanvasTexture {
     }
   });
 }
+
+/** Blue water with light ripple streaks (scroll offset to animate). */
+export function waterTexture(): THREE.CanvasTexture {
+  return canvasTexture(128, (ctx, n) => {
+    ctx.fillStyle = '#1f6fb8';
+    ctx.fillRect(0, 0, n, n);
+    const rnd = seededRandom(9);
+    for (let i = 0; i < 60; i++) {
+      ctx.fillStyle = `rgba(200, 235, 255, ${0.15 + rnd() * 0.3})`;
+      ctx.fillRect(rnd() * n, rnd() * n, 10 + rnd() * 24, 2);
+    }
+  });
+}
