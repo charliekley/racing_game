@@ -131,6 +131,16 @@ describe('SteeringProcessor', () => {
     expect(settle(p, 90).steer).toBeCloseTo(0);
   });
 
+  it('a locked grip never flips, even if the phone is turned all the way around', () => {
+    const p = new SteeringProcessor();
+    settle(p, -90);
+    p.gripLocked = true;
+    settle(p, 90);
+    expect(p.grip).toBe('left');
+    p.toggleInverted(); // the manual Flip 180 button still works
+    expect(p.grip).toBe('right');
+  });
+
   it('steering direction is right even with the wrong sign convention', () => {
     const p = new SteeringProcessor(DEFAULT_STEERING, false);
     expect(settle(p, -90, 0, true).steer).toBeCloseTo(0);

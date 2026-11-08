@@ -146,9 +146,10 @@ body:not(.playing) #stage { display: none; }
   transition: transform 0.05s, filter 0.05s;
 }
 .btn.pressed { transform: scale(0.96); filter: brightness(1.6); border-color: #fff; }
+/* Left thumb: ITEM (top) + DRIFT (bottom, bigger). Right thumb: BRAKE (top) + GAS (bottom, bigger). */
 .btn.gas { flex: 1.6; background: #1f7a4a; }
-.btn.drift { flex: 1; background: #8a5a00; }
-.btn.brake { flex: 1.6; background: #8a2330; }
+.btn.brake { flex: 1; background: #8a2330; }
+.btn.drift { flex: 1.6; background: #8a5a00; }
 .btn.item { flex: 1; background: #3a2f8a; }
 
 .center { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 0; min-width: 0; }
@@ -271,3 +272,11 @@ body.playing.need-rotate .rotate { display: flex; }
   pointer-events: none;
   z-index: 30;
 }
+
+/* One-time rotation-lock tip (above everything, outside the rotating stage). */
+.lock { z-index: 40; background: var(--bg); }
+.lock-box { max-width: 30em; display: flex; flex-direction: column; gap: 8px; align-items: center; font-size: 17px; }
+.lock-box h2 { margin: 0; color: #ffbe0b; }
+.lock-box p { margin: 0; color: var(--muted); line-height: 1.4; }
+.lock-box b { color: var(--text); }
+.lock-icon { font-size: 52px; }

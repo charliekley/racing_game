@@ -4,9 +4,11 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 2 of 7.** Phones connect with a room code + QR code and
-> act as tilt steering wheels; when everyone is ready, all players drive karts
-> around a test oval (one chase camera for now; split-screen in M4).
+> **Status: Milestone 3 of 7.** Phones connect with a room code + QR code and
+> act as tilt steering wheels. When everyone is ready: 3-2-1-GO countdown (with a
+> rocket start), a 3-lap race on "Meadow Ring" with checkpoints, positions, a jump
+> and boost pads, then a results screen with "race again". One chase camera for
+> now; split-screen comes in M4, drifting in M5.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -69,10 +71,11 @@ The phone and laptop must be on the **same Wi-Fi**.
 3. Enter your name, pick a color, tap **JOIN**.
 4. iOS asks to allow **Motion & Orientation** access. Tap **Allow**. If you tap
    *Cancel* by mistake, close the tab completely, scan again, and allow it.
-5. **Turn on Rotation Lock** (Control Center → the lock icon) – recommended.
-   Then hold the phone sideways like a steering wheel: the controller rotates
-   itself to match, and steering can never be thrown off by the screen
-   auto-rotating mid-turn. (It also works with rotation unlocked.)
+5. A one-time popup asks you to **turn on Rotation Lock** (Control Center → the
+   lock icon). Do it and tap **Got it**. Then hold the phone sideways like a
+   steering wheel. The controller turns itself to match the first time, then
+   **locks that layout** for the session: buttons never move, and steering
+   can't be thrown off by the screen rotating mid-turn.
 6. Tap **READY** while holding the wheel level – that also sets "straight ahead".
 7. Tips: Low Power Mode may stop the screen-awake feature from working. If the
    controller ever shows upside down, tap ⚙ → **Flip 180°** (it remembers).
@@ -123,15 +126,20 @@ serves the files.
 | Control | Action |
 |---|---|
 | Tilt / rotate the phone | Steer (45° = full lock by default) |
-| **GAS** (right, bottom) | Accelerate (hold) |
-| **DRIFT** (right, top) | Hop / drift (hold) |
-| **BRAKE** (left, bottom) | Brake / reverse (hold) |
-| **ITEM** (left, top) | Tap to use, hold to drag behind you |
+| **GAS** (right, bottom, big) | Accelerate (hold) |
+| **BRAKE** (right, top) | Brake / reverse (hold) |
+| **DRIFT** (left, bottom, big) | Hop / drift (hold) – drifting arrives in M5 |
+| **ITEM** (left, top) | Tap to use, hold to drag behind you (M6) |
 | Quick flick/shake | Trick when airborne |
 | ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, flip 180°, recenter |
 | ping chip (top left) | Toggle debug overlay |
 
-You can slide your thumb between GAS and DRIFT without lifting it.
+You can slide your thumb between GAS and BRAKE without lifting it.
+
+**Racing:** hold GAS just as the countdown hits **1** for a **rocket start**.
+Holding it from the very beginning floods the engine. Laps only count if you
+pass every checkpoint in order, so shortcuts across the grass don't work. Hit
+the orange arrow pads for a boost and take the yellow ramp for some air.
 
 ### Keyboard / gamepad on the host (for testing without phones)
 
@@ -147,9 +155,10 @@ You can slide your thumb between GAS and DRIFT without lifting it.
 Press the same number again to remove a keyboard player. The **`** key toggles
 the debug readouts on the TV.
 
-While driving: **C** switches which kart the camera follows, **Esc** returns to
-the lobby. Shortcut for tuning: open **`/host/?drive`** to skip the lobby and
-drive immediately with WASD.
+While racing: **C** switches which kart the camera follows, **Esc** returns to
+the lobby. On the results screen: **Enter** (or everyone tapping RACE AGAIN on
+their phones) starts another race. Shortcut for tuning: open
+**`/host/?drive`** to skip the lobby and race immediately with WASD.
 
 ---
 
@@ -162,12 +171,44 @@ drive immediately with WASD.
 * **Flick/trick sensitivity:** `DEFAULT_TRICK` in [`src/controller/trick.ts`](src/controller/trick.ts).
 * **Kart handling and camera:** [`src/sim/config.ts`](src/sim/config.ts) – top
   speed, acceleration curve, braking, reverse, turn rates at low/high speed,
-  grip, off-road penalties, gravity, plus chase-camera distance/lag/FOV. Save
-  the file and the dev server reloads. Drift and item numbers will go here too.
+  grip, off-road penalties, boosts (pads, rocket start), wall/kart bounce,
+  gravity, plus chase-camera distance/lag/FOV. Save the file and the dev server
+  reloads. Drift and item numbers will go here too.
+* **Race rules:** countdown length, rocket-start window, finish grace period in
+  [`src/sim/race.ts`](src/sim/race.ts).
+* **Tracks:** [`src/track/tracks/meadowRing.ts`](src/track/tracks/meadowRing.ts).
+  A track is a list of control points plus walls, ramps and boost pads placed
+  "between point 10 and 11" style. To add one, copy that file, change the
+  points, and add it to [`src/track/index.ts`](src/track/index.ts). `npm test`
+  checks every track automatically: it can't pass too close to itself, has no
+  corner tighter than 15 m, and the grid is on the road.
 
 ---
 
-## 6. Milestone 2 test checklist
+## 6. Milestone 3 test checklist
+
+1. Open `/host/?drive` (or the GitHub Pages link with `?drive`). You're on the
+   grid at the start line under a checkered gantry, and **3-2-1-GO!** counts down.
+2. **Rocket start:** press W when the **1** appears and hold it. You should see
+   "ROCKET START!" and shoot off. Holding W from the start shows "Too early!" and
+   the kart sputters briefly.
+3. Drive a lap. Look for: the road banks in the corners (the kart tilts), tire
+   walls on the outside of the big sweep and both sides of the S-bend (you bounce
+   and lose some speed, never stop dead), an orange boost pad right after the
+   start and another after the S-bend, and the yellow jump ramp near the end.
+4. Top-left shows your position, top-right **LAP x/3** and the race time.
+   "LAP 2" / "FINAL LAP!" flash as you cross the line.
+5. Try cutting across the grass: the lap does not count until you go back and
+   pass the missed part.
+6. With phones: everyone joins and readies, then all karts line up. Phones show
+   position and lap, and Android buzzes on walls, boosts, laps and finish.
+7. After 3 laps (or 20 s after the winner), the results screen lists places,
+   times and best laps. Everyone taps **RACE AGAIN** on their phone (or press
+   Enter) to restart. **Esc** goes back to the lobby.
+
+---
+
+## 7. Milestone 2 test checklist
 
 1. `npm run dev`, open `https://localhost:5173/host/?drive`. You're in a green
    kart on the start straight. W = gas, S = brake/reverse, A/D = steer.
@@ -184,7 +225,7 @@ drive immediately with WASD.
 5. Try the ⚙ sensitivity / full-lock sliders mid-drive; changes apply instantly.
 6. Press **C** to cycle the camera between karts, **Esc** to go back to the lobby.
 
-## 7. Milestone 1 test checklist
+## 8. Milestone 1 test checklist
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
@@ -207,7 +248,7 @@ drive immediately with WASD.
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Fix |
 |---|---|

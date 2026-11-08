@@ -3,17 +3,22 @@
  * (x, z)?" through this interface, so the flat test plane (M2) and the real
  * spline track (M3) are interchangeable.
  */
-export type Surface = 'road' | 'offroad';
+export type Surface = 'road' | 'offroad' | 'boost';
 
 export interface GroundHit {
   /** Height of the surface at this point (m). */
   height: number;
   surface: Surface;
+  /** Track sample index under this point (tracks only); pass back as `hint` next time. */
+  index?: number;
 }
 
 export interface Ground {
-  /** Vertical raycast. Returns null where there is no ground (fell off the world). */
-  sample(x: number, z: number): GroundHit | null;
+  /**
+   * Vertical raycast. Returns null where there is no ground (fell off the world).
+   * `hint` = the `index` from this kart's previous hit, if any (speeds up track lookups).
+   */
+  sample(x: number, z: number, hint?: number): GroundHit | null;
 }
 
 // ---------------------------------------------------------------------------

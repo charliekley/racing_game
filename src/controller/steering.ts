@@ -118,6 +118,12 @@ export class SteeringProcessor {
   upright = false;
   /** Set to true when `inverted` changed automatically (caller may persist it). */
   signChanged = false;
+  /**
+   * Once locked, the grip never changes by itself (and the sign is no longer
+   * auto-learned), so the controller layout stays put. Only toggleInverted()
+   * (the "Flip 180" button) changes it.
+   */
+  gripLocked = false;
 
   private centerDeg = 0;
   private calibrated = false;
@@ -162,7 +168,7 @@ export class SteeringProcessor {
     const inPlane = Math.hypot(gx, gy);
     const valid = inPlane >= MIN_IN_PLANE_G;
 
-    this.learnSign(gx, gy, screenDeg, valid);
+    if (!this.gripLocked) this.learnSign(gx, gy, screenDeg, valid);
 
     if (valid) {
       const trueRoll = wrapDeg(rollFromGravity(gx, gy) + (this.inverted ? 180 : 0));
@@ -171,7 +177,7 @@ export class SteeringProcessor {
       // Grip with hysteresis.
       if (this.grip === null) {
         if (!this.upright) this.grip = trueRoll < 0 ? 'left' : 'right';
-      } else {
+      } else if (!this.gripLocked) {
         const other: Grip = this.grip === 'left' ? 'right' : 'left';
         if (Math.abs(wrapDeg(trueRoll - GRIP_ROLL[other])) < GRIP_SWITCH_DEG) this.grip = other;
       }

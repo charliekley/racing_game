@@ -110,6 +110,8 @@ export class PlayerManager {
   setPhase(phase: GamePhase): void {
     this.slots.phase = phase;
     if (phase === 'lobby') this.slots.resetToLobby();
+    // Results screen: "ready" now means "race again", so everyone starts un-ready.
+    if (phase === 'results') for (const p of this.slots.players) p.ready = false;
     this.broadcast({ t: 'phase', phase });
     this.lobbyChanged();
   }
@@ -141,6 +143,7 @@ export class PlayerManager {
   updateLocal(dtSec: number): void {
     const pressed = this.keys.consumePressed();
     const inLobby = this.slots.phase === 'lobby';
+    const canReady = inLobby || this.slots.phase === 'results';
 
     // Join / leave with keys 1 and 2.
     KEY_JOIN.forEach((code, scheme) => {
@@ -189,7 +192,7 @@ export class PlayerManager {
 
       // In the lobby, the ITEM button toggles ready for local players.
       const prev = this.prevLocalButtons.get(slot.index) ?? 0;
-      if (inLobby && input.buttons & Buttons.ITEM && !(prev & Buttons.ITEM)) {
+      if (canReady && input.buttons & Buttons.ITEM && !(prev & Buttons.ITEM)) {
         this.slots.setReady(slot.index, !slot.ready);
         this.lobbyChanged();
       }
@@ -263,7 +266,7 @@ export class PlayerManager {
         this.lobbyChanged();
         return;
       case 'ready':
-        if (session.slotIndex === null || this.slots.phase !== 'lobby') return;
+        if (session.slotIndex === null || (this.slots.phase !== 'lobby' && this.slots.phase !== 'results')) return;
         this.slots.setReady(session.slotIndex, !!msg.ready);
         this.lobbyChanged();
         return;

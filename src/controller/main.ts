@@ -223,7 +223,27 @@ motion.onTrick = () => {
   trickUntil = performance.now() + TRICK_PULSE_MS;
 };
 
+// --- One-time "turn on rotation lock" tip (per browser session) -------------
+const LOCK_TIP_KEY = 'tiltkart.lockTipSeen';
+let lockTipDone = (() => {
+  try {
+    return sessionStorage.getItem(LOCK_TIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+})();
+$('lock-ok').addEventListener('click', () => {
+  lockTipDone = true;
+  try {
+    sessionStorage.setItem(LOCK_TIP_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+  $('lock-overlay').classList.add('hidden');
+});
+
 function startPlaying() {
+  if (!lockTipDone) $('lock-overlay').classList.remove('hidden');
   motion.start();
   showScreen('pad-screen');
   applyPlayerColor();
@@ -244,9 +264,10 @@ $('ready-btn').addEventListener('click', () => {
 
 function updateReadyButton() {
   const btn = $('ready-btn');
-  btn.classList.toggle('hidden', phase !== 'lobby');
+  const label = phase === 'results' ? 'RACE AGAIN' : 'READY';
+  btn.classList.toggle('hidden', phase !== 'lobby' && phase !== 'results');
   btn.classList.toggle('is-ready', ready);
-  btn.textContent = ready ? 'READY ✓' : 'READY';
+  btn.textContent = ready ? `${label} ✓` : label;
 }
 
 // Pause: release all buttons when the app is backgrounded.
@@ -340,7 +361,7 @@ function handleHostMessage(msg: HostToController) {
     }
     case 'phase':
       phase = msg.phase;
-      if (phase === 'lobby') ready = false;
+      if (phase === 'lobby' || phase === 'results') ready = false;
       updateReadyButton();
       break;
     case 'status':
@@ -410,8 +431,18 @@ let stageH = 0;
  * whole stage 90 deg ourselves. Without the lock the browser has already turned
  * the page and the extra rotation works out to 0.
  */
+let seenSideways = false;
+
 function layoutStage() {
-  const rot = motion.hasSensor ? uiRotationDeg(motion.steering.grip, screenOrientationDeg()) : 0;
+  const st = motion.steering;
+  // The first time the phone is held sideways, lock the grip: from then on the
+  // layout never moves (only the Flip 180 button can change it).
+  if (motion.hasSensor && !st.gripLocked && st.grip !== null && !st.upright && lockTipDone) {
+    st.gripLocked = true;
+  }
+  if (motion.hasSensor ? st.gripLocked : !isPortrait()) seenSideways = true;
+  // Before the lock, show portrait (the "turn sideways" prompt is on top anyway).
+  const rot = motion.hasSensor && st.gripLocked ? uiRotationDeg(st.grip, screenOrientationDeg()) : 0;
   const sideways = Math.abs(rot) === 90;
   const w = sideways ? window.innerHeight : window.innerWidth;
   const h = sideways ? window.innerWidth : window.innerHeight;
@@ -428,7 +459,8 @@ function layoutStage() {
     window.dispatchEvent(new Event('resize')); // let the item canvas re-measure
   }
   // "Turn your phone sideways" prompt: from the sensor if we have one, else from the window shape.
-  const needRotate = motion.hasSensor ? motion.steering.upright || motion.steering.grip === null : isPortrait();
+  // Only shown once, at the start; never again after the first time sideways.
+  const needRotate = lockTipDone && !seenSideways;
   document.body.classList.toggle('need-rotate', needRotate);
 }
 

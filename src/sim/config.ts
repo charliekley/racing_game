@@ -46,6 +46,26 @@ export const KART = {
   /** Acceleration multiplier on grass/sand. */
   offroadAccelFactor: 0.6,
 
+  // --- Boosts -------------------------------------------------------------------
+  /** Top speed multiplier while boosting (boost pads, start boost, later mini-turbos/items). */
+  boostSpeedFactor: 1.35,
+  /** Acceleration while boosting (m/s^2). Boosting also ignores the off-road penalty. */
+  boostAccel: 45,
+  /** Boost pad duration (s). */
+  boostPadTime: 1.1,
+  /** Countdown "rocket start" boost duration (s). */
+  startBoostTime: 1.3,
+  /** Pressing gas too early in the countdown floods the engine for this long (s). */
+  startStallTime: 0.9,
+
+  // --- Collisions -----------------------------------------------------------------
+  /** Fraction of the impact velocity bounced back off walls (0 = dead stop on the wall, 1 = superball). */
+  wallBounce: 0.35,
+  /** Extra speed lost per wall hit, scaled by how head-on it was (0..1). */
+  wallSpeedLoss: 0.45,
+  /** Kart-vs-kart bounce (0..1). */
+  kartBounce: 0.6,
+
   // --- Vertical ------------------------------------------------------------------
   /** Gravity (m/s^2). Heavier than real (9.81) so jumps feel snappy. */
   gravity: 28,
@@ -53,7 +73,7 @@ export const KART = {
   groundSnap: 0.35,
 
   // --- Body ---------------------------------------------------------------------
-  /** Collision radius used later for kart-vs-kart and walls (m). */
+  /** Collision radius for kart-vs-kart and walls (m). */
   radius: 0.9,
 } as const;
 

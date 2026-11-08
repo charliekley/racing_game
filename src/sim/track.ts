@@ -1,0 +1,356 @@
+/**
+ * Turns a TrackDef (control points) into everything the simulation needs:
+ * an evenly sampled centerline with width/banking/walls, a "project a point
+ * onto the track" query, and the Ground (height + surface) the karts drive on.
+ *
+ * Pure math; the renderer builds its meshes from the same samples so visuals
+ * and physics always agree.
+ */
+import type { TrackDef } from '../track/types';
+import type { Ground, GroundHit, Surface } from './ground';
+
+/** Distance between centerline samples (m). */
+export const SAMPLE_SPACING = 2;
+/** Curb width (m) – drivable like road, drawn red/white. */
+export const CURB_WIDTH = 1.2;
+
+export interface TrackSample {
+  x: number;
+  y: number;
+  z: number;
+  /** Unit tangent (direction of travel) and unit right vector, horizontal. */
+  tx: number;
+  tz: number;
+  rx: number;
+  rz: number;
+  /** Distance from the start line along the centerline (m). */
+  s: number;
+  heading: number;
+  /** Signed curvature (1/m); negative = turning right. */
+  curvature: number;
+  /** Signed bank angle (rad); positive = right edge raised. */
+  bank: number;
+  width: number;
+  wallLeft: boolean;
+  wallRight: boolean;
+}
+
+export interface Projection {
+  /** Index of the sample at the start of the nearest segment. */
+  i: number;
+  /** Distance along the track (0..length). */
+  s: number;
+  /** Signed lateral offset from the centerline (m), positive = right of travel direction. */
+  d: number;
+  /** Interpolated centerline height, width and bank at this point. */
+  y: number;
+  width: number;
+  bank: number;
+}
+
+interface V3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+// ---------------------------------------------------------------------------
+// Centripetal Catmull-Rom spline (passes through every control point and,
+// unlike the uniform variant, never makes loops or cusps on uneven spacing).
+// ---------------------------------------------------------------------------
+function catmullRom(p0: V3, p1: V3, p2: V3, p3: V3, u: number): V3 {
+  const knot = (a: V3, b: V3) => Math.max(1e-4, Math.sqrt(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z)));
+  const t0 = 0;
+  const t1 = t0 + knot(p0, p1);
+  const t2 = t1 + knot(p1, p2);
+  const t3 = t2 + knot(p2, p3);
+  const t = t1 + (t2 - t1) * u;
+  const mix = (a: V3, b: V3, ta: number, tb: number): V3 => {
+    const wa = (tb - t) / (tb - ta);
+    const wb = (t - ta) / (tb - ta);
+    return { x: a.x * wa + b.x * wb, y: a.y * wa + b.y * wb, z: a.z * wa + b.z * wb };
+  };
+  const a1 = mix(p0, p1, t0, t1);
+  const a2 = mix(p1, p2, t1, t2);
+  const a3 = mix(p2, p3, t2, t3);
+  const b1 = mix(a1, a2, t0, t2);
+  const b2 = mix(a2, a3, t1, t3);
+  return mix(b1, b2, t1, t2);
+}
+
+const wrapRad = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+export interface Ramp {
+  s0: number;
+  s1: number;
+  height: number;
+}
+export interface BoostPad {
+  s0: number;
+  s1: number;
+  d0: number;
+  d1: number;
+}
+
+export class Track implements Ground {
+  readonly samples: TrackSample[] = [];
+  readonly length: number;
+  /** Actual distance between samples (≈ SAMPLE_SPACING, divides the length evenly). */
+  readonly spacing: number;
+  /** s at each control point. */
+  readonly controlS: number[] = [];
+  readonly ramps: Ramp[] = [];
+  readonly boostPads: BoostPad[] = [];
+  /** s where each checkpoint segment starts; checkpoint 0 = start/finish line (s = 0). */
+  readonly checkpoints: number[] = [];
+
+  constructor(readonly def: TrackDef) {
+    const ctrl: V3[] = def.points.map((p) => ({ x: p[0], y: p[2] ?? 0, z: p[1] }));
+    const n = ctrl.length;
+
+    // 1) Dense polyline through the spline, remembering s at each control point.
+    const dense: V3[] = [];
+    const denseS: number[] = [];
+    const STEPS = 48;
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+      const p0 = ctrl[(i - 1 + n) % n];
+      const p1 = ctrl[i];
+      const p2 = ctrl[(i + 1) % n];
+      const p3 = ctrl[(i + 2) % n];
+      for (let k = 0; k < STEPS; k++) {
+        const p = catmullRom(p0, p1, p2, p3, k / STEPS);
+        if (dense.length > 0) {
+          const q = dense[dense.length - 1];
+          acc += Math.hypot(p.x - q.x, p.z - q.z);
+        }
+        if (k === 0) this.controlS.push(acc);
+        dense.push(p);
+        denseS.push(acc);
+      }
+    }
+    const last = dense[dense.length - 1];
+    acc += Math.hypot(dense[0].x - last.x, dense[0].z - last.z);
+    this.length = acc;
+
+    // 2) Resample at even spacing.
+    const count = Math.max(8, Math.round(this.length / SAMPLE_SPACING));
+    const spacing = this.length / count;
+    let j = 0;
+    for (let k = 0; k < count; k++) {
+      const s = k * spacing;
+      while (j < dense.length - 1 && denseS[j + 1] < s) j++;
+      const a = dense[j];
+      const b = j + 1 < dense.length ? dense[j + 1] : dense[0];
+      const sb = j + 1 < dense.length ? denseS[j + 1] : this.length;
+      const u = sb > denseS[j] ? (s - denseS[j]) / (sb - denseS[j]) : 0;
+      this.samples.push({
+        x: a.x + (b.x - a.x) * u,
+        y: a.y + (b.y - a.y) * u,
+        z: a.z + (b.z - a.z) * u,
+        tx: 0,
+        tz: 0,
+        rx: 0,
+        rz: 0,
+        s,
+        heading: 0,
+        curvature: 0,
+        bank: 0,
+        width: def.width,
+        wallLeft: false,
+        wallRight: false,
+      });
+    }
+    this.spacing = spacing;
+
+    // 3) Tangents, headings, curvature.
+    const S = this.samples;
+    for (let k = 0; k < count; k++) {
+      const prev = S[(k - 1 + count) % count];
+      const next = S[(k + 1) % count];
+      let tx = next.x - prev.x;
+      let tz = next.z - prev.z;
+      const len = Math.hypot(tx, tz) || 1;
+      tx /= len;
+      tz /= len;
+      Object.assign(S[k], { tx, tz, rx: -tz, rz: tx, heading: Math.atan2(tx, tz) });
+    }
+    for (let k = 0; k < count; k++) {
+      const dh = wrapRad(S[(k + 1) % count].heading - S[(k - 1 + count) % count].heading);
+      S[k].curvature = dh / (2 * spacing);
+    }
+
+    // 4) Banking from curvature, smoothed so it eases in and out of corners.
+    const maxBank = (def.maxBankDeg * Math.PI) / 180;
+    const raw = S.map((p) => Math.max(-maxBank, Math.min(maxBank, p.curvature * def.bankPerCurvature)));
+    const R = Math.round(12 / spacing);
+    for (let k = 0; k < count; k++) {
+      let sum = 0;
+      for (let o = -R; o <= R; o++) sum += raw[(k + o + count) % count];
+      S[k].bank = sum / (2 * R + 1);
+    }
+
+    // 5) Walls.
+    for (const w of def.walls) {
+      this.forRange(this.sAt(w.from), this.sAt(w.to), (p) => {
+        const outerLeft = p.curvature < 0; // turning right -> outside is the left
+        if (w.side === 'left' || w.side === 'both' || (w.side === 'outer' && outerLeft)) p.wallLeft = true;
+        if (w.side === 'right' || w.side === 'both' || (w.side === 'outer' && !outerLeft)) p.wallRight = true;
+      });
+    }
+
+    // 6) Features.
+    for (const r of def.ramps) {
+      const s0 = this.sAt(r.at);
+      this.ramps.push({ s0, s1: s0 + r.length, height: r.height });
+    }
+    for (const b of def.boostPads) {
+      const s0 = this.sAt(b.at);
+      const c = (b.offset * def.width) / 2;
+      this.boostPads.push({ s0, s1: s0 + b.length, d0: c - b.width / 2, d1: c + b.width / 2 });
+    }
+    for (let c = 0; c < def.checkpoints; c++) this.checkpoints.push((c * this.length) / def.checkpoints);
+  }
+
+  /** Control-point units (e.g. 3.5) -> distance along the track. */
+  sAt(at: number): number {
+    const n = this.controlS.length;
+    const i = Math.floor(at);
+    const f = at - i;
+    const a = this.controlS[((i % n) + n) % n];
+    let b = this.controlS[(((i + 1) % n) + n) % n];
+    if (b < a) b += this.length;
+    return (a + (b - a) * f) % this.length;
+  }
+
+  private forRange(s0: number, s1: number, fn: (p: TrackSample) => void): void {
+    for (const p of this.samples) {
+      const inRange = s0 <= s1 ? p.s >= s0 && p.s <= s1 : p.s >= s0 || p.s <= s1;
+      if (inRange) fn(p);
+    }
+  }
+
+  /** Signed distance along the loop from a to b, in (-L/2, L/2]. */
+  deltaS(a: number, b: number): number {
+    let d = (b - a) % this.length;
+    if (d > this.length / 2) d -= this.length;
+    if (d <= -this.length / 2) d += this.length;
+    return d;
+  }
+
+  /**
+   * Nearest point on the centerline. With a `hint` (sample index from last
+   * frame) only nearby segments are searched – fast, and it keeps a kart on
+   * "its" part of the track where the track passes close to itself.
+   */
+  project(x: number, z: number, hint = -1): Projection {
+    const S = this.samples;
+    const n = S.length;
+    let best = Infinity;
+    let bi = 0;
+    let bu = 0;
+    const test = (i: number) => {
+      const a = S[i];
+      const b = S[(i + 1) % n];
+      const ex = b.x - a.x;
+      const ez = b.z - a.z;
+      const len2 = ex * ex + ez * ez || 1;
+      let u = ((x - a.x) * ex + (z - a.z) * ez) / len2;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const qx = a.x + ex * u - x;
+      const qz = a.z + ez * u - z;
+      const d2 = qx * qx + qz * qz;
+      if (d2 < best) {
+        best = d2;
+        bi = i;
+        bu = u;
+      }
+    };
+    if (hint >= 0) {
+      for (let o = -12; o <= 12; o++) test((hint + o + n) % n);
+      // Lost track of it (respawn, huge shortcut): fall back to a full search.
+      if (best > 60 * 60) for (let i = 0; i < n; i++) test(i);
+    } else {
+      for (let i = 0; i < n; i++) test(i);
+    }
+    const a = S[bi];
+    const b = S[(bi + 1) % n];
+    const cx = a.x + (b.x - a.x) * bu;
+    const cz = a.z + (b.z - a.z) * bu;
+    const rx = a.rx + (b.rx - a.rx) * bu;
+    const rz = a.rz + (b.rz - a.rz) * bu;
+    const rl = Math.hypot(rx, rz) || 1;
+    return {
+      i: bi,
+      s: (a.s + this.spacing * bu) % this.length,
+      d: ((x - cx) * rx + (z - cz) * rz) / rl,
+      y: a.y + (b.y - a.y) * bu,
+      width: a.width + (b.width - a.width) * bu,
+      bank: a.bank + (b.bank - a.bank) * bu,
+    };
+  }
+
+  /** Extra height from banking at lateral offset d (the low edge stays at the base height). */
+  static bankLift(bank: number, halfWidth: number, d: number): number {
+    const t = Math.tan(Math.abs(bank));
+    const dd = Math.max(-halfWidth, Math.min(halfWidth, d));
+    return Math.max(0, t * (halfWidth + Math.sign(bank) * dd));
+  }
+
+  /** Height of the ramp at distance s along the track (0 outside ramps). */
+  rampHeight(s: number): number {
+    for (const r of this.ramps) {
+      const into = this.deltaS(r.s0, s);
+      const len = r.s1 - r.s0;
+      if (into >= 0 && into <= len) return (r.height * into) / len;
+    }
+    return 0;
+  }
+
+  /** Height and surface at a projected point. */
+  surfaceAt(p: Projection): GroundHit {
+    const hw = p.width / 2;
+    const ad = Math.abs(p.d);
+    const edgeLift = Track.bankLift(p.bank, hw, p.d);
+    let surface: Surface;
+    let height: number;
+    if (ad <= hw + CURB_WIDTH) {
+      surface = 'road';
+      height = p.y + edgeLift + (ad <= hw ? this.rampHeight(p.s) : 0);
+      for (const b of this.boostPads) {
+        const into = this.deltaS(b.s0, p.s);
+        if (into >= 0 && into <= b.s1 - b.s0 && p.d >= b.d0 && p.d <= b.d1) surface = 'boost';
+      }
+    } else {
+      surface = 'offroad';
+      // The off-road strip slopes from the road edge back down to the terrain.
+      const span = this.def.offroadWidth - CURB_WIDTH;
+      const f = Math.min(1, (ad - hw - CURB_WIDTH) / Math.max(0.1, span));
+      height = p.y + edgeLift * (1 - f);
+    }
+    return { height, surface };
+  }
+
+  /** Ground interface (vertical raycast). The track is surrounded by endless flat terrain. */
+  sample(x: number, z: number, hint = -1): GroundHit & { index: number } {
+    const p = this.project(x, z, hint);
+    return { ...this.surfaceAt(p), index: p.i };
+  }
+
+  /** Lateral position of the wall on each side (m from centerline), or null if no wall here. */
+  wallsAt(i: number): { left: number | null; right: number | null } {
+    const p = this.samples[i];
+    const off = p.width / 2 + this.def.offroadWidth;
+    return { left: p.wallLeft ? -off : null, right: p.wallRight ? off : null };
+  }
+
+  /** World position and heading for a starting-grid slot (0 = pole). */
+  gridSpot(index: number): { x: number; z: number; heading: number } {
+    const s = this.length - 9 - index * 6;
+    const k = Math.floor(s / this.spacing) % this.samples.length;
+    const a = this.samples[k];
+    const side = index % 2 === 0 ? -1 : 1; // pole on the left
+    const lateral = side * this.def.width * 0.22;
+    return { x: a.x + a.rx * lateral, z: a.z + a.rz * lateral, heading: a.heading };
+  }
+}

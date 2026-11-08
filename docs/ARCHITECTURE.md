@@ -59,26 +59,32 @@ racing_game/
    │  ├─ itemView.ts           ✅ item window canvas (real icons in M6)
    │  └─ device.ts, settings.ts ✅ permissions, wake lock, vibration, prefs
    ├─ host/
-   │  ├─ main.ts               ✅ host entry (lobby now; game loop later)
+   │  ├─ main.ts               ✅ host entry: lobby ⇄ race ⇄ results flow
    │  ├─ playerSlots.ts        ✅ 4 slots, rejoin, ready logic (pure, tested)
    │  ├─ playerManager.ts      ✅ phones + local devices → latest input per slot
    │  ├─ input/localInput.ts   ✅ keyboard + gamepad fallback
    │  ├─ lobbyView.ts          ✅ lobby cards + input debug readout
-   │  ├─ game.ts               ✅ driving session: World + renderer + loop
-   │  └─ ui/                   M3/M4 HUD, countdown, results
+   │  ├─ game.ts               ✅ one race: World + renderer + loop, HUD, results,
+   │  │                           phone status + haptics (per-viewport HUD in M4)
    ├─ sim/                     ✅ pure TS, no DOM/Three.js
    │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
    │  ├─ loop.ts               ✅ fixed-timestep accumulator
-   │  ├─ kart.ts               ✅ arcade kart controller (raycast ground; drift/boosts in M5)
-   │  ├─ ground.ts             ✅ Ground interface + M2 test oval
-   │  ├─ world.ts              ✅ all karts, tick()
-   │  ├─ race.ts               M3 checkpoints, laps, ranking, countdown
+   │  ├─ kart.ts               ✅ arcade kart controller (raycast ground, slopes/jumps,
+   │  │                           boosts; drift in M5)
+   │  ├─ ground.ts             ✅ Ground interface (+ flat test oval used by tests)
+   │  ├─ track.ts              ✅ spline → samples, banking, walls, ramps, boost pads,
+   │  │                           project(), Ground implementation
+   │  ├─ collision.ts          ✅ wall + kart-vs-kart bounces
+   │  ├─ race.ts               ✅ countdown/rocket start, checkpoints, laps, ranking, finish
+   │  ├─ world.ts              ✅ track + karts + race, tick() → events
    │  └─ items/                one file per item behind an `ItemBehavior` interface
-   ├─ track/                   M3+
-   │  ├─ tracks/*.ts           control-point files (adding a track = adding a file)
-   │  └─ buildTrack.ts         spline → road/walls/ramps/checkpoints (data + meshes)
-   ├─ render/                  ✅ Three.js: scene/sky, kart model, interpolated kart view,
-   │                              chase camera, test-ground visuals (split-screen in M4)
+   ├─ track/                   ✅ track DATA only
+   │  ├─ types.ts              ✅ TrackDef format
+   │  ├─ tracks/meadowRing.ts  ✅ control points + features (adding a track = adding a file)
+   │  └─ index.ts              ✅ list of tracks
+   ├─ render/                  ✅ Three.js: scene/sky, procedural textures, kart model,
+   │                              interpolated kart view (tilts with the road), chase camera,
+   │                              trackView (road/curbs/walls/ramp/pads/gantry/scenery)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

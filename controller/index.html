@@ -48,7 +48,7 @@
     <section id="pad-screen" class="screen hidden">
       <div id="zone-left" class="zone left">
         <div class="btn item" data-button="ITEM">ITEM</div>
-        <div class="btn brake" data-button="BRAKE">BRAKE</div>
+        <div class="btn drift" data-button="DRIFT">DRIFT</div>
       </div>
 
       <div class="center">
@@ -74,7 +74,7 @@
       </div>
 
       <div id="zone-right" class="zone right">
-        <div class="btn drift" data-button="DRIFT">DRIFT</div>
+        <div class="btn brake" data-button="BRAKE">BRAKE</div>
         <div class="btn gas" data-button="GAS">GAS</div>
       </div>
     </section>
@@ -104,6 +104,21 @@
     </div>
 
     <pre id="debug-overlay" class="debug-overlay hidden"></pre>
+    </div>
+
+    <!-- One-time tip, must be acknowledged -->
+    <div id="lock-overlay" class="overlay lock hidden">
+      <div class="lock-box">
+        <div class="lock-icon">🔒</div>
+        <h2>Turn on rotation lock</h2>
+        <p>
+          <b>iPhone:</b> swipe down from the top-right corner and tap the lock icon.<br />
+          <b>Android:</b> swipe down and turn <i>Auto-rotate</i> off.
+        </p>
+        <p>Then hold the phone sideways like a steering wheel. The controller turns itself to match, and the
+          buttons stay put for the rest of the session.</p>
+        <button id="lock-ok" class="big-btn">Got it</button>
+      </div>
     </div>
 
     <div id="rotate-overlay" class="overlay rotate">

@@ -103,13 +103,21 @@ let startTimer: ReturnType<typeof setTimeout> | null = null;
 
 function startDriving() {
   startTimer = null;
-  if (driving || players.slots.players.length === 0) return;
+  if (players.slots.players.length === 0) return;
   driving = true;
-  players.setPhase('race');
+  players.setPhase('countdown');
   $('app').classList.add('hidden');
   gameEl.classList.remove('hidden');
-  game ??= new Game(gameEl, players);
+  game ??= new Game(gameEl, players, {
+    onGo: () => players.setPhase('race'),
+    onResults: () => players.setPhase('results'),
+  });
   game.start(players.slots.players.map((p) => p.index));
+}
+
+/** From the results screen: same players, new race. */
+function raceAgain() {
+  if (driving && players.slots.phase === 'results') startDriving();
 }
 
 function backToLobby() {
@@ -123,7 +131,11 @@ function backToLobby() {
 
 players.onLobbyChange.add(() => {
   lobbyView.render();
-  if (driving) return;
+  if (driving) {
+    // Results screen: when every connected player taps RACE AGAIN, go again.
+    if (players.slots.phase === 'results' && players.slots.allReady()) raceAgain();
+    return;
+  }
   // When everyone is ready, start after a short pause (cancelled if someone un-readies).
   const all = players.slots.allReady();
   banner.classList.toggle('hidden', !all);
@@ -138,6 +150,7 @@ lobbyView.render();
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') backToLobby();
+  if (e.code === 'Enter' && driving && players.slots.phase === 'results') raceAgain();
 });
 
 // Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into driving.

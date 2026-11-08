@@ -29,13 +29,19 @@ export interface KartState {
   yawRate: number;
   grounded: boolean;
   surface: Surface;
-  /** Smoothed steer value the kart is applying (-1..1), for wheel visuals. */
+  /** Steer value the kart is applying (-1..1), for wheel visuals. */
   steer: number;
+  /** Seconds of boost left (boost pads, rocket start, …). */
+  boostTime: number;
+  /** Seconds left where the engine gives no power (flooded start). */
+  stallTime: number;
+  /** Track sample index from the last ground hit (lookup hint), -1 if unknown. */
+  trackIndex: number;
 }
 
-export function createKart(x: number, z: number, heading: number): KartState {
+export function createKart(x: number, z: number, heading: number, y = 0): KartState {
   return {
-    pos: { x, y: 0, z },
+    pos: { x, y, z },
     vel: { x: 0, y: 0, z: 0 },
     heading,
     speed: 0,
@@ -43,6 +49,9 @@ export function createKart(x: number, z: number, heading: number): KartState {
     grounded: true,
     surface: 'road',
     steer: 0,
+    boostTime: 0,
+    stallTime: 0,
+    trackIndex: -1,
   };
 }
 
@@ -61,16 +70,36 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const approach = (v: number, target: number, maxDelta: number) =>
   v < target ? Math.min(target, v + maxDelta) : Math.max(target, v - maxDelta);
 
+export interface SpeedContext {
+  surface: Surface;
+  boosting: boolean;
+  stalled: boolean;
+}
+
 /** New forward speed after throttle/brake/coast for one step. */
-export function updateSpeed(speed: number, input: ControlInput, surface: Surface, dt: number, c: KartConfig = KART): number {
+export function updateSpeed(
+  speed: number,
+  input: ControlInput,
+  ctx: SpeedContext | Surface,
+  dt: number,
+  c: KartConfig = KART,
+): number {
+  const { surface, boosting, stalled } = typeof ctx === 'string' ? { surface: ctx, boosting: false, stalled: false } : ctx;
   const gas = (input.buttons & Buttons.GAS) !== 0;
   const brake = (input.buttons & Buttons.BRAKE) !== 0;
-  const offroad = surface === 'offroad';
+  const offroad = surface === 'offroad' && !boosting; // boosting powers through grass
+
+  if (boosting) {
+    // Boost: strong push up to the boosted top speed, gas or not.
+    const cap = c.maxSpeed * c.boostSpeedFactor;
+    return speed < cap ? Math.min(cap, speed + c.boostAccel * dt) : speed;
+  }
+
   const cap = c.maxSpeed * (offroad ? c.offroadSpeedFactor : 1);
   const accel = c.accel * (offroad ? c.offroadAccelFactor : 1);
 
   let v = speed;
-  if (gas && !brake) {
+  if (gas && !brake && !stalled) {
     if (v < 0) v = approach(v, 0, c.brakeDecel * dt); // gas while rolling backwards = brake first
     else if (v < cap) {
       const fade = Math.max(0, 1 - Math.pow(v / cap, c.accelCurve));
@@ -78,12 +107,12 @@ export function updateSpeed(speed: number, input: ControlInput, surface: Surface
     }
   } else if (brake && !gas) {
     if (v > 0.5) v = Math.max(0, v - c.brakeDecel * dt);
-    else v = Math.max(-c.reverseMaxSpeed, v - c.reverseAccel * dt);
+    else if (!stalled) v = Math.max(-c.reverseMaxSpeed, v - c.reverseAccel * dt);
   } else {
-    // Coasting (or both pedals): roll to a stop.
+    // Coasting (or both pedals, or stalled): roll to a stop.
     v = approach(v, 0, c.coastDecel * dt);
   }
-  // Above the cap (e.g. just drove onto grass): bleed off, don't stop dead.
+  // Above the cap (e.g. just drove onto grass or a boost ran out): bleed off, don't stop dead.
   if (v > cap) v = Math.max(cap, v - c.overSpeedDecel * dt);
   if (v < -c.reverseMaxSpeed) v = -c.reverseMaxSpeed;
   return v;
@@ -97,12 +126,21 @@ export function turnRateFor(speed: number, c: KartConfig = KART): number {
   return lerp(c.turnRateLow, c.turnRateHigh, frac) * authority;
 }
 
+/** Start (or extend) a boost. */
+export function applyBoost(k: KartState, seconds: number): void {
+  k.boostTime = Math.max(k.boostTime, seconds);
+}
+
 /**
  * Advance one kart by one fixed step. Mutates and returns `k`.
  */
 export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: number, c: KartConfig = KART): KartState {
   const steer = clamp(Number.isFinite(input.steer) ? input.steer : 0, -1, 1);
   k.steer = steer;
+  const boosting = k.boostTime > 0;
+  k.boostTime = Math.max(0, k.boostTime - dt);
+  const stalled = k.stallTime > 0;
+  k.stallTime = Math.max(0, k.stallTime - dt);
 
   // Split current horizontal velocity into forward / sideways parts.
   let f = forwardOf(k.heading);
@@ -110,7 +148,7 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   let lateral = k.vel.x * r.x + k.vel.z * r.z;
 
   if (k.grounded) {
-    k.speed = updateSpeed(k.speed, input, k.surface, dt, c);
+    k.speed = updateSpeed(k.speed, input, { surface: k.surface, boosting, stalled }, dt, c);
   }
 
   // Steering: reversing turns the other way, like a real car.
@@ -126,22 +164,34 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   k.vel.x = f.x * k.speed + r.x * lateral;
   k.vel.z = f.z * k.speed + r.z * lateral;
 
-  // Vertical: gravity while airborne.
-  if (!k.grounded) k.vel.y -= c.gravity * dt;
-
+  const prevY = k.pos.y;
   k.pos.x += k.vel.x * dt;
-  k.pos.y += k.vel.y * dt;
   k.pos.z += k.vel.z * dt;
 
-  // Ground following: raycast straight down.
-  const hit = ground.sample(k.pos.x, k.pos.z);
-  if (hit && k.pos.y <= hit.height + (k.grounded ? c.groundSnap : 0)) {
-    k.pos.y = hit.height;
-    if (k.vel.y < 0) k.vel.y = 0;
-    k.grounded = true;
-    k.surface = hit.surface;
-  } else {
-    k.grounded = false;
+  const hit = ground.sample(k.pos.x, k.pos.z, k.trackIndex);
+  if (hit?.index !== undefined) k.trackIndex = hit.index;
+
+  if (k.grounded) {
+    // Follow the ground as long as it doesn't drop away faster than `groundSnap`
+    // per step. Vertical speed = slope × speed, so driving up a ramp builds
+    // upward velocity and you fly off the end.
+    if (hit && hit.height >= prevY - c.groundSnap) {
+      k.vel.y = clamp((hit.height - prevY) / dt, -30, 30);
+      k.pos.y = hit.height;
+      k.surface = hit.surface;
+    } else {
+      k.grounded = false; // ground fell away (ramp lip, ledge): keep current vel.y
+    }
+  }
+  if (!k.grounded) {
+    k.vel.y -= c.gravity * dt;
+    k.pos.y += k.vel.y * dt;
+    if (hit && k.pos.y <= hit.height) {
+      k.pos.y = hit.height;
+      k.vel.y = 0;
+      k.grounded = true;
+      k.surface = hit.surface;
+    }
   }
   return k;
 }

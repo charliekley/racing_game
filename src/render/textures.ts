@@ -28,17 +28,19 @@ function canvasTexture(size: number, draw: (ctx: CanvasRenderingContext2D, size:
   return tex;
 }
 
-export function grassTexture(): THREE.CanvasTexture {
+/** Speckled ground texture in any base color (grass, sand, …). */
+export function grassTexture(base = '#5fae4a', seed = 1): THREE.CanvasTexture {
   return canvasTexture(256, (ctx, n) => {
-    ctx.fillStyle = '#5fae4a';
+    const c = new THREE.Color(base);
+    ctx.fillStyle = base;
     ctx.fillRect(0, 0, n, n);
-    const rnd = seededRandom(1);
+    const rnd = seededRandom(seed);
+    const tmp = new THREE.Color();
     for (let i = 0; i < 2600; i++) {
-      const g = 140 + Math.floor(rnd() * 60);
-      ctx.fillStyle = `rgb(${70 + rnd() * 30}, ${g}, ${50 + rnd() * 25})`;
+      tmp.copy(c).offsetHSL((rnd() - 0.5) * 0.04, (rnd() - 0.5) * 0.1, (rnd() - 0.5) * 0.14);
+      ctx.fillStyle = `#${tmp.getHexString()}`;
       ctx.fillRect(rnd() * n, rnd() * n, 2 + rnd() * 3, 2 + rnd() * 3);
     }
-    // Faint mowing stripes
     ctx.fillStyle = 'rgba(255,255,255,0.05)';
     ctx.fillRect(0, 0, n / 2, n);
   });
@@ -86,4 +88,60 @@ export function checkerTexture(): THREE.CanvasTexture {
   });
   tex.magFilter = THREE.NearestFilter;
   return tex;
+}
+
+/** Yellow/black chevrons for jump ramps (V along the ramp). */
+export function rampTexture(): THREE.CanvasTexture {
+  return canvasTexture(128, (ctx, n) => {
+    ctx.fillStyle = '#f2c230';
+    ctx.fillRect(0, 0, n, n);
+    ctx.fillStyle = '#222';
+    for (let k = -1; k < 3; k++) {
+      ctx.beginPath();
+      const y = k * (n / 2);
+      ctx.moveTo(0, y + n * 0.35);
+      ctx.lineTo(n / 2, y);
+      ctx.lineTo(n, y + n * 0.35);
+      ctx.lineTo(n, y + n * 0.55);
+      ctx.lineTo(n / 2, y + n * 0.2);
+      ctx.lineTo(0, y + n * 0.55);
+      ctx.fill();
+    }
+  });
+}
+
+/** Stacked tire barrier: alternating red/white blocks with dark tire bands. */
+export function wallTexture(): THREE.CanvasTexture {
+  return canvasTexture(64, (ctx, n) => {
+    ctx.fillStyle = '#e8e8e8';
+    ctx.fillRect(0, 0, n, n);
+    ctx.fillStyle = '#d33';
+    ctx.fillRect(0, 0, n, n / 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    for (let i = 0; i < 4; i++) ctx.fillRect(0, (i * n) / 4, n, 3);
+  });
+}
+
+/** Glowing arrows for boost pads; scroll texture.offset.y to animate. */
+export function boostTexture(): THREE.CanvasTexture {
+  return canvasTexture(128, (ctx, n) => {
+    const g = ctx.createLinearGradient(0, 0, n, 0);
+    g.addColorStop(0, '#ff6a00');
+    g.addColorStop(0.5, '#ffd000');
+    g.addColorStop(1, '#ff6a00');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, n, n);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let k = 0; k < 2; k++) {
+      const y = k * (n / 2) + n * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(n * 0.15, y + n * 0.3);
+      ctx.lineTo(n / 2, y);
+      ctx.lineTo(n * 0.85, y + n * 0.3);
+      ctx.lineTo(n * 0.85, y + n * 0.42);
+      ctx.lineTo(n / 2, y + n * 0.12);
+      ctx.lineTo(n * 0.15, y + n * 0.42);
+      ctx.fill();
+    }
+  });
 }
