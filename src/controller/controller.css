@@ -119,6 +119,9 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
   container-type: size;
   overflow: hidden;
 }
+/* The stage is a full-screen layer: only show it once the pad is in use,
+   otherwise it sits invisibly on top of the join form and eats every tap. */
+body:not(.playing) #stage { display: none; }
 #pad-screen {
   display: grid;
   /* minmax(0, …) stops content (like the canvas bitmap) from stretching a column. */
