@@ -17,6 +17,7 @@ import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../rende
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { PlayerManager } from './playerManager';
+import { TRACKS, type TrackDef } from '../track';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -118,6 +119,37 @@ function cycleQuality() {
   game?.setQuality(quality);
 }
 
+// --- Track picker (T in the lobby; remembered on this computer) -------------
+// localStorage keeps small strings per website, surviving page reloads and
+// browser restarts. We store the track's name (not its index) so adding new
+// tracks to the list later doesn't change someone's saved choice.
+// Dev shortcut: ?track=2 or ?track=Maple%20Bay in the URL overrides it.
+const TRACK_KEY = 'tiltkart.track';
+function loadTrack(): TrackDef {
+  const param = new URLSearchParams(location.search).get('track');
+  if (param !== null) {
+    const byParam = TRACKS[Number(param)] ?? TRACKS.find((t) => t.name.toLowerCase() === param.toLowerCase());
+    if (byParam) return byParam;
+  }
+  try {
+    return TRACKS.find((t) => t.name === localStorage.getItem(TRACK_KEY)) ?? TRACKS[0];
+  } catch {
+    return TRACKS[0]; // storage can be blocked (e.g. private mode)
+  }
+}
+let track = loadTrack();
+const trackEl = $('track');
+trackEl.textContent = track.name;
+function cycleTrack() {
+  track = TRACKS[(TRACKS.indexOf(track) + 1) % TRACKS.length];
+  trackEl.textContent = track.name;
+  try {
+    localStorage.setItem(TRACK_KEY, track.name);
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
 const gameEl = $('game');
@@ -141,6 +173,7 @@ function startDriving() {
     },
     quality,
   );
+  game.setTrack(track);
   game.start(players.slots.players.map((p) => p.index));
 }
 
@@ -187,6 +220,7 @@ window.addEventListener('keydown', (e) => {
   if (!driving && !(e.target instanceof HTMLInputElement)) {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
+    if (e.code === 'KeyT') cycleTrack();
   }
 });
 
