@@ -15,7 +15,7 @@ import { SIM_DT } from '../sim/config';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
-import { TRACKS } from '../track';
+import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera } from '../render/chaseCamera';
 import { KartView } from '../render/kartView';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
@@ -121,6 +121,22 @@ export class Game {
     container.appendChild(help);
 
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /**
+   * Switch to another track (from the lobby's track picker). Rebuilds the sim
+   * Track, its 3D view and the minimap; takes effect at the next start().
+   */
+  setTrack(def: TrackDef): void {
+    if (def === this.track.def) return;
+    this.scene.remove(this.trackView.group);
+    disposeObject(this.trackView.group);
+    this.minimap.canvas.remove();
+    this.track = new Track(def);
+    this.trackView = new TrackView(this.track);
+    this.scene.add(this.trackView.group);
+    this.minimap = new Minimap(this.track, this.hudLayer);
+    this.world = new World(this.track, this.track);
   }
 
   setQuality(q: QualitySettings): void {
@@ -380,4 +396,21 @@ export class Game {
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h);
   }
+}
+
+/**
+ * Free the GPU memory (vertex buffers, materials, textures) of everything in
+ * a Three.js object tree. WebGL resources aren't garbage-collected like normal
+ * JS objects, so meshes we throw away must be disposed explicitly.
+ */
+function disposeObject(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    mesh.geometry?.dispose();
+    const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    for (const m of mats) {
+      for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
+      m.dispose();
+    }
+  });
 }

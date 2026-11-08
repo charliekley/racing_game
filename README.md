@@ -170,7 +170,9 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 Press the same number again to remove a keyboard player. **B** adds a computer
 driver (always ready; remove it with its Remove button). **G** starts the race
 right away without waiting for everyone to be ready. **Q** cycles the graphics
-quality (High / Medium / Low – see Performance below). The **`** key toggles
+quality (High / Medium / Low – see Performance below). **T** picks the track
+(Meadow Ring / Sunscorch Canyon / Maple Bay; remembered, and `?track=2` in the
+URL overrides it). The **`** key toggles
 the debug readouts on the TV.
 
 While racing, **Esc** returns to the lobby. On the results screen: **Enter**
@@ -207,7 +209,7 @@ Retina/4K resolution and sharper shadows.
   distance/lag/FOV. Save the file and the dev server reloads.
 * **Race rules:** countdown length, rocket-start window, finish grace period in
   [`src/sim/race.ts`](src/sim/race.ts).
-* **Tracks:** [`src/track/tracks/meadowRing.ts`](src/track/tracks/meadowRing.ts).
+* **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Meadow Ring, Sunscorch Canyon, Maple Bay).
   A track is a list of control points plus walls, ramps and boost pads placed
   "between point 10 and 11" style. To add one, copy that file, change the
   points, and add it to [`src/track/index.ts`](src/track/index.ts). `npm test`
