@@ -1,0 +1,131 @@
+/**
+ * Host (TV) entry point - Milestone 1: lobby + live input debug view.
+ *
+ * Flow: pick a room code -> register with the signaling server under it ->
+ * show QR code -> phones connect -> PlayerManager tracks them -> LobbyView
+ * draws them. Later milestones add the race on top of this.
+ */
+import QRCode from 'qrcode';
+import './host.css';
+import { PeerHostTransport } from '../shared/net/peerTransport';
+import { RoomTakenError } from '../shared/net/transport';
+import type { ItemDisplay } from '../shared/protocol';
+import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
+import { controllerUrl } from './controllerUrl';
+import { KeyboardState } from './input/localInput';
+import { LobbyView } from './lobbyView';
+import { PlayerManager } from './playerManager';
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const ROOM_STORAGE_KEY = 'tiltkart.hostRoom';
+
+const transport = new PeerHostTransport();
+const keys = new KeyboardState();
+const players = new PlayerManager(transport, keys);
+
+const netStatus = $('net-status');
+function setStatus(text: string, cls: 'ok' | 'warn' | 'bad' | '') {
+  netStatus.textContent = text;
+  netStatus.className = `net-status ${cls}`;
+}
+
+transport.onStatus.add((s) => {
+  if (s.kind === 'online') setStatus('Online – waiting for players', 'ok');
+  else if (s.kind === 'reconnecting') setStatus('Signaling server lost – reconnecting (connected phones keep working)', 'warn');
+  else setStatus(`Error: ${s.message}`, 'bad');
+});
+
+/**
+ * Register a room. We try to reuse the code from before a page refresh (kept in
+ * sessionStorage, which lives as long as the tab) so phones can auto-rejoin.
+ * Right after a refresh the server may still hold our old registration for a
+ * few seconds, so retry the same code a few times before picking a new one.
+ */
+async function openRoom(): Promise<string> {
+  let code = normalizeRoomCode(sessionStorage.getItem(ROOM_STORAGE_KEY)) ?? generateRoomCode();
+  let sameCodeRetries = 3;
+  for (;;) {
+    try {
+      await transport.start(code);
+      sessionStorage.setItem(ROOM_STORAGE_KEY, code);
+      return code;
+    } catch (err) {
+      if (err instanceof RoomTakenError) {
+        if (sameCodeRetries-- > 0) {
+          setStatus(`Room ${code} still registered, retrying…`, 'warn');
+          await new Promise((r) => setTimeout(r, 2000));
+        } else {
+          code = generateRoomCode();
+          sameCodeRetries = 0;
+        }
+        continue;
+      }
+      setStatus(`Could not reach signaling server (${(err as Error).message ?? err}). Retrying…`, 'bad');
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+
+async function showRoom(code: string) {
+  const url = controllerUrl(code);
+  $('room-code').textContent = code;
+  const link = $<HTMLAnchorElement>('join-url');
+  link.textContent = url.replace(/^https?:\/\//, '');
+  link.href = url;
+  await QRCode.toCanvas($<HTMLCanvasElement>('qr'), url, { width: 280, margin: 1, errorCorrectionLevel: 'M' });
+  if (__DEV_LAN_HOSTS__.length > 1 && ['localhost', '127.0.0.1'].includes(location.hostname)) {
+    console.info('Other LAN addresses (use ?lan=IP on this page if the QR one is wrong):', __DEV_LAN_HOSTS__);
+  }
+}
+
+// --- Lobby view + debug actions -------------------------------------------
+const lobbyView = new LobbyView($('slots'), players, {
+  buzz: (slot) => players.sendTo(slot, { t: 'haptic', pattern: [80, 60, 80] }),
+  testItem: (slot) => {
+    // Exercise the host -> phone status path: roulette, then an item, then empty.
+    const status = (item: ItemDisplay) =>
+      players.sendTo(slot, { t: 'status', position: slot + 1, lap: 1, totalLaps: 3, item });
+    status({ kind: 'roulette' });
+    setTimeout(() => status({ kind: 'item', id: 'test', count: 1 }), 1500);
+    setTimeout(() => status({ kind: 'none' }), 5000);
+  },
+  kick: (slot) => players.kick(slot),
+});
+
+const banner = $('banner');
+players.onLobbyChange.add(() => {
+  lobbyView.render();
+  const all = players.slots.allReady();
+  banner.classList.toggle('hidden', !all);
+  banner.textContent = all ? 'Everyone is ready! (Racing arrives in Milestone 3)' : '';
+});
+lobbyView.render();
+
+// Debug toggle with the backtick key.
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Backquote') document.body.classList.toggle('no-debug');
+});
+
+// --- Frame loop ------------------------------------------------------------
+// requestAnimationFrame calls us right before each screen refresh (~60 Hz).
+const fpsEl = $('fps');
+let last = performance.now();
+let frames = 0;
+let fpsTimer = last;
+function frame(now: number) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  players.updateLocal(dt);
+  lobbyView.updateDebug();
+  frames++;
+  if (now - fpsTimer > 500) {
+    fpsEl.textContent = `${Math.round((frames * 1000) / (now - fpsTimer))} fps`;
+    frames = 0;
+    fpsTimer = now;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+openRoom().then(showRoom);

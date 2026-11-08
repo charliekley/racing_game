@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tilt Kart – Host</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="title">
+        <h1>TILT KART</h1>
+        <p class="subtitle">Grab your phone, scan the code, steer like a wheel</p>
+      </header>
+
+      <main class="lobby">
+        <section class="join-panel">
+          <canvas id="qr" width="280" height="280" aria-label="QR code to join"></canvas>
+          <div class="room-label">ROOM CODE</div>
+          <div id="room-code" class="room-code">····</div>
+          <a id="join-url" class="join-url" target="_blank" rel="noopener"></a>
+          <div id="net-status" class="net-status">Connecting to signaling server…</div>
+        </section>
+
+        <section id="slots" class="slots"></section>
+      </main>
+
+      <div id="banner" class="banner hidden"></div>
+
+      <footer class="help">
+        <span><kbd>1</kbd> add/remove WASD player</span>
+        <span><kbd>2</kbd> add/remove arrow-keys player</span>
+        <span>Gamepad: press <kbd>A</kbd>/<kbd>Start</kbd> to join</span>
+        <span>Local ready: item key (<kbd>E</kbd> / <kbd>Enter</kbd> / pad <kbd>Y</kbd>)</span>
+        <span><kbd>`</kbd> toggle debug</span>
+      </footer>
+      <div id="fps" class="fps"></div>
+    </div>
+    <script type="module" src="../src/host/main.ts"></script>
+  </body>
+</html>

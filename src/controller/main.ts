@@ -1,0 +1,459 @@
+/**
+ * Phone controller entry point.
+ *
+ * Screens: join form -> (iOS) motion permission -> controller pad.
+ * Networking: one Link to the host; reliable JSON events + a 60 Hz unreliable
+ * input stream. Reconnects automatically with the same clientId so the host
+ * gives us our slot back.
+ */
+import './controller.css';
+import { KART_COLORS, colorHex } from '../shared/colors';
+import { PeerControllerTransport } from '../shared/net/peerTransport';
+import { RoomNotFoundError, type Link } from '../shared/net/transport';
+import {
+  Buttons,
+  PROTOCOL_VERSION,
+  encodeInput,
+  isHostMessage,
+  sanitizeName,
+  type GamePhase,
+  type HostToController,
+  type LobbyPlayerInfo,
+} from '../shared/protocol';
+import { normalizeRoomCode } from '../shared/roomCode';
+import {
+  enableWakeLock,
+  getClientId,
+  isIOS,
+  motionPermissionNeeded,
+  requestMotionPermission,
+  tryFullscreenLandscape,
+  vibrate,
+} from './device';
+import { ItemView } from './itemView';
+import { MotionInput } from './motionInput';
+import { loadPrefs, savePrefs } from './settings';
+import { TouchButtons } from './touchButtons';
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const SEND_HZ = 60;
+const PING_INTERVAL_MS = 1000;
+/** If the host is silent this long, assume the link is dead and reconnect. */
+const HOST_TIMEOUT_MS = 4000;
+/** How long the TRICK bit stays set after a flick (several packets, so one drop doesn't lose it). */
+const TRICK_PULSE_MS = 150;
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const prefs = loadPrefs();
+const clientId = getClientId();
+const transport = new PeerControllerTransport();
+const motion = new MotionInput(prefs.steering);
+
+let room: string | null = normalizeRoomCode(new URLSearchParams(location.search).get('room'));
+let link: Link | null = null;
+let wantConnection = false;
+let welcomed = false;
+let mySlot: number | null = null;
+let myColor = prefs.color;
+let ready = false;
+let phase: GamePhase = 'lobby';
+let lobby: LobbyPlayerInfo[] = [];
+let lastHostMsgAt = 0;
+let rttMs: number | null = null;
+let pingId = 1;
+let seq = 0;
+let trickUntil = 0;
+let sentThisSecond = 0;
+let sendRate = 0;
+
+// ---------------------------------------------------------------------------
+// Block browser gestures that would fight the controller (iOS ignores
+// user-scalable=no, so we also cancel pinch/double-tap in JS).
+// ---------------------------------------------------------------------------
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('dblclick', (e) => e.preventDefault());
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    const t = e.target as HTMLElement;
+    if (!t.closest('#join-screen, .settings-box')) e.preventDefault();
+  },
+  { passive: false }, // "passive: false" is required for preventDefault to work on touchmove
+);
+
+// ---------------------------------------------------------------------------
+// Screens
+// ---------------------------------------------------------------------------
+function showScreen(id: 'join-screen' | 'motion-screen' | 'pad-screen') {
+  for (const s of ['join-screen', 'motion-screen', 'pad-screen']) $(s).classList.toggle('hidden', s !== id);
+  document.body.classList.toggle('playing', id === 'pad-screen');
+}
+
+function showConn(text: string | null) {
+  $('conn-overlay').classList.toggle('hidden', text === null);
+  if (text) $('conn-text').textContent = text;
+}
+
+function renderSwatches(container: HTMLElement, selected: number, onPick: (i: number) => void) {
+  container.replaceChildren();
+  const taken = new Set(lobby.filter((p) => p.slot !== mySlot).map((p) => p.color));
+  KART_COLORS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swatch';
+    b.style.background = c.hex;
+    b.title = c.name;
+    if (i === selected) b.classList.add('selected');
+    if (taken.has(i)) b.classList.add('taken');
+    b.addEventListener('click', () => onPick(i));
+    container.appendChild(b);
+  });
+}
+
+function applyPlayerColor() {
+  document.documentElement.style.setProperty('--player', colorHex(myColor));
+}
+
+// ---------------------------------------------------------------------------
+// Join form
+// ---------------------------------------------------------------------------
+const roomInput = $<HTMLInputElement>('room-input');
+const nameInput = $<HTMLInputElement>('name-input');
+roomInput.value = room ?? '';
+nameInput.value = prefs.name;
+let joinColor = prefs.color;
+const drawJoinSwatches = () =>
+  renderSwatches($('join-colors'), joinColor, (i) => {
+    joinColor = i;
+    drawJoinSwatches();
+  });
+drawJoinSwatches();
+
+$('join-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const code = normalizeRoomCode(roomInput.value);
+  if (!code) {
+    $('join-error').textContent = 'Enter the 4-letter code shown on the TV.';
+    return;
+  }
+  room = code;
+  prefs.name = sanitizeName(nameInput.value);
+  prefs.color = joinColor;
+  myColor = joinColor;
+  savePrefs(prefs);
+  $('join-error').textContent = '';
+  // Put the room in the URL so a page reload rejoins automatically.
+  history.replaceState(null, '', `?room=${code}`);
+
+  // Everything below must happen inside this tap ("user gesture").
+  tryFullscreenLandscape();
+  void enableWakeLock();
+  if (motionPermissionNeeded()) {
+    requestMotionPermission().then((result) => {
+      if (result === 'granted') startPlaying();
+      else showMotionScreen(result === 'denied');
+    });
+  } else {
+    startPlaying();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// iOS motion permission screen (fallback if the prompt on JOIN didn't work)
+// ---------------------------------------------------------------------------
+function showMotionScreen(denied: boolean) {
+  showScreen('motion-screen');
+  $('motion-error').textContent = !denied
+    ? ''
+    : isIOS()
+      ? 'Motion access was denied. To fix it: close this Safari tab, reopen the link and tap "Allow". ' +
+        'If it still fails, check Settings › Apps › Safari › Advanced (Motion & Orientation Access) and try again.'
+      : 'Motion access was denied or this device has no motion sensor.';
+  $('motion-skip').classList.toggle('hidden', !denied);
+}
+$('motion-skip').addEventListener('click', () => startPlaying());
+$('motion-btn').addEventListener('click', () => {
+  void enableWakeLock();
+  requestMotionPermission().then((result) => {
+    if (result === 'granted' || result === 'unsupported') startPlaying();
+    else showMotionScreen(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Controller pad
+// ---------------------------------------------------------------------------
+const itemView = new ItemView($<HTMLCanvasElement>('item-canvas'));
+const touch = new TouchButtons([$('zone-left'), $('zone-right')], (_mask, pressedNow) => {
+  if (pressedNow) vibrate(8); // tiny tick so buttons feel physical (Android)
+  sendInput(); // send immediately on change, don't wait for the next 60 Hz tick
+});
+
+motion.onTrick = () => {
+  trickUntil = performance.now() + TRICK_PULSE_MS;
+};
+
+function startPlaying() {
+  motion.start();
+  showScreen('pad-screen');
+  applyPlayerColor();
+  $('player-name').textContent = prefs.name;
+  itemView.set({ kind: 'none' });
+  wantConnection = true;
+  void connectLoop();
+}
+
+$('ready-btn').addEventListener('click', () => {
+  const next = !ready;
+  // Pressing Ready is also "this is how I hold the wheel straight".
+  if (next) motion.calibrate();
+  link?.sendEvent({ t: 'ready', ready: next });
+  ready = next; // optimistic; the host's lobby message is the final word
+  updateReadyButton();
+});
+
+function updateReadyButton() {
+  const btn = $('ready-btn');
+  btn.classList.toggle('hidden', phase !== 'lobby');
+  btn.classList.toggle('is-ready', ready);
+  btn.textContent = ready ? 'READY ✓' : 'READY';
+}
+
+// Pause: release all buttons when the app is backgrounded.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') {
+    touch.releaseAll();
+    sendInput();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Networking
+// ---------------------------------------------------------------------------
+async function connectLoop() {
+  let attempt = 0;
+  while (wantConnection && !link && room) {
+    showConn(attempt === 0 ? 'Connecting…' : `Reconnecting… (try ${attempt + 1})`);
+    try {
+      const l = await transport.connect(room);
+      attachLink(l);
+      return;
+    } catch (err) {
+      if (err instanceof RoomNotFoundError) {
+        showConn(`No game found with code ${room}.\nIs the TV page open? Retrying…`);
+      } else {
+        console.warn('connect failed', err);
+      }
+      attempt++;
+      await new Promise((r) => setTimeout(r, Math.min(5000, 1000 + attempt * 500)));
+    }
+  }
+}
+
+function attachLink(l: Link) {
+  link = l;
+  welcomed = false;
+  lastHostMsgAt = performance.now();
+  showConn('Joining…');
+  l.onEvent.add((msg) => {
+    lastHostMsgAt = performance.now();
+    if (isHostMessage(msg)) handleHostMessage(msg);
+  });
+  l.onClose.add(() => {
+    if (link !== l) return;
+    link = null;
+    welcomed = false;
+    if (wantConnection) {
+      showConn('Connection lost. Reconnecting…');
+      void connectLoop();
+    }
+  });
+  l.sendEvent({ t: 'hello', v: PROTOCOL_VERSION, clientId, name: prefs.name, color: prefs.color });
+}
+
+function handleHostMessage(msg: HostToController) {
+  switch (msg.t) {
+    case 'welcome':
+      welcomed = true;
+      mySlot = msg.slot;
+      myColor = msg.color;
+      ready = msg.ready;
+      phase = msg.phase;
+      $('player-name').textContent = `P${msg.slot + 1} · ${msg.name}`;
+      applyPlayerColor();
+      updateReadyButton();
+      showConn(null);
+      vibrate([30, 40, 30]);
+      break;
+    case 'reject':
+      wantConnection = false;
+      link?.close();
+      showScreen('join-screen');
+      showConn(null);
+      $('join-error').textContent =
+        msg.reason === 'full'
+          ? 'That game is full (4 players) or you were removed.'
+          : msg.reason === 'in-progress'
+            ? 'A race is in progress. Join when it ends.'
+            : 'Version mismatch: reload both the TV page and this page.';
+      break;
+    case 'lobby': {
+      lobby = msg.players;
+      const me = lobby.find((p) => p.slot === mySlot);
+      if (me) {
+        ready = me.ready;
+        myColor = me.color;
+        applyPlayerColor();
+        updateReadyButton();
+      }
+      break;
+    }
+    case 'phase':
+      phase = msg.phase;
+      if (phase === 'lobby') ready = false;
+      updateReadyButton();
+      break;
+    case 'status':
+      $('position').textContent = msg.position ? ordinal(msg.position) : '–';
+      $('lap').textContent = msg.lap ? `LAP ${msg.lap}/${msg.totalLaps}` : 'LAP –';
+      itemView.set(msg.item);
+      break;
+    case 'haptic':
+      vibrate(msg.pattern);
+      break;
+    case 'ping':
+      link?.sendEvent({ t: 'pong', id: msg.id, sentAt: msg.sentAt });
+      break;
+    case 'pong': {
+      const rtt = performance.now() - msg.sentAt;
+      rttMs = rttMs === null ? rtt : rttMs * 0.7 + rtt * 0.3;
+      $('ping-chip').textContent = `${Math.round(rttMs)} ms`;
+      break;
+    }
+  }
+}
+
+function ordinal(n: number): string {
+  return n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
+}
+
+/** Build and send one input packet with the latest steering + buttons. */
+function sendInput() {
+  if (!link || !welcomed) return;
+  let buttons = touch.buttons;
+  if (performance.now() < trickUntil) buttons |= Buttons.TRICK;
+  link.sendInput(encodeInput({ seq: seq++, steer: motion.steer, buttons }));
+  sentThisSecond++;
+}
+
+// 60 Hz send loop. (setInterval keeps running even if no animation frames are drawn.)
+let lastTick = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  motion.tickFallback(now - lastTick);
+  lastTick = now;
+  sendInput();
+}, 1000 / SEND_HZ);
+
+// Once a second: ping, heartbeat check, stats.
+setInterval(() => {
+  sendRate = sentThisSecond;
+  sentThisSecond = 0;
+  if (!link) return;
+  link.sendEvent({ t: 'ping', id: pingId++, sentAt: performance.now() });
+  if (performance.now() - lastHostMsgAt > HOST_TIMEOUT_MS) link.close(); // -> reconnect
+}, PING_INTERVAL_MS);
+
+// ---------------------------------------------------------------------------
+// Steering wheel graphic + debug overlay (drawn every frame)
+// ---------------------------------------------------------------------------
+const wheel = $('wheel');
+const debugEl = $('debug-overlay');
+function frame() {
+  wheel.style.transform = `rotate(${(motion.steer * 90).toFixed(1)}deg)`;
+  if (prefs.showDebug) {
+    debugEl.textContent =
+      `ping ${rttMs === null ? '–' : rttMs.toFixed(0)} ms  send ${sendRate} Hz  motion ${motion.eventRateHz.toFixed(0)} Hz\n` +
+      `angle ${motion.angleDeg.toFixed(1)}°  steer ${motion.steer.toFixed(3)}  orient ${motion.orientationDeg}°\n` +
+      `sensor ${motion.hasSensor ? 'yes' : 'NO (use ←/→ keys)'}  pose ${motion.validPose ? 'ok' : 'too flat'}  ` +
+      `cal ${motion.steering.isCalibrated ? 'yes' : 'no'}  btn ${touch.buttons.toString(2).padStart(5, '0')}  ${isIOS() ? 'iOS' : ''}`;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------------------
+// Settings panel
+// ---------------------------------------------------------------------------
+const setName = $<HTMLInputElement>('set-name');
+const setSens = $<HTMLInputElement>('set-sens');
+const setAngle = $<HTMLInputElement>('set-angle');
+const setInvert = $<HTMLInputElement>('set-invert');
+const setDebug = $<HTMLInputElement>('set-debug');
+let settingsColor = myColor;
+
+function refreshSettingLabels() {
+  $('sens-val').textContent = `${Number(setSens.value).toFixed(2)}×`;
+  $('angle-val').textContent = `${setAngle.value}°`;
+}
+const drawSettingsSwatches = () =>
+  renderSwatches($('set-colors'), settingsColor, (i) => {
+    settingsColor = i;
+    drawSettingsSwatches();
+  });
+
+function openSettings() {
+  setName.value = prefs.name;
+  setSens.value = String(prefs.steering.sensitivity);
+  setAngle.value = String(prefs.steering.maxAngleDeg);
+  setInvert.checked = prefs.steering.invert;
+  setDebug.checked = prefs.showDebug;
+  settingsColor = myColor;
+  drawSettingsSwatches();
+  refreshSettingLabels();
+  $('settings-panel').classList.remove('hidden');
+}
+
+function applySettings() {
+  prefs.steering.sensitivity = Number(setSens.value);
+  prefs.steering.maxAngleDeg = Number(setAngle.value);
+  prefs.steering.invert = setInvert.checked;
+  prefs.showDebug = setDebug.checked;
+  motion.steering.settings = { ...prefs.steering };
+  debugEl.classList.toggle('hidden', !prefs.showDebug);
+  refreshSettingLabels();
+}
+
+for (const el of [setSens, setAngle, setInvert, setDebug]) el.addEventListener('input', applySettings);
+$('settings-btn').addEventListener('click', openSettings);
+$('ping-chip').addEventListener('click', () => {
+  prefs.showDebug = !prefs.showDebug;
+  debugEl.classList.toggle('hidden', !prefs.showDebug);
+  savePrefs(prefs);
+});
+$('recenter-btn').addEventListener('click', () => {
+  motion.calibrate();
+  vibrate(20);
+});
+$('settings-close').addEventListener('click', () => {
+  applySettings();
+  const newName = sanitizeName(setName.value);
+  const changed = newName !== prefs.name || settingsColor !== myColor;
+  prefs.name = newName;
+  prefs.color = settingsColor;
+  savePrefs(prefs);
+  if (changed) link?.sendEvent({ t: 'profile', name: prefs.name, color: prefs.color });
+  $('settings-panel').classList.add('hidden');
+});
+debugEl.classList.toggle('hidden', !prefs.showDebug);
+
+// ---------------------------------------------------------------------------
+// Start: always show the join form first (a tap is needed for permissions,
+// wake lock and fullscreen anyway). Room/name are prefilled.
+// ---------------------------------------------------------------------------
+showScreen('join-screen');
+if (room && prefs.name) $<HTMLButtonElement>('join-btn').focus();
