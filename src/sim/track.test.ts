@@ -3,6 +3,7 @@ import { TRACKS } from '../track';
 import { Buttons } from '../shared/protocol';
 import { SIM_DT } from './config';
 import { Track } from './track';
+import { autopilot, botStyleFor } from './autopilot';
 import { World } from './world';
 
 describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) => {
@@ -140,6 +141,18 @@ describe('driving on the real track', () => {
     }
     expect(airborne).toBe(true); // took the jump
     expect(boosted).toBe(true); // hit a boost pad
+  });
+
+  it('four bots (the real bot driver) all finish a race', () => {
+    const world = new World(track, track);
+    world.startRace([0, 1, 2, 3], 3);
+    let ticks = 0;
+    while (world.race!.phase !== 'done' && ticks < 60 * 400) {
+      world.tick((slot) => autopilot(world.karts.get(slot)!, track, botStyleFor(slot)));
+      ticks++;
+    }
+    expect(world.race!.phase).toBe('done');
+    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
   });
 
   it('walls keep karts in', () => {

@@ -4,11 +4,12 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 3 of 7.** Phones connect with a room code + QR code and
-> act as tilt steering wheels. When everyone is ready: 3-2-1-GO countdown (with a
-> rocket start), a 3-lap race on "Meadow Ring" with checkpoints, positions, a jump
-> and boost pads, then a results screen with "race again". One chase camera for
-> now; split-screen comes in M4, drifting in M5.
+> **Status: Milestone 4 of 7.** Phones connect with a room code + QR code and
+> act as tilt steering wheels. 1–4 players race in **split-screen** (full /
+> top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
+> each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
+> start, 3 laps on "Meadow Ring", results and "race again". Computer drivers can
+> fill empty slots. Drifting arrives in M5, items in M6.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -152,13 +153,28 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 | Item / *ready in lobby* | E | Enter | LB or Y |
 | Trick | R | / | D-pad up |
 
-Press the same number again to remove a keyboard player. The **`** key toggles
+Press the same number again to remove a keyboard player. **B** adds a computer
+driver (always ready; remove it with its Remove button). **G** starts the race
+right away without waiting for everyone to be ready. **Q** cycles the graphics
+quality (High / Medium / Low – see Performance below). The **`** key toggles
 the debug readouts on the TV.
 
-While racing: **C** switches which kart the camera follows, **Esc** returns to
-the lobby. On the results screen: **Enter** (or everyone tapping RACE AGAIN on
-their phones) starts another race. Shortcut for tuning: open
-**`/host/?drive`** to skip the lobby and race immediately with WASD.
+While racing, **Esc** returns to the lobby. On the results screen: **Enter**
+(or everyone tapping RACE AGAIN on their phones) starts another race.
+
+Shortcuts for testing: **`/host/?drive`** skips the lobby and races immediately
+with WASD; **`/host/?drive=4`** does the same with 3 computer drivers, for
+instant 4-way split-screen (`=2`, `=3` work too).
+
+### Performance
+
+The TV draws the whole scene once per player each frame, so 4 players means 4
+renders. To keep 60 fps: shadows are computed once per frame and shared,
+scenery is instanced (one draw call for all trees), and materials are cheap.
+If the frame rate (top-right in debug mode) drops below 60, press **Q** in the
+lobby: **Medium** (default) renders at 1 pixel per screen pixel with shadows,
+**Low** turns shadows off and renders at 75% resolution, **High** uses full
+Retina/4K resolution and sharper shadows.
 
 ---
 
@@ -185,7 +201,25 @@ their phones) starts another race. Shortcut for tuning: open
 
 ---
 
-## 6. Milestone 3 test checklist
+## 6. Milestone 4 test checklist
+
+1. Open `/host/?drive=4`: four views in quadrants, each with its own position,
+   lap, time, speed, item box (empty until M6) and a colored "P2 Bot 1" tag. You
+   drive the top-left one with WASD; the bots race too.
+2. `/host/?drive=3`: three views + an overview map in the bottom-right quadrant
+   with a dot per kart. `/host/?drive=2`: top/bottom split.
+3. Per-player messages: rocket start / LAP 2 / FINAL LAP / FINISH only appear in
+   *that* player's view; the countdown and GO appear in all of them. The view
+   glows orange at the edges while that player is boosting, and the camera
+   widens its field of view.
+4. Real lobby flow: open `/host/`, have 2–4 phones join (and/or press 1, 2, B).
+   The hint line counts players; when everyone is ready (bots always are) the
+   race starts – or press G to start right away.
+5. Check the frame rate: press **`** to show the fps counter top-right. With 4
+   views on your laptop it should stay near 60; if not, Esc → Q → Low and
+   compare.
+
+## 7. Milestone 3 test checklist
 
 1. Open `/host/?drive` (or the GitHub Pages link with `?drive`). You're on the
    grid at the start line under a checkered gantry, and **3-2-1-GO!** counts down.
@@ -208,13 +242,13 @@ their phones) starts another race. Shortcut for tuning: open
 
 ---
 
-## 7. Milestone 2 test checklist
+## 8. Milestone 2 test checklist
 
 1. `npm run dev`, open `https://localhost:5173/host/?drive`. You're in a green
    kart on the start straight. W = gas, S = brake/reverse, A/D = steer.
 2. Look for: ~100 km/h top speed after ~4 s; the kart can't turn while stopped;
    turns are tight at low speed and wider at top speed; driving onto the grass
-   slows you to ~50 km/h *gradually* (no sudden stop); S while stopped reverses,
+   slows you to ~72 km/h *gradually* (no sudden stop); S while stopped reverses,
    and steering flips like a real car when reversing.
 3. Now the phone: open `/host/` (no `?drive`), join with your iPhone (rotation
    lock ON), hold it sideways, tap READY. After 1.5 s everyone is on the track.
@@ -225,7 +259,7 @@ their phones) starts another race. Shortcut for tuning: open
 5. Try the ⚙ sensitivity / full-lock sliders mid-drive; changes apply instantly.
 6. Press **C** to cycle the camera between karts, **Esc** to go back to the lobby.
 
-## 8. Milestone 1 test checklist
+## 9. Milestone 1 test checklist
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
@@ -248,7 +282,7 @@ their phones) starts another race. Shortcut for tuning: open
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Fix |
 |---|---|

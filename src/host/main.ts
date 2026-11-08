@@ -13,6 +13,7 @@ import type { ItemDisplay } from '../shared/protocol';
 import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
 import { controllerUrl } from './controllerUrl';
 import { Game } from './game';
+import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { PlayerManager } from './playerManager';
@@ -94,6 +95,29 @@ const lobbyView = new LobbyView($('slots'), players, {
   kick: (slot) => players.kick(slot),
 });
 
+// --- Graphics quality (Q in the lobby; remembered on this computer) ----------
+const QUALITY_KEY = 'tiltkart.quality';
+function loadQuality(): QualitySettings {
+  try {
+    return QUALITY_PRESETS.find((q) => q.name === localStorage.getItem(QUALITY_KEY)) ?? DEFAULT_QUALITY;
+  } catch {
+    return DEFAULT_QUALITY;
+  }
+}
+let quality = loadQuality();
+const qualityEl = $('quality');
+qualityEl.textContent = quality.name;
+function cycleQuality() {
+  quality = QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length];
+  qualityEl.textContent = quality.name;
+  try {
+    localStorage.setItem(QUALITY_KEY, quality.name);
+  } catch {
+    /* ignore */
+  }
+  game?.setQuality(quality);
+}
+
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
 const gameEl = $('game');
@@ -108,10 +132,15 @@ function startDriving() {
   players.setPhase('countdown');
   $('app').classList.add('hidden');
   gameEl.classList.remove('hidden');
-  game ??= new Game(gameEl, players, {
-    onGo: () => players.setPhase('race'),
-    onResults: () => players.setPhase('results'),
-  });
+  game ??= new Game(
+    gameEl,
+    players,
+    {
+      onGo: () => players.setPhase('race'),
+      onResults: () => players.setPhase('results'),
+    },
+    quality,
+  );
   game.start(players.slots.players.map((p) => p.index));
 }
 
@@ -140,6 +169,9 @@ players.onLobbyChange.add(() => {
   const all = players.slots.allReady();
   banner.classList.toggle('hidden', !all);
   banner.textContent = all ? 'Everyone is ready! Starting…' : '';
+  const n = players.slots.players.length;
+  $('lobby-hint').textContent =
+    n === 0 ? 'Waiting for players…' : `${n} player${n > 1 ? 's' : ''} · everyone taps READY to start (or press G to start now)`;
   if (all && !startTimer) startTimer = setTimeout(startDriving, 1500);
   if (!all && startTimer) {
     clearTimeout(startTimer);
@@ -151,12 +183,21 @@ lobbyView.render();
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') backToLobby();
   if (e.code === 'Enter' && driving && players.slots.phase === 'results') raceAgain();
+  // Lobby shortcuts (ignored while typing in a text box).
+  if (!driving && !(e.target instanceof HTMLInputElement)) {
+    if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
+    if (e.code === 'KeyQ') cycleQuality();
+  }
 });
 
-// Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into driving.
-if (new URLSearchParams(location.search).has('drive')) {
+// Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into
+// a race; /host/?drive=4 also adds 3 bots (instant 4-way split-screen).
+const driveParam = new URLSearchParams(location.search).get('drive');
+if (driveParam !== null) {
   players.slots.join({ kind: 'keyboard', scheme: 0 }, 'Keys WASD', 2);
   players.addKeyboardInput(0);
+  const total = Math.max(1, Math.min(4, Number(driveParam) || 1));
+  for (let i = 1; i < total; i++) players.addBot();
   startDriving();
 }
 

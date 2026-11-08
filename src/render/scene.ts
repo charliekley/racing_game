@@ -8,21 +8,53 @@
 import * as THREE from 'three';
 
 export interface QualitySettings {
-  /** Multiplier on the device pixel ratio (lower = faster, blurrier). */
+  name: 'High' | 'Medium' | 'Low';
+  /** Cap on device pixel ratio (1 = one rendered pixel per CSS pixel). */
+  maxPixelRatio: number;
+  /** Multiplier on the pixel ratio (lower = faster, blurrier). */
   renderScale: number;
   shadows: boolean;
+  shadowMapSize: number;
 }
 
-export const DEFAULT_QUALITY: QualitySettings = { renderScale: 1, shadows: true };
+export const QUALITY_PRESETS: QualitySettings[] = [
+  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048 },
+  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024 },
+  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512 },
+];
+export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 
 export function createRenderer(parent: HTMLElement, q: QualitySettings = DEFAULT_QUALITY): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * q.renderScale);
   renderer.setSize(parent.clientWidth, parent.clientHeight);
-  renderer.shadowMap.enabled = q.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // With split-screen we render the scene several times per frame; draw the
+  // shadow map only once per frame ourselves (see Game.frame).
+  renderer.shadowMap.autoUpdate = false;
   parent.appendChild(renderer.domElement);
+  applyRendererQuality(renderer, q);
   return renderer;
+}
+
+export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySettings): void {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio) * q.renderScale);
+  renderer.shadowMap.enabled = q.shadows;
+  renderer.shadowMap.needsUpdate = true;
+}
+
+/** Apply quality to the sun light (shadow resolution). Materials recompile on shadow on/off. */
+export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLight, q: QualitySettings): void {
+  sun.castShadow = q.shadows;
+  if (sun.shadow.mapSize.x !== q.shadowMapSize) {
+    sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
+  }
+  scene.traverse((o) => {
+    const m = (o as THREE.Mesh).material;
+    if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
+    else if (m) m.needsUpdate = true;
+  });
 }
 
 const SKY_TOP = new THREE.Color('#3f8fe0');
@@ -87,8 +119,20 @@ function createSkyDome(): THREE.Mesh {
   return dome;
 }
 
-/** Keep the shadow-casting area centered on the action. */
-export function followWithSun(sun: THREE.DirectionalLight, x: number, z: number): void {
+/**
+ * Keep the shadow-casting area centered on the action and big enough to
+ * cover every kart (split-screen: all players need shadows).
+ */
+export function followWithSun(sun: THREE.DirectionalLight, x: number, z: number, radius = 60): void {
   sun.target.position.set(x, 0, z);
   sun.position.set(x + 80, 140, z + 50);
+  const r = Math.max(40, radius);
+  const cam = sun.shadow.camera;
+  if (cam.right !== r) {
+    cam.left = -r;
+    cam.right = r;
+    cam.top = r;
+    cam.bottom = -r;
+    cam.updateProjectionMatrix();
+  }
 }

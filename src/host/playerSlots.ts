@@ -15,7 +15,9 @@ export const MAX_PLAYERS = 4;
 export type SlotOwner =
   | { kind: 'phone'; clientId: string }
   | { kind: 'keyboard'; scheme: number }
-  | { kind: 'gamepad'; index: number };
+  | { kind: 'gamepad'; index: number }
+  /** Computer driver (autopilot), handy for testing split-screen alone. */
+  | { kind: 'bot'; id: number };
 
 export interface PlayerSlot {
   index: number;
@@ -39,6 +41,8 @@ function sameOwner(a: SlotOwner, b: SlotOwner): boolean {
       return a.scheme === (b as typeof a).scheme;
     case 'gamepad':
       return a.index === (b as typeof a).index;
+    case 'bot':
+      return a.id === (b as typeof a).id;
   }
 }
 

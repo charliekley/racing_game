@@ -42,9 +42,9 @@ export const KART = {
 
   // --- Surfaces ----------------------------------------------------------------
   /** Top speed multiplier on grass/sand. */
-  offroadSpeedFactor: 0.5,
+  offroadSpeedFactor: 0.72,
   /** Acceleration multiplier on grass/sand. */
-  offroadAccelFactor: 0.6,
+  offroadAccelFactor: 0.8,
 
   // --- Boosts -------------------------------------------------------------------
   /** Top speed multiplier while boosting (boost pads, start boost, later mini-turbos/items). */

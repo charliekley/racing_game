@@ -1,12 +1,16 @@
 /**
  * One race on the host: owns the sim World, the Three.js scene and the
- * fixed-step loop, and turns sim events into HUD updates, phone status
- * messages and haptics. (Single chase camera for now; split-screen in M4 —
- * press C to follow a different player.)
+ * fixed-step loop, renders one viewport per player (split-screen), and turns
+ * sim events into HUD messages, phone status updates and haptics.
+ *
+ * Split-screen in Three.js: a single renderer and a single scene, but one
+ * camera per player. Each frame we render the scene once per camera, each
+ * time restricted to that player's rectangle with setViewport/setScissor.
  */
 import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
-import type { HostToController } from '../shared/protocol';
+import type { ControlInput, HostToController } from '../shared/protocol';
+import { autopilot, botStyleFor } from '../sim/autopilot';
 import { SIM_DT } from '../sim/config';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
@@ -14,9 +18,19 @@ import { World, type WorldEvent } from '../sim/world';
 import { TRACKS } from '../track';
 import { ChaseCamera } from '../render/chaseCamera';
 import { KartView } from '../render/kartView';
-import { createRenderer, createScene, followWithSun } from '../render/scene';
+import { splitLayout, toViewport, type Rect } from '../render/layout';
+import { Minimap } from '../render/minimap';
+import {
+  applyRendererQuality,
+  applySceneQuality,
+  createRenderer,
+  createScene,
+  followWithSun,
+  type QualitySettings,
+} from '../render/scene';
 import { TrackView } from '../render/trackView';
 import type { PlayerManager } from './playerManager';
+import { ViewHud } from './viewHud';
 
 const ordinalSuffix = (n: number) => (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
 
@@ -45,6 +59,15 @@ export interface GameCallbacks {
   onResults(): void;
 }
 
+/** Everything that belongs to one player's screen area. */
+interface PlayerView {
+  slot: number;
+  kart: KartView;
+  chase: ChaseCamera;
+  hud: ViewHud;
+  rect: Rect;
+}
+
 export class Game {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
@@ -52,107 +75,163 @@ export class Game {
   private track: Track;
   private trackView: TrackView;
   private world: World;
-  private views = new Map<number, KartView>();
-  private chase = new ChaseCamera();
+  private views: PlayerView[] = [];
   private loop: FixedStepLoop;
-  private followIndex = 0;
   private elapsed = 0;
   private resultsShown = false;
   private doneAt: number | null = null;
   private statusTimer = 0;
   private lastStatus = new Map<number, string>();
-  private toastUntil = 0;
-
-  // HUD elements
-  private hud: HTMLElement;
-  private el: Record<'pos' | 'posSuffix' | 'lap' | 'time' | 'center' | 'speed' | 'help' | 'results', HTMLElement>;
+  private lastCountdown = 0;
+  private hudLayer: HTMLElement;
+  private results: HTMLElement;
+  private minimap: Minimap;
 
   constructor(
     private readonly container: HTMLElement,
     private readonly players: PlayerManager,
     private readonly callbacks: GameCallbacks,
+    quality: QualitySettings,
   ) {
-    this.renderer = createRenderer(container);
+    this.renderer = createRenderer(container, quality);
     const parts = createScene();
     this.scene = parts.scene;
     this.sun = parts.sun;
     this.track = new Track(TRACKS[0]);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
+    applySceneQuality(this.scene, this.sun, quality);
     this.world = new World(this.track, this.track);
-    this.loop = new FixedStepLoop(() => this.handleEvents(this.world.tick((slot) => this.players.inputFor(slot))), SIM_DT);
+    this.loop = new FixedStepLoop(() => this.handleEvents(this.world.tick((slot) => this.inputFor(slot))), SIM_DT);
 
-    this.hud = document.createElement('div');
-    this.hud.className = 'race-hud';
-    this.hud.innerHTML = `
-      <div class="hud-pos"><span class="pos-num"></span><span class="pos-suffix"></span></div>
-      <div class="hud-topright"><div class="hud-lap"></div><div class="hud-time"></div></div>
-      <div class="hud-center"></div>
-      <div class="hud-speed"></div>
-      <div class="hud-help">C: switch camera · Esc: lobby</div>
-      <div class="results hidden"></div>`;
-    container.appendChild(this.hud);
-    const q = (sel: string) => this.hud.querySelector(sel) as HTMLElement;
-    this.el = {
-      pos: q('.pos-num'),
-      posSuffix: q('.pos-suffix'),
-      lap: q('.hud-lap'),
-      time: q('.hud-time'),
-      center: q('.hud-center'),
-      speed: q('.hud-speed'),
-      help: q('.hud-help'),
-      results: q('.results'),
-    };
+    this.hudLayer = document.createElement('div');
+    this.hudLayer.className = 'hud-layer';
+    container.appendChild(this.hudLayer);
+    this.minimap = new Minimap(this.track, this.hudLayer);
+    this.results = document.createElement('div');
+    this.results.className = 'results hidden';
+    container.appendChild(this.results);
+    const help = document.createElement('div');
+    help.className = 'hud-help';
+    help.textContent = 'Esc: lobby';
+    container.appendChild(help);
 
     window.addEventListener('resize', () => this.resize());
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyC' && this.views.size > 0) {
-        this.followIndex = (this.followIndex + 1) % this.views.size;
-        this.chase.snap();
-      }
-    });
+  }
+
+  setQuality(q: QualitySettings): void {
+    applyRendererQuality(this.renderer, q);
+    applySceneQuality(this.scene, this.sun, q);
     this.resize();
   }
 
-  /** Start a new race with a kart for each slot, on the starting grid. */
+  /** Start a new race with a kart and a viewport for each slot. */
   start(slots: number[]): void {
-    for (const v of this.views.values()) v.dispose(this.scene);
-    this.views.clear();
+    for (const v of this.views) {
+      v.kart.dispose(this.scene);
+      v.hud.dispose();
+    }
     this.world = new World(this.track, this.track);
     this.world.startRace(slots, this.track.def.laps);
-    for (const slot of slots) {
-      const color = this.players.slots.slots[slot]?.color ?? slot;
-      this.views.set(slot, new KartView(this.scene, colorHex(color)));
-    }
-    this.followIndex = 0;
-    this.chase.snap();
+
+    const layout = splitLayout(slots.length);
+    this.views = slots.map((slot, i) => {
+      const p = this.players.slots.slots[slot];
+      const color = colorHex(p?.color ?? slot);
+      const hud = new ViewHud(this.hudLayer, p?.name ?? `P${slot + 1}`, color, slot);
+      hud.place(layout.views[i]);
+      // Only show the "P1 Name" tag when the screen is shared.
+      hud.root.classList.toggle('solo', slots.length === 1);
+      const chase = new ChaseCamera();
+      chase.snap();
+      return { slot, kart: new KartView(this.scene, color), chase, hud, rect: layout.views[i] };
+    });
+    this.minimap.place(layout.minimap);
+
     this.loop.reset();
     this.resultsShown = false;
     this.doneAt = null;
+    this.lastCountdown = 0;
     this.lastStatus.clear();
-    this.el.results.classList.add('hidden');
-    this.el.center.textContent = '';
+    this.results.classList.add('hidden');
     this.resize();
+  }
+
+  /** Bots drive themselves; everyone else uses their controller. */
+  private inputFor(slot: number): ControlInput {
+    if (this.players.isBot(slot)) {
+      const k = this.world.karts.get(slot);
+      if (k) return autopilot(k, this.track, botStyleFor(slot));
+    }
+    return this.players.inputFor(slot);
   }
 
   /** Called every animation frame while a race is on screen. */
   frame(dt: number): void {
     this.elapsed += dt;
     const alpha = this.loop.advance(dt);
-    for (const [slot, view] of this.views) {
-      view.update(this.world.prevKarts.get(slot)!, this.world.karts.get(slot)!, alpha, dt, this.track);
-    }
+    const race = this.world.race!;
     this.trackView.update(this.elapsed);
 
-    const followSlot = [...this.views.keys()][this.followIndex];
-    const view = followSlot === undefined ? undefined : this.views.get(followSlot);
-    if (view) {
-      const kart = this.world.karts.get(followSlot!)!;
-      this.chase.update(view.pose, dt, kart.boostTime > 0 ? 10 : 0);
-      followWithSun(this.sun, view.pose.x, view.pose.z);
-      this.updateHud(followSlot!, view);
+    // Update every kart's interpolated pose, then each player's camera.
+    let cx = 0;
+    let cz = 0;
+    for (const v of this.views) {
+      v.kart.update(this.world.prevKarts.get(v.slot)!, this.world.karts.get(v.slot)!, alpha, dt, this.track);
+      cx += v.kart.pose.x;
+      cz += v.kart.pose.z;
     }
-    this.renderer.render(this.scene, this.chase.camera);
+    cx /= Math.max(1, this.views.length);
+    cz /= Math.max(1, this.views.length);
+    let spread = 0;
+    for (const v of this.views) spread = Math.max(spread, Math.hypot(v.kart.pose.x - cx, v.kart.pose.z - cz));
+    followWithSun(this.sun, cx, cz, spread + 45);
+
+    // Countdown numbers on every HUD.
+    if (race.phase === 'countdown') {
+      const n = Math.max(1, Math.ceil(-race.time));
+      if (n !== this.lastCountdown) {
+        this.lastCountdown = n;
+        for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed);
+      }
+    }
+
+    // Render: shadow map once, then the scene once per viewport.
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.setScissorTest(true);
+    for (const v of this.views) {
+      const kart = this.world.karts.get(v.slot)!;
+      const r = toViewport(v.rect, size.x, size.y);
+      v.chase.setAspect(r.w / Math.max(1, r.h));
+      v.chase.update(v.kart.pose, dt, kart.boostTime > 0 ? 10 : 0);
+      this.renderer.setViewport(r.x, r.y, r.w, r.h);
+      this.renderer.setScissor(r.x, r.y, r.w, r.h);
+      this.renderer.render(this.scene, v.chase.camera);
+
+      const racer = race.racers.get(v.slot)!;
+      v.hud.update(
+        {
+          position: racer.place ?? race.positionOf(v.slot),
+          racers: race.racers.size,
+          lap: Math.min(race.totalLaps, Math.max(1, racer.lap)),
+          laps: race.totalLaps,
+          time: formatTime(Math.max(0, racer.finishTime ?? race.time)),
+          speedKmh: Math.round(Math.abs(v.kart.pose.speed) * 3.6),
+          boosting: kart.boostTime > 0,
+        },
+        this.elapsed,
+      );
+    }
+    this.renderer.setScissorTest(false);
+
+    this.minimap.draw(
+      race.standings().map((slot) => {
+        const v = this.views.find((x) => x.slot === slot)!;
+        const p = this.players.slots.slots[slot];
+        return { x: v.kart.pose.x, z: v.kart.pose.z, color: colorHex(p?.color ?? slot), label: `P${slot + 1}` };
+      }),
+    );
 
     // Phone status ~4x per second (only when something changed).
     this.statusTimer += dt;
@@ -169,20 +248,28 @@ export class Game {
     }
   }
 
+  private viewOf(slot: number): PlayerView | undefined {
+    return this.views.find((v) => v.slot === slot);
+  }
+
+  private toast(slot: number, text: string, seconds: number): void {
+    this.viewOf(slot)?.hud.toast(text, seconds, this.elapsed);
+  }
+
   private handleEvents(events: WorldEvent[]): void {
     for (const e of events) {
       switch (e.kind) {
         case 'go':
-          this.toast('GO!', 1);
+          for (const v of this.views) v.hud.toast('GO!', 1, this.elapsed);
           this.callbacks.onGo();
           break;
         case 'startBoost':
           this.haptic(e.slot, HAPTICS.startBoost);
-          if (this.isFollowed(e.slot)) this.toast('ROCKET START!', 1.2);
+          this.toast(e.slot, 'ROCKET START!', 1.2);
           break;
         case 'stall':
           this.haptic(e.slot, HAPTICS.stall);
-          if (this.isFollowed(e.slot)) this.toast('Too early!', 1.2);
+          this.toast(e.slot, 'Too early!', 1.2);
           break;
         case 'wall':
           if (e.impact > 6) this.haptic(e.slot, HAPTICS.wall);
@@ -196,12 +283,12 @@ export class Game {
         case 'lap': {
           this.haptic(e.slot, HAPTICS.lap);
           const laps = this.track.def.laps;
-          if (this.isFollowed(e.slot)) this.toast(e.lap + 1 === laps ? 'FINAL LAP!' : `LAP ${e.lap + 1}`, 1.5);
+          if (e.lap < laps) this.toast(e.slot, e.lap + 1 === laps ? 'FINAL LAP!' : `LAP ${e.lap + 1}`, 1.5);
           break;
         }
         case 'finish':
           this.haptic(e.slot, HAPTICS.finish);
-          if (this.isFollowed(e.slot)) this.toast(`FINISH! ${e.place}${ordinalSuffix(e.place)}`, 3);
+          this.toast(e.slot, `FINISH! ${e.place}${ordinalSuffix(e.place)}`, 30);
           break;
         case 'done':
           this.doneAt = this.elapsed;
@@ -210,43 +297,8 @@ export class Game {
     }
   }
 
-  private isFollowed(slot: number): boolean {
-    return [...this.views.keys()][this.followIndex] === slot;
-  }
-
   private haptic(slot: number, pattern: readonly number[]): void {
     this.players.sendTo(slot, { t: 'haptic', pattern: [...pattern] });
-  }
-
-  private toast(text: string, seconds: number): void {
-    this.el.center.textContent = text;
-    this.el.center.className = 'hud-center pop';
-    void this.el.center.offsetWidth; // restart the CSS animation
-    this.el.center.className = 'hud-center pop show';
-    this.toastUntil = this.elapsed + seconds;
-  }
-
-  private updateHud(slot: number, view: KartView): void {
-    const race = this.world.race!;
-    const racer = race.racers.get(slot)!;
-    const laps = race.totalLaps;
-    const pos = racer.place ?? race.positionOf(slot);
-    this.hud.style.setProperty('--slot-color', colorHex(this.players.slots.slots[slot]?.color ?? 0));
-    this.el.pos.textContent = String(pos);
-    this.el.posSuffix.textContent = ordinalSuffix(pos);
-    this.el.lap.innerHTML = `LAP <b>${Math.min(laps, Math.max(1, racer.lap))}</b>/${laps}`;
-    const t = racer.finishTime ?? race.time;
-    this.el.time.textContent = formatTime(Math.max(0, t));
-    this.el.speed.innerHTML = `<b>${Math.round(Math.abs(view.pose.speed) * 3.6)}</b> km/h`;
-
-    // Countdown numbers (overrides toasts).
-    if (race.phase === 'countdown') {
-      const n = Math.ceil(-race.time);
-      const text = String(Math.max(1, n));
-      if (this.el.center.textContent !== text) this.toast(text, 1);
-    } else if (this.elapsed > this.toastUntil) {
-      this.el.center.className = 'hud-center';
-    }
   }
 
   private sendStatus(): void {
@@ -273,14 +325,20 @@ export class Game {
       const r = race.racers.get(slot)!;
       const p = this.players.slots.slots[slot];
       const best = r.lapTimes.length ? Math.min(...r.lapTimes) : null;
-      return { place: r.place ?? 0, name: p?.name ?? `P${slot + 1}`, color: colorHex(p?.color ?? slot), time: r.finished ? formatTime(r.finishTime!) : 'DNF', best: best === null ? '–' : formatTime(best) };
+      return {
+        place: r.place ?? 0,
+        name: p?.name ?? `P${slot + 1}`,
+        color: colorHex(p?.color ?? slot),
+        time: r.finished ? formatTime(r.finishTime!) : 'DNF',
+        best: best === null ? '–' : formatTime(best),
+      };
     });
     rows.sort((a, b) => a.place - b.place);
-    const table = document.createElement('div');
-    table.className = 'results-box';
-    table.innerHTML = `<h2>Results</h2><table><thead><tr><th></th><th>Racer</th><th>Time</th><th>Best lap</th></tr></thead><tbody></tbody></table>
+    const box = document.createElement('div');
+    box.className = 'results-box';
+    box.innerHTML = `<h2>Results</h2><table><thead><tr><th></th><th>Racer</th><th>Time</th><th>Best lap</th></tr></thead><tbody></tbody></table>
       <p class="results-help">Tap <b>RACE AGAIN</b> on your phones (or press <kbd>Enter</kbd>) · <kbd>Esc</kbd> back to lobby</p>`;
-    const tbody = table.querySelector('tbody')!;
+    const tbody = box.querySelector('tbody')!;
     for (const row of rows) {
       const tr = document.createElement('tr');
       tr.innerHTML = `<td class="place">${row.place}${ordinalSuffix(row.place)}</td><td class="name"><span class="dot"></span><span class="n"></span></td><td>${row.time}</td><td>${row.best}</td>`;
@@ -288,14 +346,13 @@ export class Game {
       tr.querySelector('.n')!.textContent = row.name; // names come from phones: textContent only
       tbody.appendChild(tr);
     }
-    this.el.results.replaceChildren(table);
-    this.el.results.classList.remove('hidden');
+    this.results.replaceChildren(box);
+    this.results.classList.remove('hidden');
   }
 
   private resize(): void {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h);
-    this.chase.setAspect(w / h);
   }
 }

@@ -61,7 +61,9 @@ export class LobbyView {
         ? 'phone'
         : slot.owner.kind === 'keyboard'
           ? `keyboard (${KEY_SCHEMES[slot.owner.scheme].label})`
-          : `gamepad ${slot.owner.index + 1}`;
+          : slot.owner.kind === 'gamepad'
+            ? `gamepad ${slot.owner.index + 1}`
+            : 'computer';
     const stateText = !slot.connected ? 'Disconnected – waiting to rejoin' : slot.ready ? 'READY!' : 'Not ready';
     const stateClass = !slot.connected ? 'gone' : slot.ready ? 'ready' : 'waiting';
 

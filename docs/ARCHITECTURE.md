@@ -64,8 +64,9 @@ racing_game/
    │  ├─ playerManager.ts      ✅ phones + local devices → latest input per slot
    │  ├─ input/localInput.ts   ✅ keyboard + gamepad fallback
    │  ├─ lobbyView.ts          ✅ lobby cards + input debug readout
-   │  ├─ game.ts               ✅ one race: World + renderer + loop, HUD, results,
-   │  │                           phone status + haptics (per-viewport HUD in M4)
+   │  ├─ game.ts               ✅ one race: World + split-screen rendering + loop,
+   │  │                           results, phone status + haptics, bot inputs
+   │  ├─ viewHud.ts            ✅ per-viewport HUD (position, lap, time, item, toasts)
    ├─ sim/                     ✅ pure TS, no DOM/Three.js
    │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
    │  ├─ loop.ts               ✅ fixed-timestep accumulator
@@ -77,6 +78,7 @@ racing_game/
    │  ├─ collision.ts          ✅ wall + kart-vs-kart bounces
    │  ├─ race.ts               ✅ countdown/rocket start, checkpoints, laps, ranking, finish
    │  ├─ world.ts              ✅ track + karts + race, tick() → events
+   │  ├─ autopilot.ts          ✅ computer driver (bots, tests)
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   ✅ track DATA only
    │  ├─ types.ts              ✅ TrackDef format
@@ -84,7 +86,8 @@ racing_game/
    │  └─ index.ts              ✅ list of tracks
    ├─ render/                  ✅ Three.js: scene/sky, procedural textures, kart model,
    │                              interpolated kart view (tilts with the road), chase camera,
-   │                              trackView (road/curbs/walls/ramp/pads/gantry/scenery)
+   │                              trackView (road/curbs/walls/ramp/pads/gantry/scenery),
+   │                              layout.ts (split-screen rects), minimap.ts, quality presets
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

@@ -112,6 +112,7 @@ export class PlayerManager {
     if (phase === 'lobby') this.slots.resetToLobby();
     // Results screen: "ready" now means "race again", so everyone starts un-ready.
     if (phase === 'results') for (const p of this.slots.players) p.ready = false;
+    this.readyBots();
     this.broadcast({ t: 'phase', phase });
     this.lobbyChanged();
   }
@@ -129,6 +130,26 @@ export class PlayerManager {
     this.slots.remove(slotIndex);
     this.localInputs.delete(slotIndex);
     this.lobbyChanged();
+  }
+
+  isBot(slotIndex: number): boolean {
+    return this.slots.slots[slotIndex]?.owner.kind === 'bot';
+  }
+
+  /** Add a computer driver (lobby only). Bots are always ready. */
+  addBot(): boolean {
+    if (this.slots.phase !== 'lobby') return false;
+    let id = 1;
+    while (this.slots.find({ kind: 'bot', id })) id++;
+    const r = this.slots.join({ kind: 'bot', id }, `Bot ${id}`, id + 3);
+    if (!r.ok) return false;
+    r.slot.ready = true;
+    this.lobbyChanged();
+    return true;
+  }
+
+  private readyBots(): void {
+    for (const p of this.slots.players) if (p.owner.kind === 'bot') p.ready = true;
   }
 
   /** Attach keyboard controls for a scheme (used by the ?drive dev shortcut). */
@@ -159,6 +180,9 @@ export class PlayerManager {
         }
       }
     });
+
+    // B adds a bot.
+    if (pressed.has('KeyB') && inLobby) this.addBot();
 
     // Gamepads: press Start/A to join.
     for (const pad of connectedGamepads()) {
