@@ -25,14 +25,17 @@ import {
   enableWakeLock,
   getClientId,
   isIOS,
+  isPortrait,
   motionPermissionNeeded,
   requestMotionPermission,
+  screenOrientationDeg,
   tryFullscreenLandscape,
   vibrate,
 } from './device';
 import { ItemView } from './itemView';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
+import { uiRotationDeg } from './steering';
 import { TouchButtons } from './touchButtons';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -50,7 +53,30 @@ const TRICK_PULSE_MS = 150;
 const prefs = loadPrefs();
 const clientId = getClientId();
 const transport = new PeerControllerTransport();
-const motion = new MotionInput(prefs.steering);
+// Gravity sign convention: remembered per device once learned; first guess is
+// "inverted" on iOS (see steering.ts).
+const SIGN_KEY = 'tiltkart.gravityInverted';
+function loadInverted(): boolean {
+  try {
+    const v = localStorage.getItem(SIGN_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  } catch {
+    /* ignore */
+  }
+  return isIOS();
+}
+function saveInverted(v: boolean) {
+  try {
+    localStorage.setItem(SIGN_KEY, v ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+const motion = new MotionInput(prefs.steering, loadInverted());
+motion.onSignLearned = saveInverted;
+// Where no permission prompt is needed (Android), start listening right away:
+// while the player types their name in portrait we learn the sensor's sign.
+if (!motionPermissionNeeded()) motion.start();
 
 let room: string | null = normalizeRoomCode(new URLSearchParams(location.search).get('room'));
 let link: Link | null = null;
@@ -373,14 +399,50 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 const wheel = $('wheel');
 const debugEl = $('debug-overlay');
+const stage = $('stage');
+let stageRot = NaN;
+let stageW = 0;
+let stageH = 0;
+
+/**
+ * Rotate the controller to match how the phone is held. With rotation lock on,
+ * the page stays portrait while you hold the phone sideways, so we turn the
+ * whole stage 90 deg ourselves. Without the lock the browser has already turned
+ * the page and the extra rotation works out to 0.
+ */
+function layoutStage() {
+  const rot = motion.hasSensor ? uiRotationDeg(motion.steering.grip, screenOrientationDeg()) : 0;
+  const sideways = Math.abs(rot) === 90;
+  const w = sideways ? window.innerHeight : window.innerWidth;
+  const h = sideways ? window.innerWidth : window.innerHeight;
+  if (rot !== stageRot || w !== stageW || h !== stageH) {
+    stageRot = rot;
+    stageW = w;
+    stageH = h;
+    stage.style.setProperty('--stage-rot', `${rot}deg`);
+    stage.style.setProperty('--stage-w', `${w}px`);
+    stage.style.setProperty('--stage-h', `${h}px`);
+    stage.classList.toggle('rot90', rot === 90);
+    stage.classList.toggle('rotm90', rot === -90);
+    stage.classList.toggle('rot180', rot === 180);
+    window.dispatchEvent(new Event('resize')); // let the item canvas re-measure
+  }
+  // "Turn your phone sideways" prompt: from the sensor if we have one, else from the window shape.
+  const needRotate = motion.hasSensor ? motion.steering.upright || motion.steering.grip === null : isPortrait();
+  document.body.classList.toggle('need-rotate', needRotate);
+}
+
 function frame() {
+  layoutStage();
   wheel.style.transform = `rotate(${(motion.steer * 90).toFixed(1)}deg)`;
   if (prefs.showDebug) {
     debugEl.textContent =
       `ping ${rttMs === null ? '–' : rttMs.toFixed(0)} ms  send ${sendRate} Hz  motion ${motion.eventRateHz.toFixed(0)} Hz\n` +
       `angle ${motion.angleDeg.toFixed(1)}°  steer ${motion.steer.toFixed(3)}  orient ${motion.orientationDeg}°\n` +
       `sensor ${motion.hasSensor ? 'yes' : 'NO (use ←/→ keys)'}  pose ${motion.validPose ? 'ok' : 'too flat'}  ` +
-      `cal ${motion.steering.isCalibrated ? 'yes' : 'no'}  btn ${touch.buttons.toString(2).padStart(5, '0')}  ${isIOS() ? 'iOS' : ''}`;
+      `cal ${motion.steering.isCalibrated ? 'yes' : 'no'}  btn ${touch.buttons.toString(2).padStart(5, '0')}
+` +
+      `grip ${motion.steering.grip ?? '–'}  ui rot ${stageRot}°  sign ${motion.steering.inverted ? 'inverted' : 'spec'}  ${isIOS() ? 'iOS' : ''}`;
   }
   requestAnimationFrame(frame);
 }
@@ -434,6 +496,12 @@ $('ping-chip').addEventListener('click', () => {
   prefs.showDebug = !prefs.showDebug;
   debugEl.classList.toggle('hidden', !prefs.showDebug);
   savePrefs(prefs);
+});
+$('flip-btn').addEventListener('click', () => {
+  // Only needed if the controller shows upside down (sensor sign guessed wrong).
+  motion.steering.toggleInverted();
+  saveInverted(motion.steering.inverted);
+  vibrate(20);
 });
 $('recenter-btn').addEventListener('click', () => {
   motion.calibrate();

@@ -102,6 +102,23 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
 .skip-btn { background: none; border: 1px solid #3a4280; color: var(--muted); border-radius: 10px; padding: 8px 14px; font-size: 14px; }
 
 /* ---------- Controller pad ---------- */
+/*
+ * #stage holds the pad. JS sets --stage-w/--stage-h/--stage-rot: when the phone is
+ * portrait-locked but held sideways, the stage is sized to the swapped
+ * dimensions and rotated 90 deg so the controller looks landscape. Sizes inside
+ * use cqh/cqw ("container query" units = % of the stage), not vh/vw (% of the
+ * page), so they stay right when rotated.
+ */
+#stage {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: var(--stage-w, 100vw);
+  height: var(--stage-h, 100vh);
+  transform: translate(-50%, -50%) rotate(var(--stage-rot, 0deg));
+  container-type: size;
+  overflow: hidden;
+}
 #pad-screen {
   display: grid;
   /* minmax(0, …) stops content (like the canvas bitmap) from stretching a column. */
@@ -109,6 +126,9 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
   grid-template-rows: minmax(0, 1fr);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
+.rot90 #pad-screen { padding: env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top); }
+.rotm90 #pad-screen { padding: env(safe-area-inset-left) env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom); }
+.rot180 #pad-screen { padding: env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top) env(safe-area-inset-right); }
 .zone { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .btn {
   display: flex;
@@ -116,7 +136,7 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
   justify-content: center;
   border-radius: 22px;
   font-weight: 900;
-  font-size: clamp(16px, 5vh, 30px);
+  font-size: clamp(16px, 5cqh, 30px);
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.9);
   border: 3px solid rgba(255, 255, 255, 0.15);
@@ -143,7 +163,7 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
   flex: 1;
   text-align: center;
   font-weight: 800;
-  font-size: clamp(14px, 4.5vh, 22px);
+  font-size: clamp(14px, 4.5cqh, 22px);
   color: var(--player);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -161,22 +181,22 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
   justify-items: center;
   gap: 2px 8px;
 }
-.position { grid-area: 1 / 1; font-size: clamp(20px, 10vh, 56px); font-weight: 900; font-style: italic; line-height: 1; }
-.lap { grid-area: 1 / 2; font-size: clamp(12px, 5vh, 22px); font-weight: 700; color: var(--muted); }
+.position { grid-area: 1 / 1; font-size: clamp(20px, 10cqh, 56px); font-weight: 900; font-style: italic; line-height: 1; }
+.lap { grid-area: 1 / 2; font-size: clamp(12px, 5cqh, 22px); font-weight: 700; color: var(--muted); }
 .item-canvas {
   grid-row: 2;
   grid-column: 1 / -1;
   /* Square box that fits both the column width and the available height. */
-  height: min(100%, 42vh);
+  height: min(100%, 42cqh);
   max-width: 100%;
   width: auto;
   aspect-ratio: 1;
   min-height: 0;
 }
 .bottom { display: flex; align-items: center; gap: 12px; }
-.wheel { width: clamp(40px, 16vh, 80px); height: auto; color: var(--player); transition: none; }
+.wheel { width: clamp(40px, 16cqh, 80px); height: auto; color: var(--player); transition: none; }
 .ready-btn {
-  font-size: clamp(16px, 6vh, 28px);
+  font-size: clamp(16px, 6cqh, 28px);
   font-weight: 900;
   padding: 8px 24px;
   border-radius: 14px;
@@ -203,9 +223,8 @@ input { user-select: text; -webkit-user-select: text; touch-action: manipulation
 }
 /* Rotate prompt: only while the pad is showing and the phone is upright. */
 .rotate { display: none; }
-@media (orientation: portrait) {
-  body.playing .rotate { display: flex; }
-}
+body.playing.need-rotate .rotate { display: flex; }
+.rotate .hint { font-size: 15px; max-width: 22em; }
 .rotate-icon { font-size: 64px; }
 
 .settings { z-index: 20; }

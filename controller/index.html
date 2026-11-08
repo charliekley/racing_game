@@ -40,7 +40,11 @@
       <button id="motion-skip" class="skip-btn hidden">Continue without tilt (desktop testing: ←/→ keys)</button>
     </section>
 
-    <!-- 3. The controller itself (landscape) -->
+    <!--
+      3. The controller itself. Everything inside #stage is rotated by CSS when the
+      phone is portrait-locked but held sideways, so it always looks landscape.
+    -->
+    <div id="stage">
     <section id="pad-screen" class="screen hidden">
       <div id="zone-left" class="zone left">
         <div class="btn item" data-button="ITEM">ITEM</div>
@@ -75,11 +79,6 @@
       </div>
     </section>
 
-    <!-- Overlays -->
-    <div id="rotate-overlay" class="overlay rotate">
-      <div class="rotate-icon">📱↻</div>
-      <div>Turn your phone sideways</div>
-    </div>
     <div id="conn-overlay" class="overlay hidden"><div id="conn-text">Connecting…</div></div>
 
     <div id="settings-panel" class="overlay settings hidden">
@@ -97,6 +96,7 @@
         <label class="row"><input id="set-invert" type="checkbox" /> Invert steering</label>
         <label class="row"><input id="set-debug" type="checkbox" /> Show debug info</label>
         <div class="row-buttons">
+          <button id="flip-btn">Flip 180°</button>
           <button id="recenter-btn">Recenter</button>
           <button id="settings-close">Done</button>
         </div>
@@ -104,6 +104,13 @@
     </div>
 
     <pre id="debug-overlay" class="debug-overlay hidden"></pre>
+    </div>
+
+    <div id="rotate-overlay" class="overlay rotate">
+      <div class="rotate-icon">📱↻</div>
+      <div>Turn your phone sideways<br />like a steering wheel</div>
+      <div class="hint">Tip: turn on rotation lock – the controller turns itself.</div>
+    </div>
 
     <script type="module" src="../src/controller/main.ts"></script>
   </body>

@@ -64,17 +64,21 @@ racing_game/
    │  ├─ playerManager.ts      ✅ phones + local devices → latest input per slot
    │  ├─ input/localInput.ts   ✅ keyboard + gamepad fallback
    │  ├─ lobbyView.ts          ✅ lobby cards + input debug readout
+   │  ├─ game.ts               ✅ driving session: World + renderer + loop
    │  └─ ui/                   M3/M4 HUD, countdown, results
-   ├─ sim/                     M2+
-   │  ├─ config.ts             ALL handling / item tuning numbers
-   │  ├─ loop.ts               fixed-timestep accumulator
-   │  ├─ kart.ts               arcade kart controller (raycast ground, drift, boosts)
-   │  ├─ race.ts               checkpoints, laps, ranking, countdown
+   ├─ sim/                     ✅ pure TS, no DOM/Three.js
+   │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
+   │  ├─ loop.ts               ✅ fixed-timestep accumulator
+   │  ├─ kart.ts               ✅ arcade kart controller (raycast ground; drift/boosts in M5)
+   │  ├─ ground.ts             ✅ Ground interface + M2 test oval
+   │  ├─ world.ts              ✅ all karts, tick()
+   │  ├─ race.ts               M3 checkpoints, laps, ranking, countdown
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   M3+
    │  ├─ tracks/*.ts           control-point files (adding a track = adding a file)
    │  └─ buildTrack.ts         spline → road/walls/ramps/checkpoints (data + meshes)
-   ├─ render/                  M2+ Three.js scene, karts, split-screen cameras
+   ├─ render/                  ✅ Three.js: scene/sky, kart model, interpolated kart view,
+   │                              chase camera, test-ground visuals (split-screen in M4)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 
@@ -122,11 +126,18 @@ laptop's dev server over `http://192.168.x.x` gets no sensors. Options:
 ## Steering math (phone)
 
 `accelerationIncludingGravity` gives the gravity direction in the phone's own axes.
-Held like a wheel, gravity lies mostly in the screen plane, and the wheel angle is
-`atan2(-gx, gy)` (clockwise positive), offset by the screen orientation angle so
-"level" is 0° in both landscape directions. Then: calibration offset (pose when
+Held like a wheel, gravity lies mostly in the screen plane, and the phone's roll is
+`atan2(-gx, gy)` (clockwise positive). The **grip** (top of phone pointing left
+or right) is worked out from gravity alone, with hysteresis, and the wheel angle is
+roll minus the grip's level angle (±90°). Screen orientation is deliberately
+*not* used for steering: when the browser auto-rotates the page mid-turn, the
+steering must not jump. With rotation lock on, the controller UI is rotated by CSS
+(`#stage`) to match the grip. Then: calibration offset (pose when
 you press READY / Recenter) → 3° deadzone → scale so 45° = full lock → slight cubic
 response curve → sensitivity / invert → exponential low-pass filter (40 ms). If
 the phone is held almost flat (too little gravity in the screen plane) the last
 value is held instead of producing noise. Some iOS versions report gravity with the
-opposite sign; the processor detects that from the first reading.
+opposite sign. Steering direction is unaffected by that (negating a vector
+commutes with rotating it), but the UI rotation is, so the sign is learned from
+moments where "up" is known (phone upright in portrait, or the browser having
+rotated the page to landscape) and remembered per device.

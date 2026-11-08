@@ -12,6 +12,7 @@ import { RoomTakenError } from '../shared/net/transport';
 import type { ItemDisplay } from '../shared/protocol';
 import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
 import { controllerUrl } from './controllerUrl';
+import { Game } from './game';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { PlayerManager } from './playerManager';
@@ -93,14 +94,58 @@ const lobbyView = new LobbyView($('slots'), players, {
   kick: (slot) => players.kick(slot),
 });
 
+// --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
+const gameEl = $('game');
+let game: Game | null = null; // created on first use (sets up WebGL)
+let driving = false;
+let startTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startDriving() {
+  startTimer = null;
+  if (driving || players.slots.players.length === 0) return;
+  driving = true;
+  players.setPhase('race');
+  $('app').classList.add('hidden');
+  gameEl.classList.remove('hidden');
+  game ??= new Game(gameEl, players);
+  game.start(players.slots.players.map((p) => p.index));
+}
+
+function backToLobby() {
+  if (!driving) return;
+  driving = false;
+  players.setPhase('lobby');
+  gameEl.classList.add('hidden');
+  $('app').classList.remove('hidden');
+  lobbyView.render();
+}
+
 players.onLobbyChange.add(() => {
   lobbyView.render();
+  if (driving) return;
+  // When everyone is ready, start after a short pause (cancelled if someone un-readies).
   const all = players.slots.allReady();
   banner.classList.toggle('hidden', !all);
-  banner.textContent = all ? 'Everyone is ready! (Racing arrives in Milestone 3)' : '';
+  banner.textContent = all ? 'Everyone is ready! Starting…' : '';
+  if (all && !startTimer) startTimer = setTimeout(startDriving, 1500);
+  if (!all && startTimer) {
+    clearTimeout(startTimer);
+    startTimer = null;
+  }
 });
 lobbyView.render();
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') backToLobby();
+});
+
+// Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into driving.
+if (new URLSearchParams(location.search).has('drive')) {
+  players.slots.join({ kind: 'keyboard', scheme: 0 }, 'Keys WASD', 2);
+  players.addKeyboardInput(0);
+  startDriving();
+}
 
 // Debug toggle with the backtick key.
 window.addEventListener('keydown', (e) => {
@@ -117,7 +162,8 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   players.updateLocal(dt);
-  lobbyView.updateDebug();
+  if (driving && game) game.frame(dt);
+  else lobbyView.updateDebug();
   frames++;
   if (now - fpsTimer > 500) {
     fpsEl.textContent = `${Math.round((frames * 1000) / (now - fpsTimer))} fps`;

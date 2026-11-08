@@ -33,16 +33,19 @@ export class MotionInput {
   hasSensor = false;
   /** Called on each detected flick. */
   onTrick: () => void = () => {};
+  /** Called when the gravity sign convention was learned/changed (to persist it). */
+  onSignLearned: (inverted: boolean) => void = () => {};
 
   // Desktop keyboard fallback
   private keyLeft = false;
   private keyRight = false;
   private keySteer = 0;
 
-  constructor(settings: SteeringSettings) {
-    this.steering = new SteeringProcessor(settings);
+  constructor(settings: SteeringSettings, inverted: boolean) {
+    this.steering = new SteeringProcessor(settings, inverted);
   }
 
+  /** Safe to call more than once. */
   start(): void {
     if (this.started) return;
     this.started = true;
@@ -84,6 +87,7 @@ export class MotionInput {
     this.steer = sample.steer;
     this.angleDeg = sample.angleDeg;
     this.validPose = sample.valid;
+    if (this.steering.signChanged) this.onSignLearned(this.steering.inverted);
 
     const a = e.acceleration;
     const linear: [number, number, number] | null =

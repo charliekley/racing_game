@@ -58,6 +58,8 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     target: 'es2022',
+    // Three.js alone is ~550 kB minified (~150 kB gzipped); that's expected.
+    chunkSizeWarningLimit: 900,
     rollupOptions: {
       input: {
         main: `${root}index.html`,

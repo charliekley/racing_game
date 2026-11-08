@@ -129,6 +129,11 @@ export class PlayerManager {
     this.lobbyChanged();
   }
 
+  /** Attach keyboard controls for a scheme (used by the ?drive dev shortcut). */
+  addKeyboardInput(scheme: number): void {
+    this.keyboards[scheme] = new KeyboardPlayerInput(this.keys, KEY_SCHEMES[scheme]);
+  }
+
   // -------------------------------------------------------------------------
   // Local players (keyboard / gamepad). Call once per rendered frame.
   // -------------------------------------------------------------------------

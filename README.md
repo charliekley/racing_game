@@ -4,9 +4,9 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 1 of 7.** Phones connect with a room code and QR code, send
-> tilt and buttons at 60 Hz, and the TV shows a live readout of every controller.
-> Driving arrives in M2.
+> **Status: Milestone 2 of 7.** Phones connect with a room code + QR code and
+> act as tilt steering wheels; when everyone is ready, all players drive karts
+> around a test oval (one chase camera for now; split-screen in M4).
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -69,17 +69,20 @@ The phone and laptop must be on the **same Wi-Fi**.
 3. Enter your name, pick a color, tap **JOIN**.
 4. iOS asks to allow **Motion & Orientation** access. Tap **Allow**. If you tap
    *Cancel* by mistake, close the tab completely, scan again, and allow it.
-5. Turn the phone sideways. Hold it like a steering wheel and tap **READY**.
-   That also sets "straight ahead".
-6. Tips: turn off Rotation Lock in Control Center. Low Power Mode may stop the
-   screen-awake feature from working.
+5. **Turn on Rotation Lock** (Control Center → the lock icon) – recommended.
+   Then hold the phone sideways like a steering wheel: the controller rotates
+   itself to match, and steering can never be thrown off by the screen
+   auto-rotating mid-turn. (It also works with rotation unlocked.)
+6. Tap **READY** while holding the wheel level – that also sets "straight ahead".
+7. Tips: Low Power Mode may stop the screen-awake feature from working. If the
+   controller ever shows upside down, tap ⚙ → **Flip 180°** (it remembers).
    iOS has no vibration API for web pages, so iPhones don't buzz. That's expected.
 
 ### Android (Chrome)
 
 Same as above. At the certificate warning, tap **Advanced → Proceed**. Android
 doesn't ask for motion permission. The controller goes fullscreen and vibrates on
-events.
+events. Auto-rotate off (portrait locked) is recommended here too.
 
 ### Fallback: Cloudflare quick tunnel (valid HTTPS, no warnings)
 
@@ -125,7 +128,7 @@ serves the files.
 | **BRAKE** (left, bottom) | Brake / reverse (hold) |
 | **ITEM** (left, top) | Tap to use, hold to drag behind you |
 | Quick flick/shake | Trick when airborne |
-| ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, recenter |
+| ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, flip 180°, recenter |
 | ping chip (top left) | Toggle debug overlay |
 
 You can slide your thumb between GAS and DRIFT without lifting it.
@@ -144,6 +147,10 @@ You can slide your thumb between GAS and DRIFT without lifting it.
 Press the same number again to remove a keyboard player. The **`** key toggles
 the debug readouts on the TV.
 
+While driving: **C** switches which kart the camera follows, **Esc** returns to
+the lobby. Shortcut for tuning: open **`/host/?drive`** to skip the lobby and
+drive immediately with WASD.
+
 ---
 
 ## 5. Tuning
@@ -153,12 +160,31 @@ the debug readouts on the TV.
   angle, response curve and smoothing. Players can also change sensitivity, full-lock angle
   and invert on their phone.
 * **Flick/trick sensitivity:** `DEFAULT_TRICK` in [`src/controller/trick.ts`](src/controller/trick.ts).
-* **Kart handling, drift, items:** `src/sim/config.ts` (added in M2). All
-  driving numbers will live in that one file.
+* **Kart handling and camera:** [`src/sim/config.ts`](src/sim/config.ts) – top
+  speed, acceleration curve, braking, reverse, turn rates at low/high speed,
+  grip, off-road penalties, gravity, plus chase-camera distance/lag/FOV. Save
+  the file and the dev server reloads. Drift and item numbers will go here too.
 
 ---
 
-## 6. Milestone 1 test checklist
+## 6. Milestone 2 test checklist
+
+1. `npm run dev`, open `https://localhost:5173/host/?drive`. You're in a green
+   kart on the start straight. W = gas, S = brake/reverse, A/D = steer.
+2. Look for: ~100 km/h top speed after ~4 s; the kart can't turn while stopped;
+   turns are tight at low speed and wider at top speed; driving onto the grass
+   slows you to ~50 km/h *gradually* (no sudden stop); S while stopped reverses,
+   and steering flips like a real car when reversing.
+3. Now the phone: open `/host/` (no `?drive`), join with your iPhone (rotation
+   lock ON), hold it sideways, tap READY. After 1.5 s everyone is on the track.
+4. Steer by tilting. Things to judge and tell me about: is 45° to full lock
+   comfortable? Is it twitchy around center (raise the deadzone/curve) or laggy
+   (lower `smoothingMs`)? Oversteer the phone way past 45° – the kart should just
+   stay at full lock, never snap the other way.
+5. Try the ⚙ sensitivity / full-lock sliders mid-drive; changes apply instantly.
+6. Press **C** to cycle the camera between karts, **Esc** to go back to the lobby.
+
+## 7. Milestone 1 test checklist
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
@@ -181,7 +207,7 @@ the debug readouts on the TV.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -189,5 +215,6 @@ the debug readouts on the TV.
 | Stuck on "Connecting…" / "No game found" | Is the TV page open and *Online*? Check the code. Refresh the TV page (it keeps the same code). |
 | High ping (100 ms+) | Your network probably blocks device-to-device traffic, so data is relayed through a TURN server. Try a home network or a phone hotspot. |
 | Steering reversed | ⚙ → *Invert steering*, then tell me which phone/OS so I can fix the detection. |
+| Controller upside down | ⚙ → *Flip 180°* (remembered on that phone). |
 | Steering center is off | Hold the wheel level and tap ⚙ → *Recenter* (or toggle READY). |
 | No motion on iPhone | You probably denied permission. Close the tab, rescan, tap Allow. |
