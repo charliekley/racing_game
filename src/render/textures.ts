@@ -145,3 +145,67 @@ export function boostTexture(): THREE.CanvasTexture {
     }
   });
 }
+
+/**
+ * Banner sheet for the made-up "TILT KART" brand, two designs stacked:
+ *   top half    (v 0.5..1): "TILT KART" logo on blue
+ *   bottom half (v 0..0.5): "FULL TILT!" on red
+ * Use BANNER_LOGO / BANNER_SLOGAN as UV rectangles (see MeshBatch.add).
+ */
+export function bannerTexture(): THREE.CanvasTexture {
+  const tex = canvasTexture(512, (ctx, n) => {
+    const row = n / 2;
+    const drawRow = (y: number, bg0: string, bg1: string, text: string, fill: string) => {
+      const g = ctx.createLinearGradient(0, y, n, y + row);
+      g.addColorStop(0, bg0);
+      g.addColorStop(1, bg1);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, y, n, row);
+      // Diagonal speed stripes in the background.
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      for (let k = -2; k < 10; k++) {
+        ctx.beginPath();
+        ctx.moveTo(k * 64, y + row);
+        ctx.lineTo(k * 64 + 40, y);
+        ctx.lineTo(k * 64 + 64, y);
+        ctx.lineTo(k * 64 + 24, y + row);
+        ctx.fill();
+      }
+      // Checkered ends.
+      const c = row / 8;
+      for (let j = 0; j < 8; j++)
+        for (let i = 0; i < 2; i++) {
+          ctx.fillStyle = (i + j) % 2 ? '#111' : '#fafafa';
+          ctx.fillRect(i * c, y + j * c, c, c);
+          ctx.fillRect(n - (i + 1) * c, y + j * c, c, c);
+        }
+      // Slanted logo text with a dark outline.
+      ctx.save();
+      ctx.translate(n / 2, y + row / 2);
+      ctx.transform(1, 0, -0.18, 1, 0, 0);
+      // Start big, then shrink the font until the text fits between the checkered ends.
+      let size = Math.round(row * 0.62);
+      const font = () => `900 ${size}px "Arial Black", Impact, sans-serif`;
+      ctx.font = font();
+      while (ctx.measureText(text).width > n - 4 * c - 40 && size > 10) {
+        size -= 2;
+        ctx.font = font();
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = row * 0.08;
+      ctx.strokeStyle = '#1a1a2e';
+      ctx.strokeText(text, 0, 4);
+      ctx.fillStyle = fill;
+      ctx.fillText(text, 0, 4);
+      ctx.restore();
+    };
+    drawRow(0, '#1d3fa0', '#2f7be0', 'TILT KART', '#ffd23a');
+    drawRow(row, '#c62828', '#ff7a1a', 'FULL TILT!', '#ffffff');
+  });
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+export const BANNER_LOGO = { u: 0, v: 0.5, w: 1, h: 0.5 };
+export const BANNER_SLOGAN = { u: 0, v: 0, w: 1, h: 0.5 };
