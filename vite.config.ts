@@ -6,10 +6,11 @@
  * straight to the browser (compiling on the fly); `vite build` produces static
  * files in dist/ that can be hosted anywhere (we use GitHub Pages).
  *
- * This is a "multi-page app": three HTML entry points
+ * This is a "multi-page app": several HTML entry points
  *   /            -> index.html            (tiny landing page)
  *   /host/       -> host/index.html       (the game, on the TV)
  *   /controller/ -> controller/index.html (the phone controller)
+ *   /karts/      -> karts/index.html      (dev page: kart model preview)
  */
 import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -65,6 +66,7 @@ export default defineConfig(({ command }) => ({
         main: `${root}index.html`,
         host: `${root}host/index.html`,
         controller: `${root}controller/index.html`,
+        karts: `${root}karts/index.html`,
       },
     },
   },
