@@ -98,10 +98,10 @@ export class Game {
     quality: QualitySettings,
   ) {
     this.renderer = createRenderer(container, quality);
-    const parts = createScene();
+    this.track = new Track(TRACKS[0]);
+    const parts = createScene(this.track.def.theme);
     this.scene = parts.scene;
     this.sun = parts.sun;
-    this.track = new Track(TRACKS[0]);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
     applySceneQuality(this.scene, this.sun, quality);

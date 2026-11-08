@@ -84,11 +84,14 @@ racing_game/
    │  ├─ types.ts              ✅ TrackDef format
    │  ├─ tracks/meadowRing.ts  ✅ control points + features (adding a track = adding a file)
    │  └─ index.ts              ✅ list of tracks
-   ├─ render/                  ✅ Three.js: scene/sky, procedural textures, kart model,
-   │                              interpolated kart view (tilts with the road), chase camera,
-   │                              trackView (road/curbs/walls/ramp/pads/gantry/scenery),
-   │                              layout.ts (split-screen rects), minimap.ts, quality presets,
-   │                              effects.ts (drift sparks, boost flames, carrier drone)
+   ├─ render/                  ✅ Three.js: scene.ts (theme-colored sky dome with sun,
+   │                              lights, fog, quality presets), procedural textures, kart
+   │                              models (4 styles), interpolated kart view (tilts with the
+   │                              road), chase camera, trackView (road/curbs/walls/ramp/pads/
+   │                              water), scenery.ts (biomes, trees, grandstands, banners,
+   │                              mountains, clouds, gantry), meshBatch.ts (merges many shapes
+   │                              into one draw call), layout.ts (split-screen rects),
+   │                              minimap.ts, effects.ts (drift sparks, boost flames, carrier drone)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

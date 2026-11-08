@@ -186,11 +186,19 @@ instant 4-way split-screen (`=2`, `=3` work too).
 
 The TV draws the whole scene once per player each frame, so 4 players means 4
 renders. To keep 60 fps: shadows are computed once per frame and shared,
-scenery is instanced (one draw call for all trees), and materials are cheap.
-If the frame rate (top-right in debug mode) drops below 60, press **Q** in the
-lobby: **Medium** (default) renders at 1 pixel per screen pixel with shadows,
-**Low** turns shadows off and renders at 75% resolution, **High** uses full
-Retina/4K resolution and sharper shadows.
+all scenery (trees, rocks, houses, grandstands, mountains…) is merged into a
+handful of meshes (about 5 draw calls for the whole landscape), and materials
+are cheap. If the frame rate (top-right in debug mode) drops below 60, press
+**Q** in the lobby: **Medium** (default) renders at 1 pixel per screen pixel
+with shadows and 70% of the grass/flower detail, **Low** turns shadows and
+clouds off, keeps 35% of the ground detail and renders at 75% resolution,
+**High** uses full Retina/4K resolution, sharper shadows and all detail.
+
+The scenery adapts to a track's `theme` colors: from the grass color it picks a
+"biome" (meadow, autumn, desert or snow) that decides tree types, foliage,
+rocks, houses and the distant mountains (see `biomeFor` in
+`src/render/scenery.ts`). The sky gradient, fog and ambient light come from
+`theme.sky` / `theme.horizon`.
 
 ---
 
