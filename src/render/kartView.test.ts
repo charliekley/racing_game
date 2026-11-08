@@ -38,7 +38,9 @@ describe('KartView effects', () => {
 
   it('shows boost flames only while boosting', () => {
     const { view, kart } = setup();
-    const flames = () => view.model.body.children.filter((c) => c instanceof THREE.Group);
+    // Flames are children of the model's exhaust markers.
+    const flames = () => view.model.exhausts.flatMap((m) => m.children).filter((c) => c instanceof THREE.Group);
+    expect(flames().length).toBeGreaterThan(0);
     view.update(kart, kart, 1, 1 / 60);
     expect(flames().every((f) => !f.visible)).toBe(true);
     kart.boostTime = 1;

@@ -128,6 +128,29 @@ export function createScene(theme: SkyTheme): SceneParts {
 }
 
 /**
+ * Re-color an existing scene for another track's theme (sky gradient, fog,
+ * ambient light) without rebuilding it. Used when the host picks a different
+ * track in the lobby.
+ */
+export function applyTheme(scene: THREE.Scene, theme: SkyTheme): void {
+  const top = new THREE.Color(theme.sky);
+  const horizon = new THREE.Color(theme.horizon);
+  scene.background = horizon.clone();
+  if (scene.fog) scene.fog.color.copy(horizon);
+  scene.traverse((o) => {
+    if (o instanceof THREE.HemisphereLight) {
+      o.color.copy(top).lerp(new THREE.Color('#ffffff'), 0.55);
+      o.groundColor.set(theme.grass).multiplyScalar(0.55);
+    }
+    const mat = (o as THREE.Mesh).material;
+    if (mat instanceof THREE.ShaderMaterial && mat.uniforms.top && mat.uniforms.horizon) {
+      mat.uniforms.top.value = top;
+      mat.uniforms.horizon.value = horizon;
+    }
+  });
+}
+
+/**
  * Big inverted sphere with a vertical color gradient plus a sun disc and glow,
  * all computed in the shader: one draw call, no textures. The dome is moved to
  * each camera right before it is drawn, so it never gets "closer" on one side.

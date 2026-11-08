@@ -22,6 +22,7 @@ import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { Minimap } from '../render/minimap';
 import {
   applyRendererQuality,
+  applyTheme,
   applySceneQuality,
   createRenderer,
   createScene,
@@ -129,6 +130,7 @@ export class Game {
    */
   setTrack(def: TrackDef): void {
     if (def === this.track.def) return;
+    applyTheme(this.scene, def.theme); // sky, fog and ambient light follow the track
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
     this.minimap.canvas.remove();

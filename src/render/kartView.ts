@@ -10,9 +10,6 @@ import { WHEEL_RADIUS, buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
 
-/** Local positions (kart space) of the rear tire contact patches and exhausts. */
-const REAR_CONTACTS = [new THREE.Vector3(0.74, 0.05, -0.75), new THREE.Vector3(-0.74, 0.05, -0.75)];
-const EXHAUSTS = [new THREE.Vector3(0.18, 0.55, -1.2), new THREE.Vector3(-0.18, 0.55, -1.2)];
 
 /** Shortest-path angle interpolation (handles wrap-around at ±π). */
 export function lerpAngle(a: number, b: number, t: number): number {
@@ -51,10 +48,10 @@ export class KartView {
     this.model.root.rotation.order = 'YXZ'; // yaw first, then pitch/roll in the kart's own frame
     scene.add(this.model.root);
     this.sparks = new SparkEmitter(scene);
-    for (const at of EXHAUSTS) {
+    // Each body style marks where its exhausts end; the flame shoots along the marker's -Z.
+    for (const marker of this.model.exhausts) {
       const f = buildFlame();
-      f.position.copy(at);
-      this.model.body.add(f);
+      marker.add(f);
       this.flames.push(f);
     }
     this.drone = new CarrierDrone(scene);
@@ -116,7 +113,7 @@ export class KartView {
     if (cur.driftDir !== 0 && cur.grounded) {
       this.sparks.setTier(cur.driftTier);
       this.back.set(-fx, 0, -fz);
-      for (const c of REAR_CONTACTS) {
+      for (const c of m.rearWheelContacts) {
         this.tmp.copy(c);
         m.root.localToWorld(this.tmp);
         this.sparks.emit(this.tmp, this.back, cur.driftTier === 0 ? 1 : 2);
