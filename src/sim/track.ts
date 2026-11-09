@@ -12,6 +12,7 @@ import type { Ground, GroundHit, Surface } from './ground';
 import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 import { resolveCannons, type ResolvedCannon } from './cannon';
+import { mainRoute, type RouteLine } from './routes';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -140,6 +141,15 @@ export class Track implements Ground {
   readonly itemBoxes: Pick<ItemBox, 'x' | 'y' | 'z' | 's'>[] = [];
   /** Launch cannons with world positions (see sim/cannon.ts). */
   readonly cannons: ResolvedCannon[];
+
+  /**
+   * Every road on the track as polylines (main loop, plus shortcut branches once
+   * those exist). Maps draw from this. See `routes.ts`.
+   */
+  get routes(): RouteLine[] {
+    return (this._routes ??= [mainRoute(this)]);
+  }
+  private _routes: RouteLine[] | null = null;
 
   constructor(readonly def: TrackDef) {
     const ctrl: V3[] = def.points.map((p) => ({ x: p[0], y: p[2] ?? 0, z: p[1] }));
