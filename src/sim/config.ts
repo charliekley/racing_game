@@ -84,7 +84,7 @@ export const KART = {
   trickMinLaunchSpeed: 3,
   /** Boost on landing after a trick (s). */
   trickBoostTime: 0.9,
-  /** Falling below this height (m) triggers a respawn. */
+  /** Unused since the track overhaul (the world uses FALL_BELOW_ROAD / FALL_FLOOR_Y in world.ts); kept for old references. */
   respawnFallY: -3,
   /** Being this far (m) outside the track's edge for `offTrackRespawnTime` s also respawns you. */
   offTrackDistance: 45,

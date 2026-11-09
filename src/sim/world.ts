@@ -31,6 +31,10 @@ export type WorldEvent =
 const WALL_EVENT_MIN_IMPACT = 3;
 /** The carrier starts this high above the drop point (m). */
 export const CARRIER_HEIGHT = 7;
+/** Falling rule: respawn when this far (m) below the road surface at the kart's nearest track point... */
+export const FALL_BELOW_ROAD = 5;
+/** ...or below this absolute height (m), whatever the road does. */
+export const FALL_FLOOR_Y = -40;
 
 export class World {
   /** Karts by player slot index. */
@@ -122,11 +126,17 @@ export class World {
     return events;
   }
 
-  /** Fell into water / off the world, or wandered far off course for a while. */
+  /**
+   * Fell off the road (into water, a chasm, off a cliff or bridge) or off the
+   * world, or wandered far off course for a while. "Fell" is relative to the
+   * road: more than FALL_BELOW_ROAD below the road at the nearest track point,
+   * so elevated roads and hills don't cause false respawns.
+   */
   private needsRespawn(k: KartState): boolean {
-    if (k.pos.y < KART.respawnFallY) return true;
+    if (k.pos.y < FALL_FLOOR_Y) return true;
     const track = this.track!;
     const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+    if (k.pos.y < p.y - FALL_BELOW_ROAD) return true;
     const outside = Math.abs(p.d) - (p.width / 2 + track.def.offroadWidth);
     k.offTrackTime = outside > KART.offTrackDistance ? k.offTrackTime + SIM_DT : 0;
     return k.offTrackTime > KART.offTrackRespawnTime;

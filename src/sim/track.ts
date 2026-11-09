@@ -10,6 +10,7 @@ import type { TrackDef } from '../track/types';
 import { ITEMS } from './config';
 import type { Ground, GroundHit, Surface } from './ground';
 import type { ItemBox } from './items/types';
+import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -87,11 +88,28 @@ export interface Ramp {
   s1: number;
   height: number;
 }
-/** Stretch of water (no ground) across the whole track width. */
+/** Stretch of water or chasm (no ground) across the whole track width. */
 export interface Gap {
   s0: number;
   s1: number;
+  /** 'water' (default; drawn as a pond) or 'void' (a chasm: dark walls going down). */
+  kind: 'water' | 'void';
 }
+/** A bridge/viaduct section (distance along the track). */
+export interface BridgeRange {
+  s0: number;
+  s1: number;
+}
+/** A stretch where the ground ends beside the road (see CliffDef). */
+export interface CliffRange {
+  s0: number;
+  s1: number;
+  side: 'left' | 'right' | 'both';
+  /** Distance from the centerline where the ground ends (m). */
+  edge: number;
+}
+/** Over the last this-many metres of a cliff the ground edge widens back out to the full off-road strip. */
+export const CLIFF_TAPER = 6;
 export interface BoostPad {
   s0: number;
   s1: number;
@@ -108,6 +126,12 @@ export class Track implements Ground {
   readonly controlS: number[] = [];
   readonly ramps: Ramp[] = [];
   readonly gaps: Gap[] = [];
+  /** Bridge sections (no ground blending underneath, no off-road strip beside the road). */
+  readonly bridges: BridgeRange[] = [];
+  /** Cliff stretches (ground ends beside the road). */
+  readonly cliffs: CliffRange[] = [];
+  /** Height field around the road (flat 0 + legacy behaviour when the track has no terrain def). */
+  readonly terrain: Terrain;
   readonly boostPads: BoostPad[] = [];
   /** s where each checkpoint segment starts; checkpoint 0 = start/finish line (s = 0). */
   readonly checkpoints: number[] = [];
@@ -213,8 +237,26 @@ export class Track implements Ground {
     for (const r of def.ramps) {
       const s0 = this.sAt(r.at);
       this.ramps.push({ s0, s1: s0 + r.length, height: r.height });
-      if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap });
+      if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap, kind: r.gapKind ?? 'water' });
     }
+    const reach = def.width / 2 + def.offroadWidth;
+    for (const b of def.bridges ?? []) this.bridges.push({ s0: this.sAt(b.from), s1: this.sAt(b.to) });
+    for (const c of def.cliffs ?? []) {
+      const edge = c.edge ?? def.width / 2 + CURB_WIDTH + 2;
+      this.cliffs.push({ s0: this.sAt(c.from), s1: this.sAt(c.to), side: c.side, edge });
+    }
+
+    // Terrain: active when the def asks for it or the track has bridges (they need ground to be above).
+    const terrainOn = def.terrain !== undefined || this.bridges.length > 0;
+    let field: RoadField | null = null;
+    if (terrainOn) {
+      // Segments touching a bridge are left out of the road blend: under a bridge the ground is natural.
+      const onBridge = S.map((p) => this.onBridge(p.s));
+      const skip = onBridge.map((b, i) => b || onBridge[(i + 1) % count]);
+      const influence = reach + TERRAIN_SKIRT + (def.terrain?.blend ?? TERRAIN_BLEND);
+      field = new RoadField(S, skip, influence, spacing);
+    }
+    this.terrain = new Terrain(def.terrain, terrainOn, field, reach, (hit) => this.roadLevel(hit));
     for (const b of def.boostPads) {
       const s0 = this.sAt(b.at);
       const c = (b.offset * def.width) / 2;
@@ -355,11 +397,88 @@ export class Track implements Ground {
     return false;
   }
 
-  /** Height and surface at a projected point (null = water, no ground). */
-  surfaceAt(p: Projection): GroundHit | null {
-    if (this.gaps.length && Math.abs(p.d) <= p.width / 2 + this.def.offroadWidth + 1 && this.inGap(p.s)) return null;
+  /** True if distance s along the track is on a bridge. */
+  onBridge(s: number): boolean {
+    for (const b of this.bridges) if (this.within(s, b.s0, b.s1)) return true;
+    return false;
+  }
+
+  /** True if s lies in the loop range [s0, s1] (handles wrap-around). */
+  private within(s: number, s0: number, s1: number): boolean {
+    const L = this.length;
+    const into = (((s - s0) % L) + L) % L;
+    return into <= (((s1 - s0) % L) + L) % L;
+  }
+
+  /**
+   * Where the ground ends beside the road at distance s along the track: the
+   * lateral distance (m) from the centerline beyond which there is no ground,
+   * on the given side (-1 = left, +1 = right). Infinity = no cliff there.
+   * Over the last CLIFF_TAPER metres at each end of a cliff the edge widens
+   * back out to the edge of the off-road strip, so the ground doesn't vanish abruptly.
+   */
+  cliffEdgeAt(s: number, side: number): number {
+    let edge = Infinity;
+    if (this.cliffs.length === 0) return edge;
+    const reach = this.def.width / 2 + this.def.offroadWidth;
+    const L = this.length;
+    for (const c of this.cliffs) {
+      if (c.side !== 'both' && (c.side === 'left') !== side < 0) continue;
+      const len = (((c.s1 - c.s0) % L) + L) % L;
+      const into = (((s - c.s0) % L) + L) % L;
+      if (into > len) continue;
+      const t = Math.min(1, Math.min(into, len - into) / CLIFF_TAPER); // 0 at the ends, 1 inside
+      const e = Math.min(c.edge, reach);
+      edge = Math.min(edge, reach + (e - reach) * t);
+    }
+    return edge;
+  }
+
+  /** True where a cliff or a void gap removes the ground (water gaps are NOT counted). */
+  isVoid(p: Pick<Projection, 's' | 'd' | 'width'>): boolean {
+    const ad = Math.abs(p.d);
+    if (this.cliffs.length && ad > this.cliffEdgeAt(p.s, p.d < 0 ? -1 : 1)) return true;
+    if (ad <= p.width / 2 + this.def.offroadWidth + 1) {
+      for (const g of this.gaps) {
+        if (g.kind === 'void' && this.within(p.s, g.s0, g.s1)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Ground level at lateral offset d for a centerline height y and bank:
+   * the banked road, then the off-road strip sloping from the road edge down to y.
+   */
+  static groundLevel(y: number, bank: number, halfWidth: number, d: number, offroadWidth: number): number {
+    const ad = Math.abs(d);
+    const lift = Track.bankLift(bank, halfWidth, d);
+    if (ad <= halfWidth + CURB_WIDTH) return y + lift;
+    const span = offroadWidth - CURB_WIDTH;
+    const f = Math.min(1, (ad - halfWidth - CURB_WIDTH) / Math.max(0.1, span));
+    return y + lift * (1 - f);
+  }
+
+  /** Road/strip level at a nearest-segment hit (what the terrain blends toward). */
+  private roadLevel(hit: RoadHit): number {
+    const a = this.samples[hit.i];
+    const b = this.samples[(hit.i + 1) % this.samples.length];
+    const y = a.y + (b.y - a.y) * hit.u;
+    const bank = a.bank + (b.bank - a.bank) * hit.u;
+    return Track.groundLevel(y, bank, this.def.width / 2, hit.d, this.def.offroadWidth);
+  }
+
+  /**
+   * Height and surface at a projected point (null = no ground: water, chasm or
+   * beyond a cliff edge). Pass x/z so ground beyond the off-road strip (and
+   * beside bridges) can come from the terrain height field.
+   */
+  surfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
     const hw = p.width / 2;
     const ad = Math.abs(p.d);
+    const outer = hw + this.def.offroadWidth;
+    if (this.gaps.length && ad <= outer + 1 && this.inGap(p.s)) return null;
+    if (this.cliffs.length && ad > this.cliffEdgeAt(p.s, p.d < 0 ? -1 : 1)) return null;
     const edgeLift = Track.bankLift(p.bank, hw, p.d);
     let surface: Surface;
     let height: number;
@@ -372,18 +491,21 @@ export class Track implements Ground {
       }
     } else {
       surface = 'offroad';
-      // The off-road strip slopes from the road edge back down to the terrain.
-      const span = this.def.offroadWidth - CURB_WIDTH;
-      const f = Math.min(1, (ad - hw - CURB_WIDTH) / Math.max(0.1, span));
-      height = p.y + edgeLift * (1 - f);
+      // Beyond the strip, and beside a bridge (no strip there), the ground is the terrain.
+      if (this.terrain.enabled && x !== undefined && z !== undefined && (ad > outer || this.onBridge(p.s))) {
+        height = this.terrain.height(x, z);
+      } else {
+        // The off-road strip slopes from the road edge back down to the terrain.
+        height = Track.groundLevel(p.y, p.bank, hw, p.d, this.def.offroadWidth);
+      }
     }
     return { height, surface };
   }
 
-  /** Ground interface (vertical raycast). The track is surrounded by endless flat terrain. */
+  /** Ground interface (vertical raycast). Off the road: the terrain height field (flat 0 by default). */
   sample(x: number, z: number, hint = -1): (GroundHit & { index: number }) | null {
     const p = this.project(x, z, hint);
-    const hit = this.surfaceAt(p);
+    const hit = this.surfaceAt(p, x, z);
     return hit ? { ...hit, index: p.i } : null;
   }
 
@@ -399,7 +521,10 @@ export class Track implements Ground {
   wallsAt(i: number): { left: number | null; right: number | null } {
     const p = this.samples[i];
     const off = p.width / 2 + this.def.offroadWidth;
-    return { left: p.wallLeft ? -off : null, right: p.wallRight ? off : null };
+    // A wall on a cliff side stands at the cliff edge (a guard rail) instead of floating over the drop.
+    const left = Math.min(off, this.cliffEdgeAt(p.s, -1));
+    const right = Math.min(off, this.cliffEdgeAt(p.s, 1));
+    return { left: p.wallLeft ? -left : null, right: p.wallRight ? right : null };
   }
 
   /** World position and heading for a starting-grid slot (0 = pole). */
