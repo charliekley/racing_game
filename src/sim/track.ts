@@ -12,7 +12,8 @@ import type { Ground, GroundHit, Surface } from './ground';
 import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 import { resolveCannons, type ResolvedCannon } from './cannon';
-import { mainRoute, type RouteLine } from './routes';
+import { branchRoute, mainRoute, type RouteLine } from './routes';
+import { buildBranches, projectOnMain, projectWithBranches, sampleAhead, ROUTE_STRIDE, withBranchField, type Branch } from './shortcuts';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -41,9 +42,13 @@ export interface TrackSample {
 }
 
 export interface Projection {
-  /** Index of the sample at the start of the nearest segment. */
+  /** Index of the sample at the start of the nearest segment (within its route: see `route`). */
   i: number;
-  /** Distance along the track (0..length). */
+  /** Which road: 0 = main loop, 1+ = shortcut branch `track.branches[route - 1]`. */
+  route: number;
+  /** Route + sample packed into one number: store it as the kart's `trackIndex` and pass it back as the hint. Equals `i` on the main road. */
+  index: number;
+  /** Distance along the track (0..length). On a shortcut branch this is MAPPED onto the main route between its junctions. */
   s: number;
   /** Signed lateral offset from the centerline (m), positive = right of travel direction. */
   d: number;
@@ -141,13 +146,15 @@ export class Track implements Ground {
   readonly itemBoxes: Pick<ItemBox, 'x' | 'y' | 'z' | 's'>[] = [];
   /** Launch cannons with world positions (see sim/cannon.ts). */
   readonly cannons: ResolvedCannon[];
+  /** Shortcut branch roads (route ids 1, 2, ...; see shortcuts.ts). Empty when the def has no shortcuts. */
+  readonly branches: Branch[];
 
   /**
    * Every road on the track as polylines (main loop, plus shortcut branches once
    * those exist). Maps draw from this. See `routes.ts`.
    */
   get routes(): RouteLine[] {
-    return (this._routes ??= [mainRoute(this)]);
+    return (this._routes ??= [mainRoute(this), ...this.branches.map((b) => branchRoute(b))]);
   }
   private _routes: RouteLine[] | null = null;
 
@@ -246,6 +253,9 @@ export class Track implements Ground {
       });
     }
 
+    // 5b) Shortcut branches (need the main samples and sAt; the terrain below blends toward them too).
+    this.branches = buildBranches(this);
+
     // 6) Features.
     for (const r of def.ramps) {
       const s0 = this.sAt(r.at);
@@ -269,7 +279,8 @@ export class Track implements Ground {
       const influence = reach + TERRAIN_SKIRT + (def.terrain?.blend ?? TERRAIN_BLEND);
       field = new RoadField(S, skip, influence, spacing);
     }
-    this.terrain = new Terrain(def.terrain, terrainOn, field, reach, (hit) => this.roadLevel(hit));
+    // Shortcut roads shape the ground like the main road does.
+    this.terrain = new Terrain(def.terrain, terrainOn, field && withBranchField(this, field, reach), reach, (hit) => this.roadLevel(hit));
     for (const b of def.boostPads) {
       const s0 = this.sAt(b.at);
       const c = (b.offset * def.width) / 2;
@@ -339,6 +350,8 @@ export class Track implements Ground {
    * "its" part of the track where the track passes close to itself.
    */
   project(x: number, z: number, hint = -1): Projection {
+    // With shortcuts the hint also says which road the kart is on (see shortcuts.ts).
+    if (this.branches.length > 0) return projectWithBranches(this, x, z, hint);
     const S = this.samples;
     const n = S.length;
     let best = Infinity;
@@ -377,6 +390,8 @@ export class Track implements Ground {
     const rl = Math.hypot(rx, rz) || 1;
     return {
       i: bi,
+      route: 0,
+      index: bi,
       s: (a.s + this.spacing * bu) % this.length,
       d: ((x - cx) * rx + (z - cz) * rz) / rl,
       y: a.y + (b.y - a.y) * bu,
@@ -475,11 +490,13 @@ export class Track implements Ground {
 
   /** Road/strip level at a nearest-segment hit (what the terrain blends toward). */
   private roadLevel(hit: RoadHit): number {
-    const a = this.samples[hit.i];
-    const b = this.samples[(hit.i + 1) % this.samples.length];
+    const S = hit.route ? this.branches[hit.route - 1].samples : this.samples; // shortcut branches have their own samples
+    const a = S[hit.i];
+    const b = S[(hit.i + 1) % S.length];
     const y = a.y + (b.y - a.y) * hit.u;
     const bank = a.bank + (b.bank - a.bank) * hit.u;
-    return Track.groundLevel(y, bank, this.def.width / 2, hit.d, this.def.offroadWidth);
+    const half = hit.route ? (a.width + (b.width - a.width) * hit.u) / 2 : this.def.width / 2;
+    return Track.groundLevel(y, bank, half, hit.d, this.def.offroadWidth);
   }
 
   /**
@@ -488,6 +505,7 @@ export class Track implements Ground {
    * beside bridges) can come from the terrain height field.
    */
   surfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
+    if (p.route > 0) return this.branchSurfaceAt(p, x, z);
     const hw = p.width / 2;
     const ad = Math.abs(p.d);
     const outer = hw + this.def.offroadWidth;
@@ -516,11 +534,29 @@ export class Track implements Ground {
     return { height, surface };
   }
 
+  /**
+   * Ground on a shortcut branch: banked road (a dirt branch counts as 'offroad' for speed),
+   * then the off-road strip, then the terrain. No ramps, gaps, cliffs or bridges here.
+   */
+  private branchSurfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
+    const hw = p.width / 2;
+    const ad = Math.abs(p.d);
+    if (ad <= hw + CURB_WIDTH) {
+      const dirt = this.branches[p.route - 1].isDirt(p.i);
+      return { height: p.y + Track.bankLift(p.bank, hw, p.d), surface: dirt ? 'offroad' : 'road' };
+    }
+    const height =
+      this.terrain.enabled && x !== undefined && z !== undefined && ad > hw + this.def.offroadWidth
+        ? this.terrain.height(x, z)
+        : Track.groundLevel(p.y, p.bank, hw, p.d, this.def.offroadWidth);
+    return { height, surface: 'offroad' };
+  }
+
   /** Ground interface (vertical raycast). Off the road: the terrain height field (flat 0 by default). */
   sample(x: number, z: number, hint = -1): (GroundHit & { index: number }) | null {
     const p = this.project(x, z, hint);
     const hit = this.surfaceAt(p, x, z);
-    return hit ? { ...hit, index: p.i } : null;
+    return hit ? { ...hit, index: p.index } : null;
   }
 
   /** Safe spot on the centerline at distance s (for respawns). */
@@ -532,13 +568,34 @@ export class Track implements Ground {
   }
 
   /** Lateral position of the wall on each side (m from centerline), or null if no wall here. */
-  wallsAt(i: number): { left: number | null; right: number | null } {
-    const p = this.samples[i];
+  wallsAt(i: number, route = 0): { left: number | null; right: number | null } {
+    const p = this.sampleOf(route, i);
     const off = p.width / 2 + this.def.offroadWidth;
+    if (route > 0) return { left: p.wallLeft ? -off : null, right: p.wallRight ? off : null }; // branches: no cliffs
     // A wall on a cliff side stands at the cliff edge (a guard rail) instead of floating over the drop.
     const left = Math.min(off, this.cliffEdgeAt(p.s, -1));
     const right = Math.min(off, this.cliffEdgeAt(p.s, 1));
     return { left: p.wallLeft ? -left : null, right: p.wallRight ? right : null };
+  }
+
+  /** Sample `i` of road `route` (0 = main loop, 1+ = shortcut branches). */
+  sampleOf(route: number, i: number): TrackSample {
+    return route > 0 ? this.branches[route - 1].samples[i] : this.samples[i];
+  }
+
+  /** Which road a kart is on, from its `trackIndex`: 0 = main loop, 1+ = shortcut branch. */
+  onRoute(k: { trackIndex: number }): number {
+    return k.trackIndex >= 0 ? Math.floor(k.trackIndex / ROUTE_STRIDE) : 0;
+  }
+
+  /** Like `project`, but only against the main road (e.g. a bot that wants to ignore a branch). */
+  projectOnMain(x: number, z: number, hintIdx = -1): Projection {
+    return projectOnMain(this, x, z, hintIdx);
+  }
+
+  /** The centerline sample `k` steps ahead of a position on a road, following branches back onto the main road. */
+  sampleAhead(route: number, i: number, k: number): TrackSample {
+    return sampleAhead(this, route, i, k);
   }
 
   /** World position and heading for a starting-grid slot (0 = pole). */

@@ -17,18 +17,49 @@ export interface BotStyle {
   lane: number;
   /** Aim for launch cannons that are close ahead and near this bot's line (default true; no effect on tracks without cannons). */
   useCannons?: boolean;
+  /**
+   * 0..1: how much this bot likes shortcuts. Above 0.5 it takes every shortcut it comes to,
+   * otherwise it stays on the main road. Fixed per slot, so races stay deterministic.
+   * (No effect on tracks without shortcuts.)
+   */
+  shortcutBias?: number;
 }
+
+/** A bot starts steering for a shortcut this far (m) before the junction. */
+const SHORTCUT_APPROACH = 50;
 
 /** A different but fixed personality per slot so bots don't drive in a line. */
 export function botStyleFor(slot: number): BotStyle {
   const paces = [0.95, 0.9, 0.93, 0.88];
   const lanes = [-2, 2, 0, -1];
-  return { pace: paces[slot % 4], lane: lanes[slot % 4] };
+  const shortcutBias = [0.9, 0.2, 0.7, 0.4]; // slots 0 and 2 take shortcuts
+  return { pace: paces[slot % 4], lane: lanes[slot % 4], shortcutBias: shortcutBias[slot % 4] };
 }
 
 export function autopilot(k: KartState, track: Track, style: BotStyle): ControlInput {
-  const n = track.samples.length;
-  const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+  let p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+  // Which road we steer along: (route, position on it). Normally where the kart is projected.
+  let route = p.route;
+  let at = p.i;
+  if (track.branches.length > 0) {
+    const wants = (style.shortcutBias ?? 0) > 0.5;
+    if (route > 0 && !wants && at <= 30) {
+      // Where the roads overlap, a bot that doesn't want the shortcut ignores the branch.
+      p = track.projectOnMain(k.pos.x, k.pos.z);
+      route = 0;
+      at = p.i;
+    } else if (route === 0 && wants) {
+      // Approaching (or just past) a junction of a branch we like: steer along the branch.
+      for (const b of track.branches) {
+        const dist = track.deltaS(p.s, b.s0);
+        if (dist > -30 && dist < SHORTCUT_APPROACH) {
+          route = b.route;
+          at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
+          break;
+        }
+      }
+    }
+  }
   // A launch cannon within ~60 m ahead and roughly on our line: aim for its mouth.
   let lane = style.lane;
   if (style.useCannons !== false && track.cannons.length > 0) {
@@ -38,7 +69,9 @@ export function autopilot(k: KartState, track: Track, style: BotStyle): ControlI
     }
   }
   const lookSamples = Math.round(7 + Math.abs(k.speed) * 0.15);
-  const ahead = track.samples[(p.i + lookSamples) % n];
+  const ahead = track.sampleAhead(route, at, lookSamples);
+  // A branch is narrower than the main road: keep our lane inside it.
+  if (route > 0) lane = Math.max(-1, Math.min(1, lane));
   const tx = ahead.x + ahead.rx * lane - k.pos.x;
   const tz = ahead.z + ahead.rz * lane - k.pos.z;
   const want = Math.atan2(tx, tz);
@@ -47,7 +80,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle): ControlI
 
   // Ease off for sharp corners coming up and when above our target pace.
   let sharp = 0;
-  for (let o = 5; o <= 25; o += 5) sharp = Math.max(sharp, Math.abs(track.samples[(p.i + o) % n].curvature));
+  for (let o = 5; o <= 25; o += 5) sharp = Math.max(sharp, Math.abs(track.sampleAhead(route, at, o).curvature));
   // Flat out before a jump so we clear any water gap behind it.
   const jumpAhead = track.ramps.some((r) => {
     const d = track.deltaS(p.s, r.s0);

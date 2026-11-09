@@ -25,8 +25,8 @@ function syncSpeed(k: KartState): void {
  */
 export function collideWalls(k: KartState, track: Track, c: KartConfig = KART): number {
   const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
-  const walls = track.wallsAt(p.i);
-  const sample = track.samples[p.i];
+  const walls = track.wallsAt(p.i, p.route);
+  const sample = track.sampleOf(p.route, p.i);
   let impact = 0;
   for (const side of ['left', 'right'] as const) {
     const wall = walls[side];

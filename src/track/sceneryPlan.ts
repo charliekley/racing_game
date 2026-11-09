@@ -232,6 +232,8 @@ export class Site {
   distToTrack(x: number, z: number): number {
     let best = Infinity;
     for (let i = 0; i < this.S.length; i += 2) best = Math.min(best, (this.S[i].x - x) ** 2 + (this.S[i].z - z) ** 2);
+    // Shortcut branch roads count as track too, so nothing grows on them (their samples are narrower: fine, it only keeps things clear).
+    for (const b of this.track.branches) for (let i = 0; i < b.samples.length; i += 2) best = Math.min(best, (b.samples[i].x - x) ** 2 + (b.samples[i].z - z) ** 2);
     return Math.sqrt(best);
   }
 
