@@ -87,7 +87,7 @@ racing_game/
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   ✅ track DATA only
    │  ├─ types.ts              ✅ TrackDef format
-   │  ├─ tracks/meadowRing.ts  ✅ control points + features (adding a track = adding a file)
+   │  ├─ tracks/*.ts           ✅ control points + features (adding a track = adding a file)
    │  └─ index.ts              ✅ list of tracks
    ├─ render/                  ✅ Three.js: scene.ts (theme-colored sky dome with sun,
    │                              lights, fog, quality presets), procedural textures, kart

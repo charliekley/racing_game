@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TRACKS } from '../track';
+import { meadowRing } from '../track/tracks/_meadowRing';
 import { Buttons } from '../shared/protocol';
 import { SIM_DT } from './config';
 import { Track } from './track';
@@ -132,7 +133,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
 });
 
 describe('driving on the real track', () => {
-  const track = new Track(TRACKS[0]);
+  const track = new Track(meadowRing);
 
   it('a kart driving straight off the grid crosses the line into lap 1', () => {
     const world = new World(track, track);
@@ -212,7 +213,7 @@ describe('driving on the real track', () => {
     for (let t = 0; t < 60; t++) world.tick(() => ({ steer: 0, buttons: Buttons.GAS }));
     const k = world.karts.get(0)!;
     const proj = track.project(k.pos.x, k.pos.z);
-    expect(Math.abs(proj.d)).toBeLessThanOrEqual(TRACKS[0].width / 2 + TRACKS[0].offroadWidth);
+    expect(Math.abs(proj.d)).toBeLessThanOrEqual(meadowRing.width / 2 + meadowRing.offroadWidth);
   });
 });
 
@@ -261,7 +262,7 @@ describe('terrain, bridges, cliffs and voids (Terrain Test track)', () => {
   });
 
   it('tracks without a terrain def keep the old flat behaviour', () => {
-    const flat = new Track(TRACKS[0]);
+    const flat = new Track(meadowRing);
     expect(flat.terrain.enabled).toBe(false);
     const p = flat.samples[40];
     const hit = flat.sample(p.x + p.rx * 40, p.z + p.rz * 40)!;
@@ -271,7 +272,7 @@ describe('terrain, bridges, cliffs and voids (Terrain Test track)', () => {
   it('under a bridge the ground is NOT blended to the deck (it is natural terrain or the road below)', () => {
     // A bridge over open ground: Meadow Ring's start straight with hills and a bridge on it.
     const bridged = new Track({
-      ...TRACKS[0],
+      ...meadowRing,
       terrain: { seed: 5, hills: { amplitude: 6, wavelength: 120 } },
       bridges: [{ from: 0.15, to: 0.85 }],
     });

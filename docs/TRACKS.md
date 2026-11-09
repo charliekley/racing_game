@@ -86,7 +86,9 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * Dev-only test tracks `_terrainTest.ts` and `_cannonTest.ts` (not in `TRACKS`).
 
 **Wave 2** (parallel): shortcuts/routes (DONE, see "Shortcuts: what is implemented"; owns the route and branch code in `track.ts`, `race.ts`, `routes.ts`), jump variety (owns ramp shapes: `rampHeight`/ramp meshes), maps (owns `minimap.ts`, `phoneMap.ts`, the `track` protocol message).
-**Wave 3**: the four new tracks, then the old tracks are removed.
+**Wave 3 is merged**: `TRACKS` = Ember Peaks, Dockside Loop, Cloud Garden, Switchback Summit. Sunscorch Canyon and Maple Bay are deleted; Meadow Ring lives on as the dev-only flat baseline `_meadowRing.ts` used by tests. Track-added extras: `scenery.blocks` (hand-placed solid container stacks / warehouses, Dockside Loop) and `scenery.openSky` (no horizon hills, Cloud Garden).
+
+**Dev-only tracks**: `DEV_TRACKS` in `src/track/index.ts` (Meadow Ring, Terrain/Cannon/Shortcut/Jump Test). They are never in the lobby; in the dev server open one with `?track=Jump%20Test` etc. The 4-bots-finish test runs on every lobby and dev track.
 
 ## Shortcuts: what is implemented (shortcuts agent)
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TRACKS } from '../track';
+import { meadowRing } from '../track/tracks/_meadowRing';
 import { cannonTest } from '../track/tracks/_cannonTest';
 import { terrainTest } from '../track/tracks/_terrainTest';
 import type { TrackDef } from '../track/types';
@@ -67,14 +68,14 @@ describe('specific tracks', () => {
   });
 
   it('flat standard tracks have no features and no crossings', () => {
-    const data = mapDataFromTrack(new Track(TRACKS[0]));
+    const data = mapDataFromTrack(new Track(meadowRing));
     expect(data.bridges).toHaveLength(0);
     expect(data.cannons).toHaveLength(0);
     expect(findCrossings(data.routes)).toHaveLength(0);
   });
 
   it('shortcut routes on a track are passed through', () => {
-    const track = new Track(TRACKS[0]);
+    const track = new Track(meadowRing);
     const main = track.routes[0];
     const fake = { ...main, kind: 'shortcut' as const, surface: 'dirt' as const, closed: false, points: main.points.slice(0, 8) };
     Object.defineProperty(track, 'routes', { get: () => [main, fake] });

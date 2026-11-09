@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Buttons, type ControlInput } from '../../shared/protocol';
 import { TRACKS } from '../../track';
+import { meadowRing } from '../../track/tracks/_meadowRing';
 import { ITEMS, KART, SIM_DT } from '../config';
 import type { Ground } from '../ground';
 import { createKart, stepKart, type KartState } from '../kart';
@@ -11,7 +12,7 @@ import { ItemSystem, botItemButton, type ItemEvent } from './items';
 import { seededRng } from './odds';
 import { ROULETTE_SECONDS, type HeldItem } from './types';
 
-const track = new Track(TRACKS[0]);
+const track = new Track(meadowRing);
 const NONE: ControlInput = { steer: 0, buttons: 0 };
 const ITEM_DOWN: ControlInput = { steer: 0, buttons: Buttons.ITEM };
 const ITEM_BRAKE: ControlInput = { steer: 0, buttons: Buttons.ITEM | Buttons.BRAKE };

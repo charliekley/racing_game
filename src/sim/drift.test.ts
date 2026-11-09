@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Buttons, type ControlInput } from '../shared/protocol';
-import { TRACKS } from '../track';
+import { meadowRing } from '../track/tracks/_meadowRing';
 import { KART, SIM_DT } from './config';
 import type { Ground } from './ground';
 import { createKart, stepKart, type KartEvent, type KartState } from './kart';
@@ -120,7 +120,7 @@ describe('tricks', () => {
 });
 
 describe('respawn', () => {
-  const track = new Track(TRACKS[0]);
+  const track = new Track(meadowRing);
 
   it('too slow over the jump: fall in the water, carrier puts you back on the road', () => {
     expect(track.gaps.length).toBeGreaterThan(0);
@@ -136,7 +136,7 @@ describe('respawn', () => {
     expect(k.respawnTime).toBe(0);
     expect(k.grounded).toBe(true);
     const proj = track.project(k.pos.x, k.pos.z);
-    expect(Math.abs(proj.d)).toBeLessThan(TRACKS[0].width / 2);
+    expect(Math.abs(proj.d)).toBeLessThan(meadowRing.width / 2);
     expect(track.inGap(proj.s)).toBe(false);
   });
 
