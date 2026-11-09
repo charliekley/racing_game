@@ -2,40 +2,13 @@
  * Draws the held item in the middle of the phone screen on a <canvas>.
  *
  * Web concept: <canvas> is a bitmap you draw on with a 2D API (paths, fills),
- * much like a plotting library. We redraw it every animation frame while the
- * roulette spins.
- *
- * Milestone 1 has placeholder art; the real item icons are registered in
- * Milestone 6 via `registerItemIcon`.
+ * much like a plotting library. The icons themselves live in
+ * `shared/itemIcons.ts` (the TV HUD uses the same ones). We only redraw every
+ * animation frame while something moves (roulette, or an animated icon);
+ * static icons are drawn once.
  */
 import type { ItemDisplay } from '../shared/protocol';
-
-export type IconPainter = (ctx: CanvasRenderingContext2D, size: number, t: number) => void;
-
-const icons = new Map<string, IconPainter>();
-
-export function registerItemIcon(id: string, painter: IconPainter): void {
-  icons.set(id, painter);
-}
-
-/** Placeholder used for unknown ids (and for the M1 "Test item" button). */
-const placeholder: IconPainter = (ctx, s) => {
-  ctx.fillStyle = '#ffbe0b';
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const r = i % 2 === 0 ? s * 0.38 : s * 0.17;
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    ctx.lineTo(s / 2 + r * Math.cos(a), s / 2 + r * Math.sin(a));
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineWidth = s * 0.03;
-  ctx.strokeStyle = '#7a4b00';
-  ctx.stroke();
-};
-
-/** Shapes flashed during the roulette (until real icons exist). */
-const rouletteColors = ['#3a86ff', '#ff4fa3', '#2bb673', '#ffbe0b', '#8338ec'];
+import { isIconAnimated, paintItemIcon, paintRoulette } from '../shared/itemIcons';
 
 export class ItemView {
   private ctx: CanvasRenderingContext2D;
@@ -64,6 +37,7 @@ export class ItemView {
   }
 
   private draw = (t: number): void => {
+    cancelAnimationFrame(this.raf); // never run two loops at once
     const ctx = this.ctx;
     const s = this.canvas.width;
     ctx.clearRect(0, 0, s, s);
@@ -76,23 +50,22 @@ export class ItemView {
     ctx.fill();
     ctx.stroke();
 
+    // The icon sits inside the frame with a small margin.
     const d = this.display;
+    const inset = s * 0.14;
+    ctx.save();
+    ctx.translate(inset, inset);
+    const iconSize = s - inset * 2;
+    let animating = false;
     if (d.kind === 'roulette') {
-      const i = Math.floor(t / 70) % rouletteColors.length;
-      ctx.fillStyle = rouletteColors[i];
-      ctx.beginPath();
-      ctx.arc(s / 2, s / 2, s * (0.22 + 0.06 * Math.sin(t / 50)), 0, Math.PI * 2);
-      ctx.fill();
-      this.raf = requestAnimationFrame(this.draw);
+      paintRoulette(ctx, iconSize, t);
+      animating = true;
     } else if (d.kind === 'item') {
-      (icons.get(d.id) ?? placeholder)(ctx, s, t);
-      if (d.count > 1) {
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.round(s * 0.2)}px system-ui, sans-serif`;
-        ctx.textAlign = 'right';
-        ctx.fillText(`×${d.count}`, s * 0.9, s * 0.9);
-      }
+      paintItemIcon(ctx, d.id, iconSize, t, d.count);
+      animating = isIconAnimated(d.id);
     }
+    ctx.restore();
+    if (animating) this.raf = requestAnimationFrame(this.draw);
   };
 }
 
