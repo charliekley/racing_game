@@ -39,6 +39,13 @@ export interface RoadHit {
   dist: number;
   /** Signed lateral offset (m), positive = right of the direction of travel. */
   d: number;
+  /** Which road the segment belongs to: 0 / undefined = main loop, 1+ = shortcut branch (see shortcuts.ts). */
+  route?: number;
+}
+
+/** Anything that can answer "which road segment is nearest?" (the main road alone, or main + shortcut branches). */
+export interface RoadLookup {
+  nearest(x: number, z: number): RoadHit | null;
 }
 
 /**
@@ -160,7 +167,7 @@ export class Terrain {
   constructor(
     private readonly def: TerrainDef | undefined,
     enabled: boolean,
-    private readonly field: RoadField | null,
+    private readonly field: RoadLookup | null,
     private readonly reach: number,
     private readonly levelAt: (hit: RoadHit) => number,
   ) {

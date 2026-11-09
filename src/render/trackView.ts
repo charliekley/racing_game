@@ -17,6 +17,7 @@ import {
 } from './textures';
 import { buildGantry, buildScenery } from './scenery';
 import { TerrainView } from './terrainView';
+import { buildBranchViews } from './branchView';
 
 interface Edge {
   d: number;
@@ -212,6 +213,9 @@ export class TrackView {
       mark.rotation.y = g.heading;
       this.group.add(mark);
     }
+
+    // Shortcut branch roads, curbs, walls and the fork gates (render/branchView.ts).
+    this.group.add(buildBranchViews(track, strip));
 
     this.group.add(buildScenery(track));
   }

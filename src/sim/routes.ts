@@ -6,6 +6,7 @@
  * The main route is always present. Shortcut branches (`kind: 'shortcut'`) are
  * added by the shortcut code. Keep this interface stable: maps are written against it.
  */
+import type { Branch } from './shortcuts';
 import type { Track } from './track';
 
 export interface RoutePoint {
@@ -34,4 +35,16 @@ export function mainRoute(track: Track, step = 4): RouteLine {
     points.push({ x: p.x, y: p.y, z: p.z });
   }
   return { kind: 'main', surface: 'road', width: track.def.width, closed: true, points };
+}
+
+/** A shortcut branch as a route line (about every 8 m, always including the last point = the rejoin junction). */
+export function branchRoute(branch: Branch, step = 4): RouteLine {
+  const points: RoutePoint[] = [];
+  const S = branch.samples;
+  for (let i = 0; i < S.length; i += step) points.push({ x: S[i].x, y: S[i].y, z: S[i].z });
+  const end = S[S.length - 1];
+  if ((S.length - 1) % step !== 0) points.push({ x: end.x, y: end.y, z: end.z });
+  // Width: the branch's own width in the middle (the ends blend into the main road's).
+  const mid = S[Math.floor(S.length / 2)];
+  return { kind: 'shortcut', surface: branch.surface, width: mid.width, closed: false, points };
 }

@@ -373,7 +373,7 @@ export class ItemSystem {
       e.x += Math.sin(e.heading) * e.speed * dt;
       e.z += Math.cos(e.heading) * e.speed * dt;
       const p = this.track.project(e.x, e.z, e.trackIndex);
-      e.trackIndex = p.i;
+      e.trackIndex = p.index;
       const ground = this.track.sample(e.x, e.z, e.trackIndex);
       if (ground) e.y = ground.height;
 
@@ -436,9 +436,9 @@ export class ItemSystem {
   }
 
   /** Reflect a ricochet off a wall. Returns false when it has used up its bounces. */
-  private bounceOffWalls(e: Entity, p: { i: number; d: number }): boolean {
-    const walls = this.track.wallsAt(p.i);
-    const sample = this.track.samples[p.i];
+  private bounceOffWalls(e: Entity, p: { i: number; route: number; d: number }): boolean {
+    const walls = this.track.wallsAt(p.i, p.route);
+    const sample = this.track.sampleOf(p.route, p.i);
     for (const side of ['left', 'right'] as const) {
       const wall = walls[side];
       if (wall === null) continue;

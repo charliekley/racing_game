@@ -72,6 +72,12 @@ export interface ShortcutDef {
   width?: number;
   /** 'dirt' slows you like off-road (a risk/reward shortcut); default 'road'. */
   surface?: 'road' | 'dirt';
+  /**
+   * Barriers along the branch. Same shape as the main `walls`, but `from`/`to` are in
+   * BRANCH-local control-point units: 0 = the junction where the branch starts,
+   * 1..points.length = your `points`, points.length + 1 = the junction where it rejoins.
+   */
+  walls?: { from: number; to: number; side: 'left' | 'right' | 'both' | 'outer' }[];
 }
 
 export interface TrackDef {
