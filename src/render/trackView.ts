@@ -10,12 +10,12 @@ import {
   checkerTexture,
   curbTexture,
   grassTexture,
-  rampTexture,
   roadTexture,
   wallTexture,
   waterTexture,
 } from './textures';
 import { buildGantry, buildScenery } from './scenery';
+import { buildRamps } from './rampView';
 import { TerrainView } from './terrainView';
 
 interface Edge {
@@ -167,25 +167,8 @@ export class TrackView {
       }
     }
 
-    // Jump ramps: sloped top + back face.
-    const rampMat = new THREE.MeshLambertMaterial({ map: rampTexture(), side: THREE.DoubleSide });
-    for (const r of track.ramps) {
-      const ss = samplesBetween(track, r.s0, r.s1);
-      const top = strip(ss, false, (p) => {
-        const h = track.rampHeight(p.s) + 0.03;
-        return [{ d: -hw, h: lift(p, -hw) + h }, { d: hw, h: lift(p, hw) + h }];
-      }, 3);
-      add(top, rampMat).castShadow = true;
-      const end = ss[ss.length - 1];
-      const hEnd = track.rampHeight(end.s);
-      const back = strip([end, end], false, () => [{ d: -hw, h: 0 }, { d: hw, h: 0 }], 1);
-      // Re-shape the back face: second row raised to the ramp top.
-      const pos = back.getAttribute('position') as THREE.BufferAttribute;
-      pos.setY(2, end.y + lift(end, -hw) + hEnd);
-      pos.setY(3, end.y + lift(end, hw) + hEnd);
-      back.computeVertexNormals();
-      add(back, new THREE.MeshLambertMaterial({ color: '#5a4a2a', side: THREE.DoubleSide }));
-    }
+    // Jump ramps (kicker / hump / double shapes, landing aprons, chasm floors): see rampView.ts.
+    this.group.add(buildRamps(track));
 
     // Boost pads (scrolling arrows)
     this.boostTex = boostTexture();

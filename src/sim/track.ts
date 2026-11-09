@@ -13,6 +13,7 @@ import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 import { resolveCannons, type ResolvedCannon } from './cannon';
 import { mainRoute, type RouteLine } from './routes';
+import { LANDING_LENGTH, landingHeight, shapeHeight, type RampShape } from './jumps';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -89,6 +90,12 @@ export interface Ramp {
   s0: number;
   s1: number;
   height: number;
+  /** Shape of the ramp surface (see jumps.ts). */
+  shape: RampShape;
+  /** Gap length behind the ramp (0 = none). The gap itself is in `gaps`. */
+  gap: number;
+  /** Landing apron after the gap: height at the gap's far end (0 = none); slopes to 0 over LANDING_LENGTH. */
+  landHeight: number;
 }
 /** Stretch of water or chasm (no ground) across the whole track width. */
 export interface Gap {
@@ -249,7 +256,9 @@ export class Track implements Ground {
     // 6) Features.
     for (const r of def.ramps) {
       const s0 = this.sAt(r.at);
-      this.ramps.push({ s0, s1: s0 + r.length, height: r.height });
+      const gap = r.gap ?? 0;
+      const landing = gap > 0 && (r.landing ?? true);
+      this.ramps.push({ s0, s1: s0 + r.length, height: r.height, shape: r.shape ?? 'kicker', gap, landHeight: landing ? landingHeight(r.height) : 0 });
       if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap, kind: r.gapKind ?? 'water' });
     }
     const reach = def.width / 2 + def.offroadWidth;
@@ -392,14 +401,23 @@ export class Track implements Ground {
     return Math.max(0, t * (halfWidth + Math.sign(bank) * dd));
   }
 
-  /** Height of the ramp at distance s along the track (0 outside ramps). */
+  /**
+   * Height of the ramp surface at distance s along the track (0 outside ramps).
+   * Several ramps may touch or sit close together (chains): the highest one wins,
+   * so there is no overlap bug at the seams. The landing apron after a gap counts too.
+   */
   rampHeight(s: number): number {
+    let best = 0;
     for (const r of this.ramps) {
-      const into = this.deltaS(r.s0, s);
       const len = r.s1 - r.s0;
-      if (into >= 0 && into <= len) return (r.height * into) / len;
+      const into = this.deltaS(r.s0, s);
+      if (into >= 0 && into <= len) best = Math.max(best, shapeHeight(r.shape, r.height, into / len));
+      if (r.landHeight > 0) {
+        const after = this.deltaS(r.s1 + r.gap, s);
+        if (after >= 0 && after <= LANDING_LENGTH) best = Math.max(best, r.landHeight * (1 - after / LANDING_LENGTH));
+      }
     }
-    return 0;
+    return best;
   }
 
   /** True if distance s along the track is over water. */

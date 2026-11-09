@@ -103,6 +103,11 @@ export interface TrackDef {
     gapKind?: 'water' | 'void';
     /** Ramp shape: 'kicker' (default, rises to a lip), 'hump' (smooth crest), 'double' (two kickers back to back). */
     shape?: 'kicker' | 'hump' | 'double';
+    /**
+     * Landing apron after the gap (default true when there is a gap): a gentle slope down
+     * from a slightly raised edge, so the far lip is never a wall. false = flat road right after the gap.
+     */
+    landing?: boolean;
   }[];
   /** Boost pads: `offset` is lateral position, -1 = left edge … 1 = right edge. */
   boostPads: { at: number; offset: number; length: number; width: number }[];
