@@ -15,6 +15,8 @@ export interface BotStyle {
   pace: number;
   /** Preferred lateral offset from the centerline (m). */
   lane: number;
+  /** Aim for launch cannons that are close ahead and near this bot's line (default true; no effect on tracks without cannons). */
+  useCannons?: boolean;
 }
 
 /** A different but fixed personality per slot so bots don't drive in a line. */
@@ -27,10 +29,18 @@ export function botStyleFor(slot: number): BotStyle {
 export function autopilot(k: KartState, track: Track, style: BotStyle): ControlInput {
   const n = track.samples.length;
   const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+  // A launch cannon within ~60 m ahead and roughly on our line: aim for its mouth.
+  let lane = style.lane;
+  if (style.useCannons !== false && track.cannons.length > 0) {
+    for (const c of track.cannons) {
+      const dist = track.deltaS(p.s, c.mouth.s);
+      if (dist > -3 && dist < 60 && Math.abs(c.lateral - style.lane) < track.def.width * 0.45) lane = c.lateral;
+    }
+  }
   const lookSamples = Math.round(7 + Math.abs(k.speed) * 0.15);
   const ahead = track.samples[(p.i + lookSamples) % n];
-  const tx = ahead.x + ahead.rx * style.lane - k.pos.x;
-  const tz = ahead.z + ahead.rz * style.lane - k.pos.z;
+  const tx = ahead.x + ahead.rx * lane - k.pos.x;
+  const tz = ahead.z + ahead.rz * lane - k.pos.z;
   const want = Math.atan2(tx, tz);
   const err = Math.atan2(Math.sin(want - k.heading), Math.cos(want - k.heading));
   const steer = Math.max(-1, Math.min(1, -err * 3));

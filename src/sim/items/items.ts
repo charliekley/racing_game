@@ -151,7 +151,7 @@ export class ItemSystem {
       const pressedNow = down && !st.wasDown;
       const releasedNow = !down && st.wasDown;
       st.wasDown = down;
-      if (k.spinTime > 0 || k.respawnTime > 0) continue; // can't act while spinning / being carried
+      if (k.spinTime > 0 || k.respawnTime > 0 || k.flight) continue; // can't act while spinning / being carried / in a cannon
       if (!st.held || st.roulette > 0) {
         st.pressing = false;
         continue;
@@ -187,6 +187,7 @@ export class ItemSystem {
   private hitKart(slot: number, karts: Map<number, KartState>, by: HitSource, attacker: number | null, events: ItemEvent[]): boolean {
     const k = karts.get(slot);
     if (!k) return false;
+    if (k.flight) return false; // inside a launch cannon: nothing can touch you
     if (k.starTime > 0) {
       events.push({ kind: 'blocked', slot, by });
       return false;
@@ -221,7 +222,7 @@ export class ItemSystem {
     for (let i = 0; i < rank; i++) {
       const victim = this.lastStandings[i];
       const vk = karts.get(victim);
-      if (!vk || vk.respawnTime > 0) continue;
+      if (!vk || vk.respawnTime > 0 || vk.flight) continue;
       if (vk.starTime > 0) {
         events.push({ kind: 'blocked', slot: victim, by: 'nova' });
         continue;
@@ -405,7 +406,7 @@ export class ItemSystem {
       if (dead.has(e) || e.trailing) continue;
       const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
       for (const [slot, k] of karts) {
-        if (k.respawnTime > 0 || k.spinTime > 0) continue;
+        if (k.respawnTime > 0 || k.spinTime > 0 || k.flight) continue;
         if (slot === e.owner && e.grace > 0) continue;
         if (e.kind === 'slick' && !k.grounded) continue; // jumping over a slick is fine
         if (Math.abs(k.pos.y - e.y) > 2.2) continue;
@@ -451,7 +452,7 @@ export class ItemSystem {
   private steerSeeker(e: Entity, karts: Map<number, KartState>, dt: number): void {
     if (e.target === null) return; // nobody ahead: flies straight
     const t = karts.get(e.target);
-    if (!t || t.respawnTime > 0) return;
+    if (!t || t.respawnTime > 0 || t.flight) return;
     const want = Math.atan2(t.pos.x - e.x, t.pos.z - e.z);
     const err = Math.atan2(Math.sin(want - e.heading), Math.cos(want - e.heading));
     const maxTurn = ITEMS.seekerTurnRate * dt;
@@ -466,9 +467,9 @@ export class ItemSystem {
     const list = [...karts.entries()];
     const reach = KART.radius * 2 + 0.4;
     for (const [sa, a] of list) {
-      if (a.starTime <= 0 || a.respawnTime > 0) continue;
+      if (a.starTime <= 0 || a.respawnTime > 0 || a.flight) continue;
       for (const [sb, b] of list) {
-        if (sa === sb || b.respawnTime > 0 || b.spinTime > 0) continue;
+        if (sa === sb || b.respawnTime > 0 || b.spinTime > 0 || b.flight) continue;
         if (Math.abs(a.pos.y - b.pos.y) > 1.5) continue;
         if (Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) > reach) continue;
         this.hitKart(sb, karts, 'nova', sa, events);

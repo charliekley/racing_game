@@ -22,6 +22,7 @@ import { ChaseCamera } from '../render/chaseCamera';
 import { KartView } from '../render/kartView';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
+import { CannonView } from '../render/cannonView';
 import { Minimap } from '../render/minimap';
 import {
   applyRendererQuality,
@@ -62,6 +63,8 @@ const HAPTICS = {
   miniTurbo: [30, 30, 70],
   trick: [20, 25, 20],
   respawn: [200],
+  cannonFire: [120, 30, 60],
+  cannonLand: [35],
 } as const;
 
 export interface GameCallbacks {
@@ -106,6 +109,8 @@ export class Game {
    */
   devItem: ItemId | 'random' | null = null;
   private itemPool: ItemMeshPool;
+  /** Launch cannons of the current track (rebuilt for every race). */
+  private cannonView: CannonView | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -150,6 +155,8 @@ export class Game {
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
     this.minimap.canvas.remove();
+    this.cannonView?.dispose(this.scene);
+    this.cannonView = null;
     this.track = new Track(def);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
@@ -171,6 +178,10 @@ export class Game {
     }
     this.world = new World(this.track, this.track);
     this.world.startRace(slots, this.track.def.laps);
+
+    // Launch cannons for this track (barrel, mouth glow, landing pad).
+    this.cannonView?.dispose(this.scene);
+    this.cannonView = this.track.cannons.length > 0 ? new CannonView(this.scene, this.track.cannons, this.track) : null;
 
     // Item boxes (one floating mesh per box) and any leftover item objects.
     for (const m of this.boxMeshes) this.scene.remove(m);
@@ -231,6 +242,7 @@ export class Game {
     const alpha = this.loop.advance(dt);
     const race = this.world.race!;
     this.trackView.update(this.elapsed);
+    this.cannonView?.update(this.elapsed, dt);
 
     // Item boxes spin and bob (hidden while waiting to respawn); item objects follow the sim.
     const items = this.world.items!;
@@ -283,7 +295,7 @@ export class Game {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
-      v.chase.update(v.kart.pose, dt, kart.boostTime > 0 ? 10 : 0);
+      v.chase.update(v.kart.pose, dt, kart.flight ? 20 : kart.boostTime > 0 ? 10 : 0); // wider view while flying out of a cannon
       this.renderer.setViewport(r.x, r.y, r.w, r.h);
       this.renderer.setScissor(r.x, r.y, r.w, r.h);
       this.renderer.render(this.scene, v.chase.camera);
@@ -395,6 +407,13 @@ export class Game {
           break;
         case 'trick':
           this.haptic(e.slot, HAPTICS.trick);
+          break;
+        case 'cannonFire':
+          this.haptic(e.slot, HAPTICS.cannonFire);
+          this.cannonView?.fire(e.cannon);
+          break;
+        case 'cannonLand':
+          this.haptic(e.slot, HAPTICS.cannonLand);
           break;
         case 'respawn':
           this.haptic(e.slot, HAPTICS.respawn);
