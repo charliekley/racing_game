@@ -238,6 +238,7 @@ export function buildScenery(track: Track, plan: SceneryPlan = planScenery(track
 
   buildGrandstands(plan, shapes, solid, banners);
   buildHouses(plan, shapes, solid, look);
+  buildBlocks(plan, shapes, solid);
   buildTrackside(plan, shapes, solid, banners, look);
   buildTrees(plan, shapes, solid, look);
   buildBushesAndRocks(plan, shapes, solid, look);
@@ -394,6 +395,29 @@ function buildHouses(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, look: 
     } else {
       solid.add(shapes.roof, mat(f, 0, h, 0, w * 1.05, Math.max(w, depth) * 0.6, depth * 1.05), look.roof(rnd));
       solid.add(shapes.box, mat(f, w * 0.25, h, -depth * 0.15, 0.7, Math.max(w, depth) * 0.45, 0.7), dark); // chimney
+    }
+  }
+}
+
+/** Container stacks and warehouses: coloured boxes with a little detail so they read as what they are. */
+function buildBlocks(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch): void {
+  for (const b of plan.blocks) {
+    const f = itemFrame(b);
+    const base = new THREE.Color(b.color);
+    solid.add(shapes.box, mat(f, 0, 0, 0, b.w, b.h, b.d), base);
+    if (b.kind === 'warehouse') {
+      // Darker flat roof slab, a big roller door and a strip of windows on the +z face.
+      solid.add(shapes.box, mat(f, 0, b.h, 0, b.w + 0.6, 0.5, b.d + 0.6), base.clone().multiplyScalar(0.55));
+      solid.add(shapes.box, mat(f, 0, 0, b.d / 2, Math.min(5, b.w * 0.4), Math.min(4.2, b.h * 0.7), 0.15), new THREE.Color('#3a3f4a'));
+      solid.add(shapes.box, mat(f, 0, b.h * 0.78, b.d / 2, b.w * 0.8, 0.9, 0.15), new THREE.Color('#9cc3e0'));
+    } else {
+      // Containers are 2.6 m tall each: darker ribs on the long sides and a lighter top edge per layer.
+      const layers = Math.max(1, Math.round(b.h / 2.6));
+      for (let k = 0; k < layers; k++) {
+        const y = k * (b.h / layers);
+        solid.add(shapes.box, mat(f, 0, y + b.h / layers - 0.12, 0, b.w + 0.1, 0.12, b.d + 0.1), base.clone().multiplyScalar(0.7));
+        for (let z = -b.d / 2 + 1.5; z < b.d / 2; z += 1.5) solid.add(shapes.box, mat(f, 0, y, z, b.w + 0.12, b.h / layers - 0.2, 0.1), base.clone().multiplyScalar(0.82));
+      }
     }
   }
 }
