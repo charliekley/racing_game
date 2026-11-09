@@ -28,6 +28,25 @@ export interface Vec3 {
   z: number;
 }
 
+/**
+ * A kart inside a launch cannon (see sim/cannon.ts). While set, the kart ignores the
+ * controls and cannot be hurt; the cannon system moves it along a fixed path.
+ */
+export interface KartFlight {
+  /** Index into `track.cannons`. */
+  cannon: number;
+  /** 'load' = being pulled into the barrel, 'air' = flying to the landing point. */
+  phase: 'load' | 'air';
+  /** Seconds spent in the current phase. */
+  t: number;
+  /** Where the kart was when captured (the start of the load path). */
+  fromX: number;
+  fromY: number;
+  fromZ: number;
+  /** Length of the air phase (s), 0 until fired. Visuals use t / duration. */
+  duration: number;
+}
+
 export interface KartState {
   pos: Vec3;
   vel: Vec3;
@@ -72,6 +91,11 @@ export interface KartState {
   /** Seconds left of flipped steering (hit by a Jumble). */
   invertTime: number;
 
+  /** Inside a launch cannon (loading or flying), null normally. */
+  flight: KartFlight | null;
+  /** Seconds before this kart can be captured by a cannon again (after a landing). */
+  cannonCooldown: number;
+
   /** Previous button states, to detect presses (edges). */
   prevButtons: number;
 }
@@ -110,6 +134,8 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     spinTime: 0,
     starTime: 0,
     invertTime: 0,
+    flight: null,
+    cannonCooldown: 0,
     prevButtons: 0,
   };
 }
@@ -224,6 +250,15 @@ function endDrift(k: KartState, reward: boolean, events: KartEvent[], c: KartCon
  */
 export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: number, c: KartConfig = KART): KartEvent[] {
   const events: KartEvent[] = [];
+  // Inside a launch cannon: sim/cannon.ts moves the kart; controls, gravity and drifting are off.
+  if (k.flight) {
+    k.steer = 0;
+    k.yawRate = 0;
+    k.prevButtons = input.buttons;
+    k.starTime = Math.max(0, k.starTime - dt);
+    k.invertTime = Math.max(0, k.invertTime - dt);
+    return events;
+  }
   // While spinning out the kart ignores the controls (but we still remember the
   // real button state so a held button doesn't register as a fresh press after).
   const realButtons = input.buttons;
@@ -379,5 +414,5 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
 
 /** Copy of a kart's state, used to keep the previous tick for interpolation. */
 export function cloneKart(k: KartState): KartState {
-  return { ...k, pos: { ...k.pos }, vel: { ...k.vel } };
+  return { ...k, pos: { ...k.pos }, vel: { ...k.vel }, flight: k.flight ? { ...k.flight } : null };
 }

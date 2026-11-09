@@ -11,6 +11,7 @@ import { ITEMS } from './config';
 import type { Ground, GroundHit, Surface } from './ground';
 import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
+import { resolveCannons, type ResolvedCannon } from './cannon';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -137,6 +138,8 @@ export class Track implements Ground {
   readonly checkpoints: number[] = [];
   /** Where item boxes float (rows of three across the road). */
   readonly itemBoxes: Pick<ItemBox, 'x' | 'y' | 'z' | 's'>[] = [];
+  /** Launch cannons with world positions (see sim/cannon.ts). */
+  readonly cannons: ResolvedCannon[];
 
   constructor(readonly def: TrackDef) {
     const ctrl: V3[] = def.points.map((p) => ({ x: p[0], y: p[2] ?? 0, z: p[1] }));
@@ -264,6 +267,7 @@ export class Track implements Ground {
     }
     for (let c = 0; c < def.checkpoints; c++) this.checkpoints.push((c * this.length) / def.checkpoints);
     this.placeItemBoxes();
+    this.cannons = resolveCannons(this, def.cannons); // cannon agent: needs pointAt/sample, so it comes last
   }
 
   /**

@@ -101,11 +101,21 @@ export class KartView {
     } else if (!cur.grounded) {
       targetPitch = -Math.atan2(cur.vel.y, Math.max(5, Math.abs(cur.speed))) * 0.6;
     }
+    // Inside a launch cannon: nose up the barrel while loading; in the air see below.
+    const fl = cur.flight;
+    if (fl?.phase === 'load') targetPitch = -0.52;
     const k = 1 - Math.exp(-dt / 0.06);
     this.pitch += (targetPitch - this.pitch) * k;
     this.roll += (targetRoll - this.roll) * k;
     m.root.rotation.x = this.pitch;
-    m.root.rotation.z = this.roll;
+    // Cannon flight: one slow, smooth barrel roll over the whole flight (ends level on landing).
+    const flightU = fl?.phase === 'air' && fl.duration > 0 ? Math.min(1, fl.t / fl.duration) : 0;
+    m.root.rotation.z = this.roll + Math.PI * 2 * flightU * flightU * (3 - 2 * flightU);
+    // The kart shrinks as it is swallowed by the barrel and pops back to full size just after the shot.
+    let scale = 1;
+    if (fl?.phase === 'load') scale = 1 - 0.45 * Math.min(1, fl.t / 0.5);
+    else if (fl?.phase === 'air') scale = 0.55 + 0.45 * Math.min(1, fl.t / 0.2);
+    m.root.scale.setScalar(scale);
 
     // Lean outward in turns (roll around forward axis), proportional to lateral acceleration.
     const lateralAccel = p.yawRate * p.speed;
@@ -129,6 +139,13 @@ export class KartView {
         m.root.localToWorld(this.tmp);
         this.sparks.emit(this.tmp, this.back, cur.driftTier === 0 ? 1 : 2);
       }
+    }
+    // Sparkling trail while flying out of a cannon.
+    if (fl?.phase === 'air') {
+      this.sparks.setTier(1);
+      this.back.set(-fx, 0, -fz);
+      this.tmp.set(p.x, p.y + 0.4, p.z);
+      this.sparks.emit(this.tmp, this.back, 3);
     }
     this.sparks.update(dt);
 

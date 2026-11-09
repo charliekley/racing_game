@@ -5,6 +5,7 @@
  */
 import type { ControlInput } from '../shared/protocol';
 import { KART, SIM_DT } from './config';
+import { stepCannons, type CannonEvent } from './cannon';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import { Colliders } from './colliders';
 import type { Ground } from './ground';
@@ -27,6 +28,7 @@ export type WorldEvent =
   | { kind: 'boostPad'; slot: number }
   | { kind: 'respawn'; slot: number }
   | ItemEvent
+  | CannonEvent
   | (KartEvent & { slot: number });
 
 /** Wall hits softer than this (m/s) aren't reported. */
@@ -98,7 +100,7 @@ export class World {
         if (kart.boostTime < KART.boostPadTime * 0.5) events.push({ kind: 'boostPad', slot });
         applyBoost(kart, KART.boostPadTime);
       }
-      if (this.track) {
+      if (this.track && !kart.flight) {
         const impact = collideWalls(kart, this.track);
         if (impact > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact });
         // Solid scenery bounces karts like walls do (and reports the same event for haptics/audio).
@@ -110,8 +112,18 @@ export class World {
         }
       }
     }
+    // Launch cannons: capture, fly and land karts; a landing credits the skipped checkpoints.
+    if (this.track && !frozen) {
+      for (const e of stepCannons(this.track, this.karts, SIM_DT)) {
+        events.push(e);
+        if (e.kind === 'cannonLand' && this.race) {
+          events.push(...this.race.grantProgress(e.slot, this.track.cannons[e.cannon].landing.s));
+        }
+      }
+    }
     if (!frozen) {
-      const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0));
+      // Karts being carried back or flying through a cannon don't bump into anything.
+      const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0 && !k.flight));
       events.push(...collideKarts(active));
     }
 
@@ -125,7 +137,8 @@ export class World {
     if (this.race && this.track) {
       const positions = new Map<number, number>();
       for (const [slot, kart] of this.karts) {
-        positions.set(slot, this.track.project(kart.pos.x, kart.pos.z, kart.trackIndex).s);
+        // In a cannon the kart is nowhere near the road: report the mouth so rankings don't jump around.
+        positions.set(slot, kart.flight ? this.track.cannons[kart.flight.cannon].mouth.s : this.track.project(kart.pos.x, kart.pos.z, kart.trackIndex).s);
       }
       for (const e of this.race.tick(SIM_DT, positions, inputs)) {
         if (e.kind === 'startBoost') applyBoost(this.karts.get(e.slot)!, KART.startBoostTime);
