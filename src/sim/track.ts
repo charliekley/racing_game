@@ -7,7 +7,9 @@
  * and physics always agree.
  */
 import type { TrackDef } from '../track/types';
+import { ITEMS } from './config';
 import type { Ground, GroundHit, Surface } from './ground';
+import type { ItemBox } from './items/types';
 
 /** Distance between centerline samples (m). */
 export const SAMPLE_SPACING = 2;
@@ -109,6 +111,8 @@ export class Track implements Ground {
   readonly boostPads: BoostPad[] = [];
   /** s where each checkpoint segment starts; checkpoint 0 = start/finish line (s = 0). */
   readonly checkpoints: number[] = [];
+  /** Where item boxes float (rows of three across the road). */
+  readonly itemBoxes: Pick<ItemBox, 'x' | 'y' | 'z' | 's'>[] = [];
 
   constructor(readonly def: TrackDef) {
     const ctrl: V3[] = def.points.map((p) => ({ x: p[0], y: p[2] ?? 0, z: p[1] }));
@@ -217,6 +221,34 @@ export class Track implements Ground {
       this.boostPads.push({ s0, s1: s0 + b.length, d0: c - b.width / 2, d1: c + b.width / 2 });
     }
     for (let c = 0; c < def.checkpoints; c++) this.checkpoints.push((c * this.length) / def.checkpoints);
+    this.placeItemBoxes();
+  }
+
+  /**
+   * Rows of 3 item boxes spread evenly around the lap, nudged out of the way of
+   * the start line, jumps, water and boost pads.
+   */
+  private placeItemBoxes(): void {
+    const rows = Math.max(3, Math.round(this.length / ITEMS.rowSpacing));
+    const clear = (s: number): boolean => {
+      if (this.deltaS(0, s) > -45 && this.deltaS(0, s) < 40) return false; // start/finish area
+      for (const r of this.ramps) if (this.deltaS(r.s0 - 25, s) >= 0 && this.deltaS(s, r.s1 + 20) >= 0) return false;
+      for (const g of this.gaps) if (this.deltaS(g.s0 - 25, s) >= 0 && this.deltaS(s, g.s1 + 25) >= 0) return false;
+      for (const b of this.boostPads) if (this.deltaS(b.s0 - 10, s) >= 0 && this.deltaS(s, b.s1 + 10) >= 0) return false;
+      return true;
+    };
+    for (let i = 0; i < rows; i++) {
+      let s = ((i + 0.5) * this.length) / rows;
+      // Slide forward in small steps until the spot is clear (bounded search).
+      for (let tries = 0; tries < 40 && !clear(s); tries++) s = (s + 5) % this.length;
+      if (!clear(s)) continue;
+      for (const lateral of [-0.3, 0, 0.3]) {
+        const p = this.pointAt(s, lateral * this.def.width);
+        const ground = this.sample(p.x, p.z, p.index);
+        if (!ground) continue;
+        this.itemBoxes.push({ x: p.x, y: ground.height, z: p.z, s });
+      }
+    }
   }
 
   /** Control-point units (e.g. 3.5) -> distance along the track. */

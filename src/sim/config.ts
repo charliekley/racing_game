@@ -92,6 +92,15 @@ export const KART = {
   /** How long the carrier takes to lower you back onto the track (s). */
   respawnTime: 1.8,
 
+  // --- Item effects on the kart ----------------------------------------------------------
+  /** Spin-out after being hit (s) with no control, and the fraction of speed kept. */
+  spinTime: 1.3,
+  spinSpeedFactor: 0.3,
+  /** Nova (invincibility) duration (s), top-speed and acceleration multipliers. Nova ignores grass. */
+  novaTime: 7,
+  novaSpeedFactor: 1.18,
+  novaAccelFactor: 1.3,
+
   // --- Collisions -----------------------------------------------------------------
   /** Fraction of the impact velocity bounced back off walls (0 = dead stop on the wall, 1 = superball). */
   wallBounce: 0.35,
@@ -112,6 +121,40 @@ export const KART = {
 } as const;
 
 export type KartConfig = typeof KART;
+
+/** Items: boxes, roulette, the five items. */
+export const ITEMS = {
+  /** Item box pick-up radius (m) and how long a collected box stays away (s). */
+  boxRadius: 1.9,
+  boxRespawn: 5,
+  /** Item-box rows per track: one row every this many metres, 3 boxes per row. */
+  rowSpacing: 260,
+  /** ITEM pressed for less than this counts as a "tap" (use at once); longer = drag it behind you (s). */
+  tapSeconds: 0.18,
+  /** How far behind the kart a dragged/dropped item sits (m). */
+  trailDistance: 2.8,
+  /** Dash boost length: single, and per charge of the three-pack (s). */
+  dashBoostTime: 1.5,
+  tripleBoostTime: 1.0,
+  /** Slick (oil) trap. */
+  slickRadius: 1.5,
+  slickLifetime: 60,
+  maxSlicks: 12,
+  /** A dropped item can't hurt its owner for this long (s). */
+  ownerGrace: 0.8,
+  /** Ricochet shot. */
+  ricochetSpeed: 42,
+  ricochetBounces: 4,
+  ricochetLifetime: 9,
+  ricochetRadius: 1.3,
+  /** Seeker (homing) shot. */
+  seekerSpeed: 38,
+  seekerTurnRate: 3.2,
+  seekerLifetime: 9,
+  seekerRadius: 1.3,
+  /** Shots spawn this far in front of / behind the kart (m). */
+  muzzleDistance: 2.4,
+} as const;
 
 /** Camera feel (render-only, doesn't affect the sim). */
 export const CAMERA = {

@@ -65,6 +65,11 @@ export interface KartState {
   /** Time spent far outside the track (s), for the out-of-bounds respawn. */
   offTrackTime: number;
 
+  /** Seconds left of a spin-out after being hit (no control). */
+  spinTime: number;
+  /** Seconds left of Nova invincibility. */
+  starTime: number;
+
   /** Previous button states, to detect presses (edges). */
   prevButtons: number;
 }
@@ -100,6 +105,8 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     trickDone: false,
     respawnTime: 0,
     offTrackTime: 0,
+    spinTime: 0,
+    starTime: 0,
     prevButtons: 0,
   };
 }
@@ -123,6 +130,8 @@ export interface SpeedContext {
   surface: Surface;
   boosting: boolean;
   stalled: boolean;
+  /** Nova active: faster, and grass doesn't slow you. */
+  nova?: boolean;
 }
 
 /** New forward speed after throttle/brake/coast for one step. */
@@ -133,10 +142,10 @@ export function updateSpeed(
   dt: number,
   c: KartConfig = KART,
 ): number {
-  const { surface, boosting, stalled } = typeof ctx === 'string' ? { surface: ctx, boosting: false, stalled: false } : ctx;
+  const { surface, boosting, stalled, nova } = typeof ctx === 'string' ? { surface: ctx, boosting: false, stalled: false, nova: false } : ctx;
   const gas = (input.buttons & Buttons.GAS) !== 0;
   const brake = (input.buttons & Buttons.BRAKE) !== 0;
-  const offroad = surface === 'offroad' && !boosting; // boosting powers through grass
+  const offroad = surface === 'offroad' && !boosting && !nova; // boosting and Nova power through grass
 
   if (boosting) {
     // Boost: strong push up to the boosted top speed, gas or not.
@@ -144,8 +153,8 @@ export function updateSpeed(
     return speed < cap ? Math.min(cap, speed + c.boostAccel * dt) : speed;
   }
 
-  const cap = c.maxSpeed * (offroad ? c.offroadSpeedFactor : 1);
-  const accel = c.accel * (offroad ? c.offroadAccelFactor : 1);
+  const cap = c.maxSpeed * (offroad ? c.offroadSpeedFactor : 1) * (nova ? c.novaSpeedFactor : 1);
+  const accel = c.accel * (offroad ? c.offroadAccelFactor : 1) * (nova ? c.novaAccelFactor : 1);
 
   let v = speed;
   if (gas && !brake && !stalled) {
@@ -180,6 +189,19 @@ export function applyBoost(k: KartState, seconds: number): void {
   k.boostTime = Math.max(k.boostTime, seconds);
 }
 
+/** Knock a kart into a spin-out (hit by a trap, shot or Nova): loses control, speed and boost. */
+export function spinOut(k: KartState, c: KartConfig = KART): void {
+  k.spinTime = c.spinTime;
+  k.speed *= c.spinSpeedFactor;
+  k.vel.x *= c.spinSpeedFactor;
+  k.vel.z *= c.spinSpeedFactor;
+  k.boostTime = 0;
+  k.driftDir = 0;
+  k.driftCharge = 0;
+  k.driftTier = 0;
+  k.hopping = false;
+}
+
 /** Stop drifting; with `reward` a charged drift gives its mini-turbo. */
 function endDrift(k: KartState, reward: boolean, events: KartEvent[], c: KartConfig): void {
   if (k.driftDir === 0) return;
@@ -199,6 +221,14 @@ function endDrift(k: KartState, reward: boolean, events: KartEvent[], c: KartCon
  */
 export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: number, c: KartConfig = KART): KartEvent[] {
   const events: KartEvent[] = [];
+  // While spinning out the kart ignores the controls (but we still remember the
+  // real button state so a held button doesn't register as a fresh press after).
+  const realButtons = input.buttons;
+  const spinning = k.spinTime > 0;
+  if (spinning) {
+    k.spinTime = Math.max(0, k.spinTime - dt);
+    input = { steer: 0, buttons: 0 };
+  }
   const steer = clamp(Number.isFinite(input.steer) ? input.steer : 0, -1, 1);
   k.steer = steer;
   const driftHeld = (input.buttons & Buttons.DRIFT) !== 0;
@@ -209,6 +239,9 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   k.boostTime = Math.max(0, k.boostTime - dt);
   const stalled = k.stallTime > 0;
   k.stallTime = Math.max(0, k.stallTime - dt);
+  const nova = k.starTime > 0;
+  k.starTime = Math.max(0, k.starTime - dt);
+  if (spinning) k.prevButtons = realButtons;
 
   // --- Hop (start of a drift) ---------------------------------------------------
   if (k.grounded && pressed & Buttons.DRIFT && k.speed > 2) {
@@ -236,7 +269,7 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   let lateral = k.vel.x * r.x + k.vel.z * r.z;
 
   if (k.grounded) {
-    k.speed = updateSpeed(k.speed, input, { surface: k.surface, boosting, stalled }, dt, c);
+    k.speed = updateSpeed(k.speed, input, { surface: k.surface, boosting, stalled, nova }, dt, c);
   }
 
   // --- Steering -------------------------------------------------------------------

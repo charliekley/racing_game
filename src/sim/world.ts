@@ -8,6 +8,8 @@ import { KART, SIM_DT } from './config';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import type { Ground } from './ground';
 import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartState } from './kart';
+import { ItemSystem, type ItemEvent } from './items/items';
+import { seededRng } from './items/odds';
 import { Race, type RaceEvent } from './race';
 import type { Track } from './track';
 
@@ -22,6 +24,7 @@ export type WorldEvent =
   | CollisionEvent
   | { kind: 'boostPad'; slot: number }
   | { kind: 'respawn'; slot: number }
+  | ItemEvent
   | (KartEvent & { slot: number });
 
 /** Wall hits softer than this (m/s) aren't reported. */
@@ -35,12 +38,16 @@ export class World {
   /** State at the previous tick (for render interpolation). */
   readonly prevKarts = new Map<number, KartState>();
   race: Race | null = null;
+  /** Item boxes, held items and item objects (null until a race starts). */
+  items: ItemSystem | null = null;
   /** Where each respawning kart is being lowered to. */
   private respawnTargets = new Map<number, { x: number; y: number; z: number }>();
 
   constructor(
     readonly ground: Ground,
     readonly track: Track | null = null,
+    /** Seed for the item roulette: same seed + same inputs = same race. */
+    private readonly seed = 1234,
   ) {}
 
   addKart(slot: number, spawn: SpawnPoint): void {
@@ -59,6 +66,7 @@ export class World {
     this.respawnTargets.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
+    this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
   }
 
   tick(getInput: (slot: number) => ControlInput): WorldEvent[] {
@@ -91,6 +99,13 @@ export class World {
     if (!frozen) {
       const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0));
       events.push(...collideKarts(active));
+    }
+
+    // Items run while the race is on.
+    if (this.items && this.race?.phase === 'racing') {
+      const finished = new Set([...this.race.racers.values()].filter((r) => r.finished).map((r) => r.slot));
+      events.push(...this.items.tick(this.karts, inputs, this.race.standings(), finished));
+      this.items.novaCollisions(this.karts, events as ItemEvent[]);
     }
 
     if (this.race && this.track) {
