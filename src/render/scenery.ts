@@ -243,8 +243,11 @@ export function buildScenery(track: Track, plan: SceneryPlan = planScenery(track
   buildTrees(plan, shapes, solid, look);
   buildBushesAndRocks(plan, shapes, solid, look);
   addGroundDetail(site, shapes, detail, look, rnd, def.scenery.trees);
-  addHills(site, shapes, solid, look, rnd);
-  addMountains(site, shapes, far, look, rnd, new THREE.Color(def.theme.horizon));
+  // Opt-in `openSky` tracks (sky islands) float in empty sky: no ring of hills and mountains.
+  if (!def.scenery.openSky) {
+    addHills(site, shapes, solid, look, rnd);
+    addMountains(site, shapes, far, look, rnd, new THREE.Color(def.theme.horizon));
+  }
 
   const group = new THREE.Group();
   group.name = 'scenery';

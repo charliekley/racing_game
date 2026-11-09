@@ -141,6 +141,11 @@ export interface TrackDef {
     buildings: number;
     /** Hand-placed solid blocks (container stacks, warehouses...). Optional. */
     blocks?: BlockDef[];
+    /**
+     * Sky-island look: leave out the ring of green hills and mountains that normally stands on the
+     * horizon, so the course floats in open sky (clouds are kept). Default false.
+     */
+    openSky?: boolean;
   };
   /** Colors for this track's look. */
   theme: { grass: string; offroad: string; sky: string; horizon: string };
