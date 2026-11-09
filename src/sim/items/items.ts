@@ -16,6 +16,7 @@
 import { Buttons, type ControlInput } from '../../shared/protocol';
 import { ITEMS, KART, SIM_DT } from '../config';
 import { applyBoost, spinOut, type KartState } from '../kart';
+import type { Colliders } from '../colliders';
 import type { Track } from '../track';
 import { rollItem } from './odds';
 import { ROULETTE_SECONDS, type HeldItem, type ItemBox, type ItemEntity, type ItemId } from './types';
@@ -67,6 +68,13 @@ export class ItemSystem {
   readonly states = new Map<number, ItemState>();
   private entities: Entity[] = [];
   private nextUid = 1;
+  /** Solid scenery that destroys shots (null = shots fly through everything, as before). */
+  private colliders: Colliders | null = null;
+
+  /** Let solid scenery (trees, houses…) stop Ricochet and Seeker shots. */
+  setColliders(colliders: Colliders | null): void {
+    this.colliders = colliders;
+  }
 
   constructor(
     private readonly track: Track,
@@ -368,6 +376,12 @@ export class ItemSystem {
       const ground = this.track.sample(e.x, e.z, e.trackIndex);
       if (ground) e.y = ground.height;
 
+      // Scenery: a shot that runs into a solid tree/house/etc. is destroyed.
+      if (this.colliders?.blocksPoint(e.x, e.z, e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius)) {
+        dead.add(e);
+        events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
+        continue;
+      }
       if (e.kind === 'ricochet' && !this.bounceOffWalls(e, p)) {
         dead.add(e);
         continue;

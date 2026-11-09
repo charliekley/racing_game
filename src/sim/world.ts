@@ -6,12 +6,14 @@
 import type { ControlInput } from '../shared/protocol';
 import { KART, SIM_DT } from './config';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
+import { Colliders } from './colliders';
 import type { Ground } from './ground';
 import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartState } from './kart';
 import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
 import { Race, type RaceEvent } from './race';
 import type { Track } from './track';
+import { planScenery } from '../track/sceneryPlan';
 
 export interface SpawnPoint {
   x: number;
@@ -40,6 +42,8 @@ export class World {
   race: Race | null = null;
   /** Item boxes, held items and item objects (null until a race starts). */
   items: ItemSystem | null = null;
+  /** Solid scenery (trees, houses, grandstands…). Built from the scenery plan in startRace unless set before. */
+  colliders: Colliders | null = null;
   /** Where each respawning kart is being lowered to. */
   private respawnTargets = new Map<number, { x: number; y: number; z: number }>();
 
@@ -67,6 +71,9 @@ export class World {
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
+    // Solid scenery: same plan the renderer draws from, so what you see is what you hit.
+    this.colliders ??= new Colliders(planScenery(this.track).colliders);
+    this.items.setColliders(this.colliders);
   }
 
   tick(getInput: (slot: number) => ControlInput): WorldEvent[] {
@@ -90,6 +97,9 @@ export class World {
       if (this.track) {
         const impact = collideWalls(kart, this.track);
         if (impact > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact });
+        // Solid scenery bounces karts like walls do (and reports the same event for haptics/audio).
+        const bump = this.colliders?.collideKart(kart) ?? 0;
+        if (bump > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact: bump });
         if (this.needsRespawn(kart)) {
           this.startRespawn(slot, kart);
           events.push({ kind: 'respawn', slot });
