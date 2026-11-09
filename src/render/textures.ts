@@ -222,3 +222,56 @@ export function bannerTexture(): THREE.CanvasTexture {
 }
 export const BANNER_LOGO = { u: 0, v: 0.5, w: 1, h: 0.5 };
 export const BANNER_SLOGAN = { u: 0, v: 0, w: 1, h: 0.5 };
+
+/** Packed dirt for dirt shortcuts: brown speckles and two darker wheel ruts (no edge lines). U across the road, V along it. */
+export function dirtTexture(): THREE.CanvasTexture {
+  return canvasTexture(256, (ctx, n) => {
+    ctx.fillStyle = '#9b7a4c';
+    ctx.fillRect(0, 0, n, n);
+    const rnd = seededRandom(11);
+    for (let i = 0; i < 3200; i++) {
+      const v = 110 + Math.floor(rnd() * 70);
+      ctx.fillStyle = `rgb(${v + 30},${v},${v - 40})`;
+      ctx.fillRect(rnd() * n, rnd() * n, 2 + rnd() * 2, 2);
+    }
+    ctx.fillStyle = 'rgba(70,45,20,0.28)'; // wheel ruts
+    ctx.fillRect(n * 0.26, 0, n * 0.1, n);
+    ctx.fillRect(n * 0.64, 0, n * 0.1, n);
+  });
+}
+
+/**
+ * "SHORTCUT" board for the fork: yellow with black chevron blocks at both ends. Drawn left to
+ * right for a driver coming up to the board. Only the top quarter of the canvas is used (the
+ * board is 4:1), so the texture's repeat/offset show just that strip.
+ */
+export function shortcutSignTexture(): THREE.CanvasTexture {
+  const tex = canvasTexture(512, (ctx, n) => {
+    const h = n / 4;
+    ctx.fillStyle = '#f2b01e';
+    ctx.fillRect(0, 0, n, h);
+    // Chevron blocks at both ends (pointing in the direction of travel).
+    ctx.fillStyle = '#161616';
+    for (const x0 of [10, n - 10 - 56]) {
+      for (let k = 0; k < 3; k++) {
+        const x = x0 + k * 19;
+        ctx.beginPath();
+        ctx.moveTo(x, 14);
+        ctx.lineTo(x + 16, h / 2);
+        ctx.lineTo(x, h - 14);
+        ctx.lineTo(x + 8, h - 14);
+        ctx.lineTo(x + 24, h / 2);
+        ctx.lineTo(x + 8, 14);
+        ctx.fill();
+      }
+    }
+    ctx.font = 'bold 60px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SHORTCUT', n / 2, h / 2 + 3);
+  });
+  tex.repeat.set(1, 0.25);
+  tex.offset.set(0, 0.75);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}

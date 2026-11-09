@@ -85,5 +85,18 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * `track.routes: RouteLine[]` (`src/sim/routes.ts`): the shared shape maps draw from. Currently only the main loop; the shortcut code adds branches (`kind: 'shortcut'`).
 * Dev-only test tracks `_terrainTest.ts` and `_cannonTest.ts` (not in `TRACKS`).
 
-**Wave 2** (parallel): shortcuts/routes (owns the route and branch code in `track.ts`, `race.ts`, `routes.ts`), jump variety (owns ramp shapes: `rampHeight`/ramp meshes), maps (owns `minimap.ts`, `phoneMap.ts`, the `track` protocol message).
+**Wave 2** (parallel): shortcuts/routes (DONE, see "Shortcuts: what is implemented"; owns the route and branch code in `track.ts`, `race.ts`, `routes.ts`), jump variety (owns ramp shapes: `rampHeight`/ramp meshes), maps (owns `minimap.ts`, `phoneMap.ts`, the `track` protocol message).
 **Wave 3**: the four new tracks, then the old tracks are removed.
+
+## Shortcuts: what is implemented (shortcuts agent)
+
+* `TrackDef.shortcuts[]` (`from`, `to`, `points`, `width`, `surface`, plus optional branch-local `walls`). Code: `src/sim/shortcuts.ts` (branch building, projection), `src/render/branchView.ts` (meshes + the "SHORTCUT" gate), dev-only test track `src/track/tracks/_shortcutTest.ts` with `src/sim/shortcuts.test.ts`.
+* `track.branches: Branch[]` (route ids 1, 2, …; route 0 = main loop). A branch has its own evenly spaced `samples` (same `TrackSample` shape; `sample.s` is the MAPPED main-route distance), starts/ends exactly on the main centerline with the main tangent, and blends width/bank with the main road over 24 m at each end.
+* **Hint / index convention:** `Projection` now has `route` and `index`; `index = route * 2^20 + sampleIndex` (equals the plain sample index on the main road). Store `projection.index` (not `.i`) as a kart's `trackIndex`; `.i` indexes `track.sampleOf(route, i)`. `Track.sample()` already returns this `index`.
+* `Projection.s` for a kart on a branch is mapped linearly onto the main route between the junctions, so ranking and the checkpoint rule work unchanged: driving the branch passes the skipped checkpoints in order. Driving across the grass earns nothing (a branch only counts when the kart is on its road or off-road strip).
+* The projection swaps roads only where they are joined (near the junctions; a branch swaps back to the main road wherever the main road runs alongside at the same level), so at an under/overpass the hint decides. Keep crossings >= 3 m apart in height (the usual >= 7 m rule) and not within ~50 m of a junction.
+* Ground: a `'dirt'` branch is `'offroad'` for speed (its first/last 12 m are tarmac). Terrain blends toward branch roads too (`withBranchField`); branch stretches >= 5 m above the main road are left out of the blend.
+* Walls: `wallsAt(i, route)` / `sampleOf(route, i)`; `collideWalls` and the shot bounce use them. Branches have no cliffs, ramps, gaps or boost pads (yet).
+* `track.routes` = main line + one `kind: 'shortcut'` `RouteLine` per branch (open polyline, ~8 m points, with y).
+* Bots: `BotStyle.shortcutBias` (slots 0 and 2 > 0.5 take every shortcut); `track.sampleAhead(route, i, k)` follows a branch back onto the main road.
+* Scenery planning keeps clear of branch roads (`distToTrack`).
