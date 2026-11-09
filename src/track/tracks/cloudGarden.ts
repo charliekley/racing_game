@@ -100,7 +100,7 @@ export const cloudGarden: TrackDef = {
   laps: 3,
   checkpoints: 18,
   // No trees: they would float in the sky next to the islands.
-  scenery: { seed: 5, trees: 40, buildings: 0 },
+  scenery: { seed: 5, trees: 40, buildings: 0, openSky: true },
   // Fresh green islands, pale sandstone rock, blue sky fading to white cloud.
   theme: { grass: '#7ccf5a', offroad: '#f0e2b4', sky: '#4aa8f0', horizon: '#f2f9ff' },
   terrain: {
