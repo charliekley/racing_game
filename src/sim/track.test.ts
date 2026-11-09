@@ -14,6 +14,22 @@ const OVERPASS_CLEARANCE = 7;
 describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) => {
   const track = new Track(def);
 
+  /**
+   * True where a plain (hint-less) projection is ambiguous: another part of the road crosses
+   * at a different level (overpass), or a shortcut branch runs alongside (near its junctions).
+   * Those spots are covered by the overpass/shortcut tests; the generic checks skip them.
+   */
+  const ambiguousSpot = (i: number): boolean => {
+    const p = track.samples[i];
+    const n = track.samples.length;
+    for (let j = 0; j < n; j += 2) {
+      const along = Math.min(Math.abs(i - j), n - Math.abs(i - j));
+      if (along < 40) continue; // our own neighbours
+      if (Math.hypot(track.samples[j].x - p.x, track.samples[j].z - p.z) < 30) return true;
+    }
+    return track.branches.some((b) => b.samples.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 30));
+  };
+
   it('has a sensible length and evenly spaced samples', () => {
     expect(track.length).toBeGreaterThan(400);
     for (let i = 1; i < track.samples.length; i++) {
@@ -48,6 +64,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
 
   it('projects centerline points back onto themselves', () => {
     for (let i = 0; i < track.samples.length; i += 37) {
+      if (ambiguousSpot(i)) continue;
       const p = track.samples[i];
       const proj = track.project(p.x + p.rx * 3, p.z + p.rz * 3);
       expect(proj.d).toBeCloseTo(3, 1);
@@ -62,6 +79,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
         expect(track.sample(p.x, p.z)).toBeNull(); // water
         continue;
       }
+      if (ambiguousSpot(i)) continue;
       expect(track.sample(p.x, p.z)!.surface).not.toBe('offroad');
       const far = def.width / 2 + def.offroadWidth - 0.5;
       expect(track.sample(p.x + p.rx * far, p.z + p.rz * far)!.surface).toBe('offroad');
@@ -82,8 +100,13 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
 
   it('ramps rise to their height', () => {
     for (const r of track.ramps) {
-      expect(track.rampHeight(r.s0 + (r.s1 - r.s0) * 0.99)).toBeGreaterThan(r.height * 0.9);
-      expect(track.rampHeight(r.s1 + 1)).toBe(0);
+      // Kickers peak at their end; humps and doubles peak inside: look for the highest point.
+      let peak = 0;
+      for (let s = r.s0; s <= r.s1; s += 0.5) peak = Math.max(peak, track.rampHeight(s));
+      expect(peak).toBeGreaterThan(r.height * 0.9);
+      // Right after the ramp it is flat road, unless a landing apron or a neighbouring ramp starts there.
+      const touching = track.ramps.some((o) => o !== r && o.s0 <= r.s1 + 1 && o.s1 > r.s1 + 1);
+      if (!touching && !r.gap) expect(track.rampHeight(r.s1 + 1)).toBe(0);
     }
   });
 
