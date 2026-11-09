@@ -19,7 +19,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('scenery plan for %s', (_
   const outer = def.width / 2 + def.offroadWidth;
 
   it('is deterministic for a given track', () => {
-    const again = planScenery(track, () => 0); // bypasses the cache
+    const again = planScenery(track, (x, z) => track.terrain.height(x, z)); // bypasses the cache (same ground as the default, so hilly tracks compare equal)
     expect(again.colliders).toEqual(plan.colliders);
     expect(again.trees.map((t) => [t.x, t.z, t.variant])).toEqual(plan.trees.map((t) => [t.x, t.z, t.variant]));
   });
