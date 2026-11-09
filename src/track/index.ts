@@ -1,11 +1,12 @@
 /** All available tracks. Add new ones here. The lobby's track picker (T) cycles through them in this order. */
 import { emberPeaks } from './tracks/emberPeaks';
+import { docksideLoop } from './tracks/docksideLoop';
 import { mapleBay } from './tracks/mapleBay';
 import { meadowRing } from './tracks/meadowRing';
 import { sunscorchCanyon } from './tracks/sunscorchCanyon';
 import type { TrackDef } from './types';
 
-export const TRACKS: TrackDef[] = [meadowRing, sunscorchCanyon, mapleBay, emberPeaks];
+export const TRACKS: TrackDef[] = [meadowRing, sunscorchCanyon, mapleBay, emberPeaks, docksideLoop];
 export type { TrackDef };
 
 // Dev-only test tracks (never in the lobby picker). Open one with

@@ -80,6 +80,21 @@ export interface ShortcutDef {
   walls?: { from: number; to: number; side: 'left' | 'right' | 'both' | 'outer' }[];
 }
 
+/** A hand-placed solid box on the ground: a container stack or a warehouse. */
+export interface BlockDef {
+  kind: 'container' | 'warehouse';
+  x: number;
+  z: number;
+  /** Size in metres: w across (local x), d along (local z), h tall. */
+  w: number;
+  d: number;
+  h: number;
+  /** Yaw in radians (same convention as scenery rotationY). Default 0. */
+  rot?: number;
+  /** Wall colour, e.g. '#c0392b'. */
+  color: string;
+}
+
 export interface TrackDef {
   name: string;
   /** One-line description for menus and docs. */
@@ -120,7 +135,13 @@ export interface TrackDef {
   laps: number;
   /** Number of checkpoints the lap is split into (must pass them all, in order). */
   checkpoints: number;
-  scenery: { seed: number; trees: number; buildings: number };
+  scenery: {
+    seed: number;
+    trees: number;
+    buildings: number;
+    /** Hand-placed solid blocks (container stacks, warehouses...). Optional. */
+    blocks?: BlockDef[];
+  };
   /** Colors for this track's look. */
   theme: { grass: string; offroad: string; sky: string; horizon: string };
 

@@ -86,8 +86,18 @@ export interface GantryPostItem extends Placement {
   half: number;
 }
 
+/** A hand-placed container stack or warehouse (from `def.scenery.blocks`). */
+export interface BlockItem extends Placement {
+  kind: 'container' | 'warehouse';
+  w: number;
+  h: number;
+  d: number;
+  color: string;
+}
+
 export interface SceneryPlan {
   biome: Biome;
+  blocks: BlockItem[];
   /** Centre and half-size of the scenery area (for the far hills/mountains/clouds). */
   bounds: { cx: number; cz: number; radius: number };
   trees: TreeItem[];
@@ -305,6 +315,7 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
 
   const plan: SceneryPlan = {
     biome,
+    blocks: [],
     bounds: { cx: site.cx, cz: site.cz, radius: site.radius },
     trees: [],
     bushes: [],
@@ -322,6 +333,16 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
   const solidOf = (c: Collider | null): void => {
     if (c && c.solid) plan.colliders.push(c);
   };
+
+  // Hand-placed blocks (containers, warehouses): solid, and reserved so nothing grows through them.
+  for (const b of def.scenery.blocks ?? []) {
+    const y = h(b.x, b.z);
+    const rotationY = b.rot ?? 0;
+    const collider = box(b.x, b.z, y, b.w / 2, b.d / 2, rotationY, b.h + 0.5);
+    solidOf(collider);
+    site.reserve(b.x, b.z, Math.hypot(b.w, b.d) / 2 + 1);
+    plan.blocks.push({ x: b.x, z: b.z, y, scale: 1, rotationY, seed: seed(), solid: true, collider, kind: b.kind, w: b.w, h: b.h, d: b.d, color: b.color });
+  }
 
   // Big man-made things first, so nature can grow around them.
   planGrandstands(site, plan, h, seed, solidOf);
