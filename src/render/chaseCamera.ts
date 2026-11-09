@@ -6,6 +6,9 @@ import * as THREE from 'three';
 import { CAMERA, KART } from '../sim/config';
 import type { InterpolatedKart } from './kartView';
 
+/** The camera never goes lower than this above the ground (m), so hills can't swallow it. */
+const CAMERA_GROUND_CLEARANCE = 1.2;
+
 export class ChaseCamera {
   readonly camera = new THREE.PerspectiveCamera(CAMERA.fovBase, 16 / 9, 0.1, 2000);
   private pos = new THREE.Vector3();
@@ -24,7 +27,11 @@ export class ChaseCamera {
     this.camera.updateProjectionMatrix();
   }
 
-  update(k: InterpolatedKart, dt: number, extraFov = 0): void {
+  /**
+   * @param groundAt optional ground height lookup (null = no ground). On hills the
+   *   smoothed camera can lag below a rising road; with this it is kept above the ground.
+   */
+  update(k: InterpolatedKart, dt: number, extraFov = 0, groundAt?: (x: number, z: number) => number | null): void {
     const fx = Math.sin(k.heading);
     const fz = Math.cos(k.heading);
     const rx = -fz;
@@ -48,6 +55,10 @@ export class ChaseCamera {
     } else {
       this.pos.lerp(desired, 1 - Math.exp(-dt / CAMERA.followLag));
       this.look.lerp(this.tmp.set(lookX, lookY, lookZ), 1 - Math.exp(-dt / 0.06));
+    }
+    if (groundAt) {
+      const ground = groundAt(this.pos.x, this.pos.z);
+      if (ground !== null) this.pos.y = Math.max(this.pos.y, ground + CAMERA_GROUND_CLEARANCE);
     }
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.look);

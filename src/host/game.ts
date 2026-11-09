@@ -295,7 +295,8 @@ export class Game {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
-      v.chase.update(v.kart.pose, dt, kart.flight ? 20 : kart.boostTime > 0 ? 10 : 0); // wider view while flying out of a cannon
+      const ground = (x: number, z: number) => this.track.sample(x, z, kart.trackIndex)?.height ?? null;
+      v.chase.update(v.kart.pose, dt, kart.flight ? 20 : kart.boostTime > 0 ? 10 : 0, ground); // wider view while flying out of a cannon
       this.renderer.setViewport(r.x, r.y, r.w, r.h);
       this.renderer.setScissor(r.x, r.y, r.w, r.h);
       this.renderer.render(this.scene, v.chase.camera);

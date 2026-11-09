@@ -29,7 +29,7 @@ export type Collider =
 export interface Placement {
   x: number;
   z: number;
-  /** Ground height at (x, z) (0 unless `planScenery` got a `heightAt`). */
+  /** Ground height at (x, z): the track's terrain (0 on flat tracks) unless `planScenery` got a `heightAt`. */
   y: number;
   scale: number;
   rotationY: number;
@@ -285,14 +285,15 @@ const planCache = new WeakMap<Track, SceneryPlan>();
  * object when no `heightAt` is given, so the renderer and the simulation share
  * one computation.
  *
- * @param heightAt optional ground height (e.g. `track.terrain.height`); items stand on it.
+ * @param heightAt optional ground height override; defaults to `track.terrain.height` (items stand on it).
  */
 export function planScenery(track: Track, heightAt?: (x: number, z: number) => number): SceneryPlan {
   if (!heightAt) {
     const cached = planCache.get(track);
     if (cached) return cached;
   }
-  const h = heightAt ?? (() => 0);
+  // Items stand on the track's own terrain (0 on flat tracks), so hills carry their trees and houses.
+  const h = heightAt ?? ((x: number, z: number) => track.terrain.height(x, z));
   const def = track.def;
   const rnd = planRandom(def.scenery.seed);
   const biome = biomeFor(def.theme);
