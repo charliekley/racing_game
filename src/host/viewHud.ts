@@ -8,6 +8,7 @@
  * is full screen or a quarter of it.
  */
 import type { Rect } from '../render/layout';
+import { InkOverlay } from './inkOverlay';
 import type { ItemDisplay } from '../shared/protocol';
 import { isIconAnimated, paintItemIcon, paintRoulette } from '../shared/itemIcons';
 
@@ -35,6 +36,7 @@ export class ViewHud {
   private itemCanvas: HTMLCanvasElement;
   private itemCtx: CanvasRenderingContext2D;
   private itemKey = '';
+  private ink: InkOverlay;
   private toastUntil = 0;
   private last = '';
 
@@ -59,6 +61,8 @@ export class ViewHud {
     this.itemCanvas = this.root.querySelector('.hud-item canvas') as HTMLCanvasElement;
     this.itemCtx = this.itemCanvas.getContext('2d')!;
     parent.appendChild(this.root);
+    // Ink splat (Jumble). Its canvas is added last, so CSS keeps the HUD text above it.
+    this.ink = new InkOverlay(this.root);
   }
 
   place(rect: Rect): void {
@@ -83,6 +87,7 @@ export class ViewHud {
       this.root.classList.toggle('boosting', s.boosting);
     }
     this.drawItem(s.item, now);
+    this.ink.update(now);
     if (now > this.toastUntil && this.center.classList.contains('show')) this.center.classList.remove('show');
   }
 
@@ -103,6 +108,11 @@ export class ViewHud {
     ctx.restore();
   }
 
+  /** Splat ink over this player's screen for `seconds` (they were hit by a Jumble). */
+  showInk(seconds: number): void {
+    this.ink.show(seconds);
+  }
+
   /** Big center message for `seconds`. */
   toast(text: string, seconds: number, now: number): void {
     this.center.textContent = text;
@@ -117,6 +127,7 @@ export class ViewHud {
   }
 
   dispose(): void {
+    this.ink.dispose();
     this.root.remove();
   }
 }

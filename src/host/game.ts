@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
 import type { ControlInput, HostToController } from '../shared/protocol';
 import { autopilot, botStyleFor } from '../sim/autopilot';
-import { SIM_DT } from '../sim/config';
+import { ITEMS, SIM_DT } from '../sim/config';
 import { botItemButton } from '../sim/items/items';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
@@ -423,6 +423,7 @@ export class Game {
           break;
         case 'jumbled':
           this.haptic(e.slot, HAPTICS.spunOut);
+          this.viewOf(e.slot)?.hud.showInk(ITEMS.jumbleTime);
           break;
       }
     }
