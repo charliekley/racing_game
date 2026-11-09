@@ -304,7 +304,8 @@ const unknown = unit((ctx) => {
   ctx.fillText('?', 0.5, 0.54);
 });
 
-export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova };
+// TODO(jumble): placeholder that reuses the slick art until the real icon is drawn.
+export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble: slick };
 
 /** Icons that move over time, so the host view must keep redrawing them. */
 export function isIconAnimated(id: string): boolean {

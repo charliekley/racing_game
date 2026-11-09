@@ -8,8 +8,11 @@
  *   ricochet = straight bouncing projectile (forward or backward, bounces off walls)
  *   seeker   = homing projectile that chases the racer ahead of you
  *   nova     = temporary invincibility: faster, ignores grass, knocks others aside
+ *   jumble   = ink spray: every racer AHEAD of you gets their steering flipped for a few
+ *              seconds and an ink splat over their screen (a comeback item: you can't
+ *              get it in the lead)
  */
-export const ITEM_IDS = ['dash', 'slick', 'ricochet', 'seeker', 'nova'] as const;
+export const ITEM_IDS = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble'] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
 export const ITEM_INFO: Record<ItemId, { name: string; blurb: string }> = {
@@ -18,6 +21,7 @@ export const ITEM_INFO: Record<ItemId, { name: string; blurb: string }> = {
   ricochet: { name: 'Ricochet', blurb: 'Fires straight and bounces off walls. Hold BRAKE when firing to shoot backward.' },
   seeker: { name: 'Seeker', blurb: 'Homing shot that chases the racer ahead of you.' },
   nova: { name: 'Nova', blurb: 'Brief invincibility: faster, ignores grass, knocks rivals aside.' },
+  jumble: { name: 'Jumble', blurb: 'Inks everyone ahead of you: their steering flips left/right for a few seconds.' },
 };
 
 /** What a player is carrying. `count` > 1 only for the Dash pack. */
