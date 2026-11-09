@@ -73,3 +73,17 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * Falling rule: `world.ts` `FALL_BELOW_ROAD` (5 m below the road at the nearest track point) and `FALL_FLOOR_Y` (-40 m).
 * Overpasses: the "never too close to itself" test skips pairs whose heights differ by >= 7 m.
 * `src/render/terrainView.ts` builds the ground mesh, cliff/chasm faces, bridge decks and pillars. `src/track/tracks/_terrainTest.ts` is a dev-only figure-8 with a climb, bridge, cliff ridge and void jump (not in `TRACKS`).
+
+## Status
+
+**Wave 1 is merged** (terrain, solid scenery, cannons). What exists now, with real names:
+
+* `track.terrain.height(x, z)`, `track.bridges`, `track.cliffs`, `Track.sample` returning `null` over cliffs/void gaps; relative falling rule in `world.ts` (5 m below the road at the nearest track point, or below -40 m); `ramps[].gapKind: 'void'`.
+* `planScenery(track)` (`src/track/sceneryPlan.ts`, pure, stands on `track.terrain`), `Colliders` (`src/sim/colliders.ts`) used by `World`; shots are stopped by solid scenery.
+* `track.cannons: ResolvedCannon[]`, kart `flight` state, events `cannonFire` / `cannonLand`, `CannonView`, bots can use cannons; `Race.grantProgress(slot, toS)`.
+* `ChaseCamera.update(..., groundAt)` keeps the camera above hills.
+* `track.routes: RouteLine[]` (`src/sim/routes.ts`): the shared shape maps draw from. Currently only the main loop; the shortcut code adds branches (`kind: 'shortcut'`).
+* Dev-only test tracks `_terrainTest.ts` and `_cannonTest.ts` (not in `TRACKS`).
+
+**Wave 2** (parallel): shortcuts/routes (owns the route and branch code in `track.ts`, `race.ts`, `routes.ts`), jump variety (owns ramp shapes: `rampHeight`/ramp meshes), maps (owns `minimap.ts`, `phoneMap.ts`, the `track` protocol message).
+**Wave 3**: the four new tracks, then the old tracks are removed.
