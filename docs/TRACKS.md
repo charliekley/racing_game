@@ -87,3 +87,10 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 
 **Wave 2** (parallel): shortcuts/routes (owns the route and branch code in `track.ts`, `race.ts`, `routes.ts`), jump variety (owns ramp shapes: `rampHeight`/ramp meshes), maps (owns `minimap.ts`, `phoneMap.ts`, the `track` protocol message).
 **Wave 3**: the four new tracks, then the old tracks are removed.
+
+## Maps (maps agent)
+
+* `src/shared/mapDraw.ts` draws both maps (TV `Minimap`, phone `PhoneMap`): height-shaded roads, shortcut branches (thinner; dashed brown when dirt), overpass gaps (`findCrossings`), bridges, cliff ticks, water/void gap notches, cannon icon + dotted arc + target ring, start line, dots. Static layers are cached offscreen (`MapCache`).
+* `src/sim/mapData.ts` `mapDataFromTrack(track)` builds the compact `MapData` from `track.routes/bridges/cliffs/gaps/cannons` (≤120 points per route, 0.1 m rounding, ~2–4 KB JSON).
+* Protocol: `{ t: 'track', pts, w, map?: MapData }` (`map` optional; phones fall back to `pts`).
+* A new track needs nothing special: put roads in `track.routes` (shortcuts: `kind: 'shortcut'`, `surface`) and the maps pick them up.

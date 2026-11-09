@@ -1,18 +1,20 @@
 /**
- * Track minimap for the middle of the phone screen.
+ * Track map for the middle of the phone screen.
  *
- * The host sends the track outline once per race ({t:'track'}) and every
- * kart's position about 8 times a second ({t:'map'}). We redraw only when a
- * message arrives (not every animation frame), which keeps the phone cool.
+ * The host sends the track once per race ({t:'track'}: an outline, plus the full
+ * `MapData` with heights, bridges, cliffs, cannons...) and every kart's position about
+ * 8 times a second ({t:'map'}). We redraw only when a message arrives (not every
+ * animation frame), which keeps the phone cool; the roads are cached in an offscreen
+ * layer and only the dots are redrawn.
  *
- * Orientation matches the TV's overview map: the world is drawn with +z up and
- * x mirrored, the way the driver sees the start straight.
+ * The drawing code is shared with the TV minimap (shared/mapDraw.ts), so both look alike.
  */
+import { isMapData, mapDataFromOutline, MapCache, type MapData, type MapDot } from '../shared/mapDraw';
+
 export class PhoneMap {
   private ctx: CanvasRenderingContext2D;
-  private pts: number[] = [];
-  private halfWidth = 7;
-  private bounds = { minX: 0, maxX: 1, minZ: 0, maxZ: 1 };
+  private cache = new MapCache(() => document.createElement('canvas'));
+  private data: MapData | null = null;
   private dots: number[] = [];
   private colorOf: (slot: number) => string = () => '#ffffff';
   private me: number | null = null;
@@ -24,25 +26,16 @@ export class PhoneMap {
   }
 
   get hasTrack(): boolean {
-    return this.pts.length >= 6;
+    return this.data !== null && this.data.routes.some((r) => r.points.length >= 3);
   }
 
-  /** `pts` = flat [x, z, x, z, …] along the closed centerline; `width` = road width (m). */
-  setTrack(pts: number[], width: number): void {
-    this.pts = pts;
-    this.halfWidth = width / 2;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    for (let i = 0; i + 1 < pts.length; i += 2) {
-      minX = Math.min(minX, pts[i]);
-      maxX = Math.max(maxX, pts[i]);
-      minZ = Math.min(minZ, pts[i + 1]);
-      maxZ = Math.max(maxZ, pts[i + 1]);
-    }
-    const pad = width + 6;
-    this.bounds = { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
+  /**
+   * `pts` = flat [x, z, x, z, …] along the closed centerline; `width` = road width (m).
+   * `map` = the rich map from newer hosts; without it (or if it is malformed) we draw the plain outline.
+   */
+  setTrack(pts: number[], width: number, map?: unknown): void {
+    this.data = isMapData(map) ? map : mapDataFromOutline(pts, width);
+    this.cache.invalidate();
     this.draw();
   }
 
@@ -55,7 +48,7 @@ export class PhoneMap {
   }
 
   clear(): void {
-    this.pts = [];
+    this.data = null;
     this.dots = [];
     this.draw();
   }
@@ -72,66 +65,25 @@ export class PhoneMap {
   }
 
   private draw(): void {
-    const ctx = this.ctx;
     const S = this.canvas.width;
-    ctx.clearRect(0, 0, S, S);
-
-    // Rounded dark panel with the same white border as the old item box.
-    ctx.lineWidth = S * 0.035;
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    const r = S * 0.14;
-    const m = S * 0.05;
-    ctx.beginPath();
-    ctx.roundRect(m, m, S - 2 * m, S - 2 * m, r);
-    ctx.fill();
-    ctx.stroke();
-    if (!this.hasTrack) return;
-
-    const b = this.bounds;
-    const inner = S - 2 * m - S * 0.08;
-    const scale = Math.min(inner / (b.maxX - b.minX), inner / (b.maxZ - b.minZ));
-    const cx = (b.minX + b.maxX) / 2;
-    const cz = (b.minZ + b.maxZ) / 2;
-    const toScreen = (x: number, z: number): [number, number] => [S / 2 - (x - cx) * scale, S / 2 - (z - cz) * scale];
-
-    // Road: a dark outline under a lighter line.
-    const trace = () => {
-      ctx.beginPath();
-      for (let i = 0; i + 1 < this.pts.length; i += 2) {
-        const [sx, sy] = toScreen(this.pts[i], this.pts[i + 1]);
-        if (i === 0) ctx.moveTo(sx, sy);
-        else ctx.lineTo(sx, sy);
-      }
-      ctx.closePath();
-    };
-    ctx.lineJoin = 'round';
-    trace();
-    ctx.strokeStyle = '#202a3a';
-    ctx.lineWidth = Math.max(5, this.halfWidth * 2 * scale + 4);
-    ctx.stroke();
-    trace();
-    ctx.strokeStyle = '#9aa3b8';
-    ctx.lineWidth = Math.max(3, this.halfWidth * 2 * scale);
-    ctx.stroke();
-
-    // Start/finish tick at the first point.
-    const [sx, sy] = toScreen(this.pts[0], this.pts[1]);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(sx - 3, sy - 3, 6, 6);
-
-    // Karts: everyone else first, then me on top (bigger, with a ring).
-    const dot = (slot: number, x: number, z: number, isMe: boolean) => {
-      const [px, py] = toScreen(x, z);
-      ctx.beginPath();
-      ctx.arc(px, py, S * (isMe ? 0.05 : 0.036), 0, Math.PI * 2);
-      ctx.fillStyle = this.colorOf(slot);
-      ctx.fill();
-      ctx.lineWidth = S * (isMe ? 0.018 : 0.01);
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-    };
-    for (let i = 0; i + 2 < this.dots.length; i += 3) if (this.dots[i] !== this.me) dot(this.dots[i], this.dots[i + 1], this.dots[i + 2], false);
-    for (let i = 0; i + 2 < this.dots.length; i += 3) if (this.dots[i] === this.me) dot(this.dots[i], this.dots[i + 1], this.dots[i + 2], true);
+    const size = { w: S, h: this.canvas.height };
+    if (!this.data || !this.hasTrack) {
+      // No track yet: just the empty rounded panel, like the old item box.
+      this.ctx.clearRect(0, 0, size.w, size.h);
+      const m = S * 0.05;
+      this.ctx.lineWidth = S * 0.035;
+      this.ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      this.ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(m, m, S - 2 * m, S - 2 * m, S * 0.14);
+      this.ctx.fill();
+      this.ctx.stroke();
+      return;
+    }
+    const dots: MapDot[] = [];
+    for (let i = 0; i + 2 < this.dots.length; i += 3) {
+      dots.push({ x: this.dots[i + 1], z: this.dots[i + 2], color: this.colorOf(this.dots[i]), own: this.dots[i] === this.me });
+    }
+    this.cache.draw(this.ctx, size, this.data, dots, { panel: 'rounded', fit: 0.78, panelColor: '#0c0f1f' });
   }
 }

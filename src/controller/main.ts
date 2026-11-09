@@ -374,7 +374,7 @@ function handleHostMessage(msg: HostToController) {
       updateReadyButton();
       break;
     case 'track':
-      phoneMap.setTrack(msg.pts, msg.w);
+      phoneMap.setTrack(msg.pts, msg.w, msg.map);
       break;
     case 'map':
       phoneMap.setDots(msg.d, (slot) => colorHex(lobby.find((p) => p.slot === slot)?.color ?? slot), mySlot);
