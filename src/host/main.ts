@@ -18,7 +18,7 @@ import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../rende
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { PlayerManager } from './playerManager';
-import { TRACKS, type TrackDef } from '../track';
+import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -133,6 +133,9 @@ function loadTrack(): TrackDef {
   if (param !== null) {
     const byParam = TRACKS[Number(param)] ?? TRACKS.find((t) => t.name.toLowerCase() === param.toLowerCase());
     if (byParam) return byParam;
+    // In the dev server only (import.meta.env.DEV is false in the built site), test tracks too.
+    const dev = import.meta.env.DEV ? DEV_TRACKS.find((t) => t.name.toLowerCase() === param.toLowerCase()) : undefined;
+    if (dev) return dev;
   }
   try {
     return TRACKS.find((t) => t.name === localStorage.getItem(TRACK_KEY)) ?? TRACKS[0];

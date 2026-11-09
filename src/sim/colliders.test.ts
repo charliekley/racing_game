@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRACKS } from '../track';
+import { DEV_TRACKS, TRACKS } from '../track';
 import { planScenery, type Collider } from '../track/sceneryPlan';
 import { Colliders } from './colliders';
 import { KART } from './config';
@@ -101,7 +101,7 @@ describe('Colliders', () => {
   });
 });
 
-describe.each(TRACKS.map((t) => [t.name, t] as const))('bots on %s with solid scenery', (_name, def) => {
+describe.each([...TRACKS, ...DEV_TRACKS].map((t) => [t.name, t] as const))('bots on %s with solid scenery', (_name, def) => {
   it('four bots finish a 3-lap race', () => {
     const track = new Track(def);
     const world = new World(track, track);
