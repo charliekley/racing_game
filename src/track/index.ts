@@ -4,9 +4,10 @@ import { docksideLoop } from './tracks/docksideLoop';
 import { mapleBay } from './tracks/mapleBay';
 import { meadowRing } from './tracks/meadowRing';
 import { sunscorchCanyon } from './tracks/sunscorchCanyon';
+import { switchbackSummit } from './tracks/switchbackSummit';
 import type { TrackDef } from './types';
 
-export const TRACKS: TrackDef[] = [meadowRing, sunscorchCanyon, mapleBay, emberPeaks, docksideLoop];
+export const TRACKS: TrackDef[] = [meadowRing, sunscorchCanyon, mapleBay, emberPeaks, docksideLoop, switchbackSummit];
 export type { TrackDef };
 
 // Dev-only test tracks (never in the lobby picker). Open one with
