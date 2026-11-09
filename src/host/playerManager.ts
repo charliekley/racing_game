@@ -107,9 +107,20 @@ export class PlayerManager {
     for (const s of this.sessionBySlot.values()) s.link.sendEvent(msg);
   }
 
+  /** Track outline for the phones' minimaps; re-sent to phones that (re)join mid-race. */
+  private trackMsg: HostToController | null = null;
+
+  setTrackMessage(msg: HostToController | null): void {
+    this.trackMsg = msg;
+    if (msg) this.broadcast(msg);
+  }
+
   setPhase(phase: GamePhase): void {
     this.slots.phase = phase;
-    if (phase === 'lobby') this.slots.resetToLobby();
+    if (phase === 'lobby') {
+      this.slots.resetToLobby();
+      this.trackMsg = null;
+    }
     // Results screen: "ready" now means "race again", so everyone starts un-ready.
     if (phase === 'results') for (const p of this.slots.players) p.ready = false;
     this.readyBots();
@@ -280,6 +291,7 @@ export class PlayerManager {
         this.sessionBySlot.set(slot.index, session);
         if (!result.rejoined) this.slots.setProfile(slot.index, msg.name, msg.color);
         session.link.sendEvent(this.welcomeFor(slot));
+        if (this.trackMsg && this.slots.phase !== 'lobby') session.link.sendEvent(this.trackMsg);
         this.lobbyChanged();
         return;
       }

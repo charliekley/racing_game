@@ -13,7 +13,7 @@ import type { ControlInput, HostToController } from '../shared/protocol';
 import { autopilot, botStyleFor } from '../sim/autopilot';
 import { SIM_DT } from '../sim/config';
 import { botItemButton } from '../sim/items/items';
-import { ITEM_IDS, ITEM_INFO, type ItemId } from '../sim/items/types';
+import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
@@ -93,6 +93,7 @@ export class Game {
   private resultsShown = false;
   private doneAt: number | null = null;
   private statusTimer = 0;
+  private mapTimer = 0;
   private lastStatus = new Map<number, string>();
   private lastCountdown = 0;
   private hudLayer: HTMLElement;
@@ -195,6 +196,13 @@ export class Game {
       return { slot, kart: new KartView(this.scene, color), chase, hud, rect: layout.views[i] };
     });
     this.minimap.place(layout.minimap);
+
+    // Phones draw a minimap: send them the track outline once (about 12 m between points).
+    const pts: number[] = [];
+    for (let i = 0; i < this.track.samples.length; i += 6) {
+      pts.push(Math.round(this.track.samples[i].x * 10) / 10, Math.round(this.track.samples[i].z * 10) / 10);
+    }
+    this.players.setTrackMessage({ t: 'track', pts, w: this.track.def.width });
 
     this.loop.reset();
     this.resultsShown = false;
@@ -305,6 +313,15 @@ export class Game {
       }),
     );
 
+    // Phone minimap: everyone's position ~8x per second.
+    this.mapTimer += dt;
+    if (this.mapTimer >= 0.125) {
+      this.mapTimer = 0;
+      const d: number[] = [];
+      for (const [slot, k] of this.world.karts) d.push(slot, Math.round(k.pos.x * 10) / 10, Math.round(k.pos.z * 10) / 10);
+      this.players.broadcast({ t: 'map', d });
+    }
+
     // Phone status ~4x per second (only when something changed).
     this.statusTimer += dt;
     if (this.statusTimer >= 0.25) {
@@ -337,11 +354,9 @@ export class Game {
           break;
         case 'startBoost':
           this.haptic(e.slot, HAPTICS.startBoost);
-          this.toast(e.slot, 'ROCKET START!', 1.2);
           break;
         case 'stall':
           this.haptic(e.slot, HAPTICS.stall);
-          this.toast(e.slot, 'Too early!', 1.2);
           break;
         case 'wall':
           if (e.impact > 6) this.haptic(e.slot, HAPTICS.wall);
@@ -354,8 +369,8 @@ export class Game {
           break;
         case 'lap': {
           this.haptic(e.slot, HAPTICS.lap);
-          const laps = this.track.def.laps;
-          if (e.lap < laps) this.toast(e.slot, e.lap + 1 === laps ? 'FINAL LAP!' : `LAP ${e.lap + 1}`, 1.5);
+          // Only the final lap gets a banner; the lap counter covers the rest.
+          if (e.lap + 1 === this.track.def.laps) this.toast(e.slot, 'FINAL LAP!', 1.5);
           break;
         }
         case 'finish':
@@ -380,7 +395,6 @@ export class Game {
           break;
         case 'trick':
           this.haptic(e.slot, HAPTICS.trick);
-          this.toast(e.slot, 'TRICK!', 0.8);
           break;
         case 'respawn':
           this.haptic(e.slot, HAPTICS.respawn);
@@ -392,24 +406,23 @@ export class Game {
         case 'itemGet':
           this.haptic(e.slot, HAPTICS.itemGet);
           this.sendStatus();
-          this.toast(e.slot, ITEM_INFO[e.item.id].name.toUpperCase() + (e.item.count > 1 ? ` x${e.item.count}` : '') + '!', 0.9);
           break;
         case 'itemUse':
           this.haptic(e.slot, HAPTICS.itemUse);
           this.sendStatus();
-          if (e.id === 'nova') this.toast(e.slot, 'NOVA!', 1.2);
           break;
         case 'hit': {
           this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : HAPTICS.spunOut);
           this.players.sendTo(e.slot, { t: 'drift', tier: null });
-          this.toast(e.slot, 'SPUN OUT!', 1.2);
           if (e.attacker !== null && e.attacker !== e.slot) this.toast(e.attacker, `HIT ${this.nameOf(e.slot)}!`, 1.2);
           this.sendStatus();
           break;
         }
         case 'blocked':
           this.haptic(e.slot, HAPTICS.itemUse);
-          this.toast(e.slot, 'BLOCKED!', 0.9);
+          break;
+        case 'jumbled':
+          this.haptic(e.slot, HAPTICS.spunOut);
           break;
       }
     }

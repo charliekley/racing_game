@@ -33,6 +33,7 @@ import {
   vibrate,
 } from './device';
 import { ItemView } from './itemView';
+import { PhoneMap } from './phoneMap';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
 import { uiRotationDeg } from './steering';
@@ -86,6 +87,8 @@ let mySlot: number | null = null;
 let myColor = prefs.color;
 let ready = false;
 let phase: GamePhase = 'lobby';
+/** True during the race countdown: the steering keeps re-zeroing to the current pose. */
+let recentering = false;
 let lobby: LobbyPlayerInfo[] = [];
 let lastHostMsgAt = 0;
 let rttMs: number | null = null;
@@ -213,7 +216,8 @@ $('motion-btn').addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 // Controller pad
 // ---------------------------------------------------------------------------
-const itemView = new ItemView($<HTMLCanvasElement>('item-canvas'));
+const itemView = new ItemView($<HTMLCanvasElement>('item-icon'), false); // lives inside the ITEM button
+const phoneMap = new PhoneMap($<HTMLCanvasElement>('map-canvas'));
 const touch = new TouchButtons([$('zone-left'), $('zone-right')], (_mask, pressedNow) => {
   if (pressedNow) vibrate(8); // tiny tick so buttons feel physical (Android)
   sendInput(); // send immediately on change, don't wait for the next 60 Hz tick
@@ -330,6 +334,7 @@ function handleHostMessage(msg: HostToController) {
       myColor = msg.color;
       ready = msg.ready;
       phase = msg.phase;
+      recentering = phase === 'countdown';
       $('player-name').textContent = `P${msg.slot + 1} · ${msg.name}`;
       applyPlayerColor();
       updateReadyButton();
@@ -361,13 +366,24 @@ function handleHostMessage(msg: HostToController) {
     }
     case 'phase':
       phase = msg.phase;
+      // During the 3-2-1 countdown the wheel keeps re-centering, so wherever you
+      // are holding the phone at GO is "straight ahead" (even if you just picked it up).
+      recentering = phase === 'countdown';
+      if (phase === 'lobby') phoneMap.clear();
       if (phase === 'lobby' || phase === 'results') ready = false;
       updateReadyButton();
+      break;
+    case 'track':
+      phoneMap.setTrack(msg.pts, msg.w);
+      break;
+    case 'map':
+      phoneMap.setDots(msg.d, (slot) => colorHex(lobby.find((p) => p.slot === slot)?.color ?? slot), mySlot);
       break;
     case 'status':
       $('position').textContent = msg.position ? ordinal(msg.position) : '–';
       $('lap').textContent = msg.lap ? `LAP ${msg.lap}/${msg.totalLaps}` : 'LAP –';
       itemView.set(msg.item);
+      document.querySelector('.btn.item')!.classList.toggle('has-item', msg.item.kind !== 'none');
       break;
     case 'haptic':
       vibrate(msg.pattern);
@@ -408,6 +424,7 @@ function sendInput() {
 let lastTick = performance.now();
 setInterval(() => {
   const now = performance.now();
+  if (recentering) motion.calibrate();
   motion.tickFallback(now - lastTick);
   lastTick = now;
   sendInput();
@@ -540,6 +557,10 @@ $('flip-btn').addEventListener('click', () => {
   // Only needed if the controller shows upside down (sensor sign guessed wrong).
   motion.steering.toggleInverted();
   saveInverted(motion.steering.inverted);
+  vibrate(20);
+});
+$('recenter-chip').addEventListener('click', () => {
+  motion.calibrate();
   vibrate(20);
 });
 $('recenter-btn').addEventListener('click', () => {

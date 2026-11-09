@@ -15,7 +15,11 @@ export class ItemView {
   private display: ItemDisplay = { kind: 'none' };
   private raf = 0;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  /** `frame` = draw the rounded box around the icon (off when the canvas sits inside a button). */
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly frame = true,
+  ) {
     this.ctx = canvas.getContext('2d')!;
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -43,16 +47,18 @@ export class ItemView {
     ctx.clearRect(0, 0, s, s);
 
     // Item box frame
-    ctx.lineWidth = s * 0.04;
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    roundRect(ctx, s * 0.06, s * 0.06, s * 0.88, s * 0.88, s * 0.16);
-    ctx.fill();
-    ctx.stroke();
+    if (this.frame) {
+      ctx.lineWidth = s * 0.04;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      roundRect(ctx, s * 0.06, s * 0.06, s * 0.88, s * 0.88, s * 0.16);
+      ctx.fill();
+      ctx.stroke();
+    }
 
     // The icon sits inside the frame with a small margin.
     const d = this.display;
-    const inset = s * 0.14;
+    const inset = this.frame ? s * 0.14 : s * 0.04;
     ctx.save();
     ctx.translate(inset, inset);
     const iconSize = s - inset * 2;

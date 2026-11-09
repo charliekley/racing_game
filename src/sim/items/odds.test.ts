@@ -11,20 +11,38 @@ function distribution(position: number, racers: number, n = 20000): Record<ItemP
 }
 
 describe('item odds', () => {
-  it('weights are positive and interpolate from leader to last', () => {
+  it('weights are never negative and interpolate from leader to last', () => {
     const lead = itemWeights(1, 4);
     const last = itemWeights(4, 4);
     const mid = itemWeights(2.5, 4);
     for (const k of ITEM_PICKS) {
-      expect(lead[k]).toBeGreaterThan(0);
+      expect(lead[k]).toBeGreaterThanOrEqual(0);
+      expect(last[k]).toBeGreaterThan(0);
       expect(mid[k]).toBeCloseTo((lead[k] + last[k]) / 2);
     }
+  });
+
+  it('the better you are doing, the weaker your items: leaders never get Seeker, Jumble or Nova', () => {
+    const lead = distribution(1, 4);
+    expect(lead.seeker).toBe(0);
+    expect(lead.jumble).toBe(0);
+    expect(lead.nova).toBe(0);
+    // Strength rises steadily toward the back of the field.
+    const strong = (p: number) => {
+      const d = distribution(p, 4);
+      return d.nova + d.seeker + d.jumble + d.dash3;
+    };
+    expect(strong(1)).toBeLessThan(strong(2));
+    expect(strong(2)).toBeLessThan(strong(3));
+    expect(strong(3)).toBeLessThan(strong(4));
+    expect(distribution(4, 4).jumble).toBeGreaterThan(0.08);
   });
 
   it('leaders mostly get defensive items; trailing players get the strong ones', () => {
     const lead = distribution(1, 4);
     const last = distribution(4, 4);
     expect(lead.slick + lead.ricochet).toBeGreaterThan(0.6);
+    expect(lead.dash3).toBeLessThan(0.05);
     expect(last.slick + last.ricochet).toBeLessThan(0.2);
     expect(last.nova).toBeGreaterThan(lead.nova * 10);
     expect(last.seeker).toBeGreaterThan(lead.seeker * 3);

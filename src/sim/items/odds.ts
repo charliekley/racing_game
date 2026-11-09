@@ -5,6 +5,7 @@
  * (traps, rear-firing shots) and rarely anything powerful; whoever is behind
  * gets the strong stuff (homing shots, Nova, dash packs) to catch up.
  *
+ * Seeker and Jumble only come out when someone is ahead of you.
  * Weights are given for the leader and for last place; every position in
  * between interpolates linearly, so the same table works for 2, 3 or 4 racers.
  * Pure functions: deterministic given the random-number source.
@@ -12,14 +13,14 @@
 import type { HeldItem } from './types';
 
 /** What can come out of a box. 'dash3' is the three-charge Dash pack. */
-export type ItemPick = 'dash' | 'dash3' | 'slick' | 'ricochet' | 'seeker' | 'nova';
-export const ITEM_PICKS: readonly ItemPick[] = ['dash', 'dash3', 'slick', 'ricochet', 'seeker', 'nova'];
+export type ItemPick = 'dash' | 'dash3' | 'slick' | 'ricochet' | 'seeker' | 'nova' | 'jumble';
+export const ITEM_PICKS: readonly ItemPick[] = ['dash', 'dash3', 'slick', 'ricochet', 'seeker', 'nova', 'jumble'];
 
 type Weights = Record<ItemPick, number>;
 
 /** Relative likelihoods (they don't need to add up to 100). */
-export const LEADER_WEIGHTS: Weights = { dash: 20, dash3: 2, slick: 38, ricochet: 30, seeker: 4, nova: 1 };
-export const LAST_WEIGHTS: Weights = { dash: 12, dash3: 22, slick: 4, ricochet: 8, seeker: 22, nova: 32 };
+export const LEADER_WEIGHTS: Weights = { dash: 24, dash3: 2, slick: 38, ricochet: 32, seeker: 0, nova: 0, jumble: 0 };
+export const LAST_WEIGHTS: Weights = { dash: 10, dash3: 22, slick: 3, ricochet: 6, seeker: 20, nova: 28, jumble: 16 };
 
 /** Weights for 1-based `position` out of `racers`. */
 export function itemWeights(position: number, racers: number): Weights {
@@ -27,6 +28,11 @@ export function itemWeights(position: number, racers: number): Weights {
   const f = racers <= 1 ? 0.5 : Math.min(1, Math.max(0, (position - 1) / (racers - 1)));
   const out = {} as Weights;
   for (const k of ITEM_PICKS) out[k] = LEADER_WEIGHTS[k] + (LAST_WEIGHTS[k] - LEADER_WEIGHTS[k]) * f;
+  // Items that target "the racer(s) ahead of you" are pointless in the lead.
+  if (position <= 1) {
+    out.seeker = 0;
+    out.jumble = 0;
+  }
   return out;
 }
 

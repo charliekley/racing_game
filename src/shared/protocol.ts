@@ -111,13 +111,17 @@ export type HostToController =
       item: ItemDisplay;
     }
   | { t: 'haptic'; pattern: number[] }
+  /** Track outline for the phone's minimap: flat [x, z, x, z, …] along the centerline, road width `w` (m). */
+  | { t: 'track'; pts: number[]; w: number }
+  /** Kart positions for the minimap: flat [slot, x, z, slot, x, z, …], sent ~8x/second. */
+  | { t: 'map'; d: number[] }
   /** Drift state for the DRIFT button glow: null = not drifting, 0 = charging, 1 = blue, 2 = orange. */
   | { t: 'drift'; tier: number | null }
   | { t: 'ping'; id: number; sentAt: number }
   | { t: 'pong'; id: number; sentAt: number };
 
 const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'ping', 'pong']);
-const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'drift', 'ping', 'pong']);
+const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'drift', 'ping', 'pong']);
 
 /** Cheap structural check; data from the network is untrusted. */
 export function isControllerMessage(m: unknown): m is ControllerToHost {

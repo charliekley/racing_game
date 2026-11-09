@@ -152,6 +152,59 @@ describe('dash and nova', () => {
   });
 });
 
+describe('jumble (steering flip)', () => {
+  it('flips the steering of every racer ahead of you, and nobody else', () => {
+    const sim = setup([kartAt(300), kartAt(200), kartAt(100), kartAt(50)]);
+    sim.give(2, { id: 'jumble', count: 1 }); // 3rd place uses it
+    sim.press(2, 0.05);
+    expect(sim.karts.get(0)!.invertTime).toBeCloseTo(ITEMS.jumbleTime, 1);
+    expect(sim.karts.get(1)!.invertTime).toBeCloseTo(ITEMS.jumbleTime, 1);
+    expect(sim.karts.get(2)!.invertTime).toBe(0); // not the user
+    expect(sim.karts.get(3)!.invertTime).toBe(0); // behind the user
+    expect(sim.events).toContainEqual({ kind: 'jumbled', slot: 0, attacker: 2 });
+    expect(sim.events).toContainEqual({ kind: 'jumbled', slot: 1, attacker: 2 });
+    expect(sim.items.states.get(2)!.held).toBeNull();
+  });
+
+  it('does nothing in the lead, and Nova blocks it', () => {
+    const lead = setup([kartAt(300), kartAt(200)]);
+    lead.give(0, { id: 'jumble', count: 1 });
+    lead.press(0, 0.05);
+    expect(lead.karts.get(1)!.invertTime).toBe(0);
+
+    const sim = setup([kartAt(300), kartAt(200)]);
+    sim.karts.get(0)!.starTime = 5;
+    sim.give(1, { id: 'jumble', count: 1 });
+    sim.press(1, 0.05);
+    expect(sim.karts.get(0)!.invertTime).toBe(0);
+    expect(sim.events).toContainEqual({ kind: 'blocked', slot: 0, by: 'nova' });
+  });
+
+  it('a jumbled kart turns the opposite way, then goes back to normal', () => {
+    const flat: Ground = { sample: () => ({ height: 0, surface: 'road' }) };
+    const turn = (inverted: boolean) => {
+      const k = createKart(0, 0, 0);
+      k.speed = 20;
+      k.vel.z = 20;
+      if (inverted) k.invertTime = 3;
+      for (let i = 0; i < 30; i++) stepKart(k, { steer: 1, buttons: Buttons.GAS }, flat, SIM_DT);
+      return k.heading;
+    };
+    expect(turn(false)).toBeLessThan(0); // steer right = heading decreases
+    expect(turn(true)).toBeGreaterThan(0); // flipped
+
+    const k = createKart(0, 0, 0);
+    k.speed = 20;
+    k.vel.z = 20;
+    k.invertTime = 1;
+    for (let i = 0; i < 90; i++) stepKart(k, { steer: 0, buttons: Buttons.GAS }, flat, SIM_DT);
+    expect(k.invertTime).toBe(0);
+    const h = k.heading;
+    for (let i = 0; i < 30; i++) stepKart(k, { steer: 1, buttons: Buttons.GAS }, flat, SIM_DT);
+    expect(k.heading).toBeLessThan(h); // normal again
+  });
+});
+
 describe('slick (oil trap)', () => {
   it('a tap drops it behind you; the next kart over it spins out', () => {
     const sim = setup([kartAt(100), kartAt(300)]);

@@ -284,3 +284,11 @@ body.playing.need-rotate .rotate { display: flex; }
 .lock-box p { margin: 0; color: var(--muted); line-height: 1.4; }
 .lock-box b { color: var(--text); }
 .lock-icon { font-size: 52px; }
+
+/* ITEM button: shows the held item's icon (no words once you have one). */
+.btn.item { position: relative; }
+.btn-icon { height: 82%; max-width: 92%; width: auto; aspect-ratio: 1; pointer-events: none; }
+.btn.item .btn-icon { display: none; }
+.btn.item.has-item .btn-icon { display: block; }
+.btn.item.has-item .item-label { display: none; }
+.chips { display: flex; gap: 8px; }

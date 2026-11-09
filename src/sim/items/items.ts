@@ -28,6 +28,8 @@ export type ItemEvent =
   | { kind: 'itemUse'; slot: number; id: ItemId }
   | { kind: 'hit'; slot: number; by: HitSource; attacker: number | null }
   | { kind: 'blocked'; slot: number; by: HitSource }
+  /** `slot`'s steering was flipped by `attacker`'s Jumble. */
+  | { kind: 'jumbled'; slot: number; attacker: number }
   /** A shot and a Slick cancelled each other out at (x, z). */
   | { kind: 'itemDestroyed'; x: number; z: number };
 
@@ -162,7 +164,7 @@ export class ItemSystem {
           st.pressing = true;
           st.holdTime = 0;
         } else {
-          this.use(slot, k, st, events, false);
+          this.use(slot, k, st, events, false, karts);
         }
       } else if (st.pressing && down) {
         st.holdTime += dt;
@@ -172,7 +174,7 @@ export class ItemSystem {
         }
       } else if (st.pressing && releasedNow) {
         const backward = !!input && (input.buttons & Buttons.BRAKE) !== 0;
-        this.use(slot, k, st, events, backward);
+        this.use(slot, k, st, events, backward, karts);
       }
     }
 
@@ -213,7 +215,23 @@ export class ItemSystem {
   }
 
   // --- Using items ------------------------------------------------------------------------
-  private use(slot: number, k: KartState, st: ItemState, events: ItemEvent[], backward: boolean): void {
+  /** Flip the steering of everyone ahead of `slot` in the race (Nova protects). */
+  private jumbleAhead(slot: number, karts: Map<number, KartState>, events: ItemEvent[]): void {
+    const rank = this.lastStandings.indexOf(slot);
+    for (let i = 0; i < rank; i++) {
+      const victim = this.lastStandings[i];
+      const vk = karts.get(victim);
+      if (!vk || vk.respawnTime > 0) continue;
+      if (vk.starTime > 0) {
+        events.push({ kind: 'blocked', slot: victim, by: 'nova' });
+        continue;
+      }
+      vk.invertTime = ITEMS.jumbleTime;
+      events.push({ kind: 'jumbled', slot: victim, attacker: slot });
+    }
+  }
+
+  private use(slot: number, k: KartState, st: ItemState, events: ItemEvent[], backward: boolean, karts: Map<number, KartState>): void {
     const held = st.held;
     if (!held) return;
     const wasTrailing = st.trailing;
@@ -236,6 +254,9 @@ export class ItemSystem {
         }
         break;
       }
+      case 'jumble':
+        this.jumbleAhead(slot, karts, events);
+        break;
       case 'ricochet':
         this.spawnShot('ricochet', slot, k, backward);
         break;

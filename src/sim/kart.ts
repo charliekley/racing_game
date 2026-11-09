@@ -69,6 +69,8 @@ export interface KartState {
   spinTime: number;
   /** Seconds left of Nova invincibility. */
   starTime: number;
+  /** Seconds left of flipped steering (hit by a Jumble). */
+  invertTime: number;
 
   /** Previous button states, to detect presses (edges). */
   prevButtons: number;
@@ -107,6 +109,7 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     offTrackTime: 0,
     spinTime: 0,
     starTime: 0,
+    invertTime: 0,
     prevButtons: 0,
   };
 }
@@ -229,7 +232,10 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
     k.spinTime = Math.max(0, k.spinTime - dt);
     input = { steer: 0, buttons: 0 };
   }
-  const steer = clamp(Number.isFinite(input.steer) ? input.steer : 0, -1, 1);
+  // A Jumble flips left and right (and counts down while it lasts).
+  const flip = k.invertTime > 0 ? -1 : 1;
+  k.invertTime = Math.max(0, k.invertTime - dt);
+  const steer = clamp(Number.isFinite(input.steer) ? input.steer : 0, -1, 1) * flip;
   k.steer = steer;
   const driftHeld = (input.buttons & Buttons.DRIFT) !== 0;
   const pressed = input.buttons & ~k.prevButtons;

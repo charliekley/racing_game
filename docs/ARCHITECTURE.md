@@ -57,6 +57,7 @@ racing_game/
    │  ├─ trick.ts              ✅ flick detection (pure, tested)
    │  ├─ motionInput.ts        ✅ devicemotion glue
    │  ├─ touchButtons.ts       ✅ multi-touch buttons
+   │  ├─ phoneMap.ts           ✅ minimap in the middle of the phone (track outline + kart dots)
    │  ├─ itemView.ts           ✅ item window canvas (real icons in M6)
    │  └─ device.ts, settings.ts ✅ permissions, wake lock, vibration, prefs
    ├─ host/

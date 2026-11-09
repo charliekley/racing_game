@@ -78,7 +78,10 @@ The phone and laptop must be on the **same Wi-Fi**.
    steering wheel. The controller turns itself to match the first time, then
    **locks that layout** for the session: buttons never move, and steering
    can't be thrown off by the screen rotating mid-turn.
-6. Tap **READY** while holding the wheel level – that also sets "straight ahead".
+6. Tap **READY** while holding the wheel level. During the 3-2-1 countdown the
+   phone keeps re-centering itself, so however you're holding it at GO is
+   "straight ahead" (even if you just picked it up). In a race, the **⟲** button
+   in the phone's top bar recenters instantly.
 7. Tips: Low Power Mode may stop the screen-awake feature from working. If the
    controller ever shows upside down, tap ⚙ → **Flip 180°** (it remembers).
    iOS has no vibration API for web pages, so iPhones don't buzz. That's expected.
@@ -134,14 +137,17 @@ serves the files.
 | **ITEM** (left, top) | Tap to use; hold to drag the item behind you, release to fire (see Items) |
 | Quick flick/shake | Trick when airborne off a ramp → boost on landing |
 | ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, flip 180°, recenter |
+| ⟲ (top bar) | Recenter the wheel (also happens automatically during the countdown) |
 | ping chip (top left) | Toggle debug overlay |
+| Middle of the screen | Position, lap, and a track map with every kart's dot (yours is bigger) |
 
 You can slide your thumb between GAS and BRAKE without lifting it.
 
 **Items:** drive through the rainbow **item boxes** (rows of three; they come back
 5 s later). A roulette spins for about 1.6 s on the phone and the TV, then you
-get an item. Leaders mostly get defensive items; players further back get
-stronger ones. You can only hold one at a time.
+get an item. **The further back you are, the better your items** (leaders mostly
+get Slicks and Ricochets and never the strongest ones). You can only hold one
+at a time. On the phone the item's icon appears in the **ITEM button** itself.
 
 | Item | What it does |
 |---|---|
@@ -150,11 +156,13 @@ stronger ones. You can only hold one at a time.
 | **Ricochet** | A fast shot that bounces off walls a few times. **Tap** to fire forward, or hold **BRAKE** while you let go to fire **backward**. Hold ITEM to drag it behind you first. |
 | **Seeker** | A homing shot that chases the racer directly ahead of you. If you're in the lead it just flies straight. |
 | **Nova** | 7 s of invincibility: faster, ignores grass, immune to hits, and bumping a rival spins them out. |
+| **Jumble** | Sprays ink on **everyone ahead of you**: their steering is flipped left/right for 7 s and an ink splat covers part of their screen. You can't get it in the lead; Nova blocks it. |
 
 Getting hit spins you out for about 1.3 s: no steering, most of your speed and
 any boost lost, and Android buzzes. A hit while dragging an item loses it (a
-dragged Slick stays on the road). The TV shows "SPUN OUT!" for you and "HIT NAME!"
-for whoever got you.
+dragged Slick stays on the road). The TV only shows "HIT NAME!" for whoever got
+you; other feedback is visual (icons, the spin, effects) or a phone buzz rather
+than words.
 
 **Drifting:** tap DRIFT to hop. If you're steering when you land (and keep
 holding DRIFT), you go into a drift in that direction. The kart slides with its

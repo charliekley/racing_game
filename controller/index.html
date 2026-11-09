@@ -47,7 +47,10 @@
     <div id="stage">
     <section id="pad-screen" class="screen hidden">
       <div id="zone-left" class="zone left">
-        <div class="btn item" data-button="ITEM">ITEM</div>
+        <div class="btn item" data-button="ITEM">
+          <span class="item-label">ITEM</span>
+          <canvas id="item-icon" class="btn-icon"></canvas>
+        </div>
         <div class="btn drift" data-button="DRIFT">DRIFT</div>
       </div>
 
@@ -55,11 +58,14 @@
         <div class="topbar">
           <button id="ping-chip" class="chip">– ms</button>
           <span id="player-name" class="player-name"></span>
-          <button id="settings-btn" class="chip" aria-label="Settings">⚙</button>
+          <span class="chips">
+            <button id="recenter-chip" class="chip" aria-label="Recenter steering">⟲</button>
+            <button id="settings-btn" class="chip" aria-label="Settings">⚙</button>
+          </span>
         </div>
         <div class="hud">
           <div id="position" class="position">–</div>
-          <canvas id="item-canvas" class="item-canvas"></canvas>
+          <canvas id="map-canvas" class="item-canvas"></canvas>
           <div id="lap" class="lap">LAP –</div>
         </div>
         <div class="bottom">

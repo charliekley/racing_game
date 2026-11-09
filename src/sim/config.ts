@@ -152,6 +152,8 @@ export const ITEMS = {
   seekerTurnRate: 3.2,
   seekerLifetime: 9,
   seekerRadius: 1.3,
+  /** Jumble: how long a hit racer's steering stays flipped (s). */
+  jumbleTime: 7,
   /** Shots spawn this far in front of / behind the kart (m). */
   muzzleDistance: 2.4,
 } as const;
