@@ -4,13 +4,13 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 5 of 7.** Drifting with blue/orange mini-turbos, ramp
+> **Status: Milestone 6 of 7.** Item boxes and five items are in (see "Items"). Drifting with blue/orange mini-turbos, ramp
 > tricks, a water jump and a respawn drone are in. Phones connect with a room code + QR code and
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
 > each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
 > start, 3 laps on "Meadow Ring", results and "race again". Computer drivers can
-> fill empty slots. Items arrive in M6.
+> fill empty slots. Audio and polish arrive in M7.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -131,12 +131,30 @@ serves the files.
 | **GAS** (right, bottom, big) | Accelerate (hold) |
 | **BRAKE** (right, top) | Brake / reverse (hold) |
 | **DRIFT** (left, bottom, big) | Hop; hold while steering to drift (see below). Glows blue/orange with your drift charge |
-| **ITEM** (left, top) | Tap to use, hold to drag behind you (M6) |
+| **ITEM** (left, top) | Tap to use; hold to drag the item behind you, release to fire (see Items) |
 | Quick flick/shake | Trick when airborne off a ramp → boost on landing |
 | ⚙ | Settings: name, color, sensitivity, full-lock angle, invert, flip 180°, recenter |
 | ping chip (top left) | Toggle debug overlay |
 
 You can slide your thumb between GAS and BRAKE without lifting it.
+
+**Items:** drive through the rainbow **item boxes** (rows of three; they come back
+5 s later). A roulette spins for about 1.6 s on the phone and the TV, then you
+get an item. Leaders mostly get defensive items; players further back get
+stronger ones. You can only hold one at a time.
+
+| Item | What it does |
+|---|---|
+| **Dash** (single or pack of 3) | Instant speed boost. The pack gives three boosts, one per tap. |
+| **Slick** | An oil slick that spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
+| **Ricochet** | A fast shot that bounces off walls a few times. **Tap** to fire forward, or hold **BRAKE** while you let go to fire **backward**. Hold ITEM to drag it behind you first. |
+| **Seeker** | A homing shot that chases the racer directly ahead of you. If you're in the lead it just flies straight. |
+| **Nova** | 7 s of invincibility: faster, ignores grass, immune to hits, and bumping a rival spins them out. |
+
+Getting hit spins you out for about 1.3 s: no steering, most of your speed and
+any boost lost, and Android buzzes. A hit while dragging an item loses it (a
+dragged Slick stays on the road). The TV shows "SPUN OUT!" for you and "HIT NAME!"
+for whoever got you.
 
 **Drifting:** tap DRIFT to hop. If you're steering when you land (and keep
 holding DRIFT), you go into a drift in that direction. The kart slides with its
@@ -213,8 +231,12 @@ rocks, houses and the distant mountains (see `biomeFor` in
   speed, acceleration curve, braking, reverse, turn rates at low/high speed,
   grip, off-road penalties, boosts (pads, rocket start), **drift** (hop height,
   turn tightness, slide grip, charge rates, blue/orange thresholds, mini-turbo
-  lengths), **tricks and respawn**, wall/kart bounce, gravity, plus chase-camera
-  distance/lag/FOV. Save the file and the dev server reloads.
+  lengths), **tricks and respawn**, spin-out and Nova (`KART`), wall/kart bounce,
+  gravity, plus chase-camera distance/lag/FOV. The `ITEMS` block in the same
+  file has everything about items: box respawn, tap/hold timing, shot speeds, bounce
+  count, slick size, boost lengths.
+* **Item odds:** [`src/sim/items/odds.ts`](src/sim/items/odds.ts). Two weight
+  tables (leader and last place) that every position interpolates between. Save the file and the dev server reloads.
 * **Race rules:** countdown length, rocket-start window, finish grace period in
   [`src/sim/race.ts`](src/sim/race.ts).
 * **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Meadow Ring, Sunscorch Canyon, Maple Bay).
@@ -226,7 +248,31 @@ rocks, houses and the distant mountains (see `biomeFor` in
 
 ---
 
-## 6. Milestone 5 test checklist
+## 6. Milestone 6 test checklist
+
+1. **Practice mode:** open `/host/?drive=2&give=nova` (or `dash`, `slick`,
+   `ricochet`, `seeker`, `random`). Everyone has an endless supply of that item
+   so you can try it without hunting boxes. The icon shows in the box at the top
+   of each player's view. Use **E** (the keyboard player's ITEM key).
+2. **Boxes:** in a normal race (`/host/?drive=2`), look for rows of three rainbow
+   "?" cubes on the road. Drive into one: the item box icon spins through the five
+   items for ~1.6 s and then shows your item. The cube vanishes and comes back
+   after 5 s. Driving through a box while holding an item does nothing.
+3. **Dash:** tap E: instant boost, with flames. A pack of three shows "x3".
+4. **Slick:** tap E to drop an oil puddle behind you; a bot (or you, circling
+   back) that drives over it spins around and loses speed. Hold E: the puddle
+   drags behind your kart; release to drop it. Try firing a Ricochet at it.
+5. **Ricochet / Seeker:** tap E to fire. Ricochet bounces off the tire walls;
+   hold **S** (brake) when you let go of E to fire backward. A Seeker curves
+   toward the kart ahead of you.
+6. **Nova:** the kart glows and shimmers; you ignore grass, and anyone you touch
+   spins out; shots and slicks just vanish when they hit you.
+7. **Phones:** the roulette animates on the phone, then the item's icon shows in
+   the middle (with ×3 for a Dash pack). Tap ITEM (left side, top button) to use
+   it. Android buzzes when you get an item, use one, or get hit. The lobby's **Test item** button cycles every icon on a phone.
+8. Computer drivers use items too: watch for them dropping slicks and firing shots.
+
+## 7. Milestone 5 test checklist
 
 1. `/host/?drive`, wait for GO. Hold W and A (or D) and **press Space**: the kart
    hops and lands in a drift, sliding with the nose turned in. White dust while
@@ -243,10 +289,10 @@ rocks, houses and the distant mountains (see `biomeFor` in
 5. Drive far out into the fields: after ~2.5 s the drone brings you back.
 6. Bump other karts (`?drive=4`): you bounce off each other without stopping.
 
-## 7. Milestone 4 test checklist
+## 8. Milestone 4 test checklist
 
 1. Open `/host/?drive=4`: four views in quadrants, each with its own position,
-   lap, time, speed, item box (empty until M6) and a colored "P2 Bot 1" tag. You
+   lap, time, speed, item box and a colored "P2 Bot 1" tag. You
    drive the top-left one with WASD; the bots race too.
 2. `/host/?drive=3`: three views + an overview map in the bottom-right quadrant
    with a dot per kart. `/host/?drive=2`: top/bottom split.
@@ -261,7 +307,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
    views on your laptop it should stay near 60; if not, Esc → Q → Low and
    compare.
 
-## 8. Milestone 3 test checklist
+## 9. Milestone 3 test checklist
 
 1. Open `/host/?drive` (or the GitHub Pages link with `?drive`). You're on the
    grid at the start line under a checkered gantry, and **3-2-1-GO!** counts down.
@@ -284,7 +330,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 
 ---
 
-## 9. Milestone 2 test checklist
+## 10. Milestone 2 test checklist
 
 1. `npm run dev`, open `https://localhost:5173/host/?drive`. You're in a green
    kart on the start straight. W = gas, S = brake/reverse, A/D = steer.
@@ -301,7 +347,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 5. Try the ⚙ sensitivity / full-lock sliders mid-drive; changes apply instantly.
 6. Press **C** to cycle the camera between karts, **Esc** to go back to the lobby.
 
-## 10. Milestone 1 test checklist
+## 11. Milestone 1 test checklist
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
@@ -324,7 +370,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Fix |
 |---|---|

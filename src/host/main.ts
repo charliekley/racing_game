@@ -13,6 +13,7 @@ import type { ItemDisplay } from '../shared/protocol';
 import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
 import { controllerUrl } from './controllerUrl';
 import { Game } from './game';
+import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
@@ -86,12 +87,14 @@ async function showRoom(code: string) {
 const lobbyView = new LobbyView($('slots'), players, {
   buzz: (slot) => players.sendTo(slot, { t: 'haptic', pattern: [80, 60, 80] }),
   testItem: (slot) => {
-    // Exercise the host -> phone status path: roulette, then an item, then empty.
+    // Exercise the host -> phone status path: roulette, then each item in turn, then empty.
     const status = (item: ItemDisplay) =>
       players.sendTo(slot, { t: 'status', position: slot + 1, lap: 1, totalLaps: 3, item });
     status({ kind: 'roulette' });
-    setTimeout(() => status({ kind: 'item', id: 'test', count: 1 }), 1500);
-    setTimeout(() => status({ kind: 'none' }), 5000);
+    ITEM_IDS.forEach((id, i) =>
+      setTimeout(() => status({ kind: 'item', id, count: id === 'dash' ? 3 : 1 }), 1500 + i * 1800),
+    );
+    setTimeout(() => status({ kind: 'none' }), 1500 + ITEM_IDS.length * 1800);
   },
   kick: (slot) => players.kick(slot),
 });
@@ -174,6 +177,10 @@ function startDriving() {
     quality,
   );
   game.setTrack(track);
+  if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
+  // Practice aid: /host/?give=nova (or dash, slick, ricochet, seeker, random) = endless supply of that item.
+  const give = new URLSearchParams(location.search).get('give');
+  game.devItem = give === 'random' || (ITEM_IDS as readonly string[]).includes(give ?? '') ? (give as ItemId | 'random') : null;
   game.start(players.slots.players.map((p) => p.index));
 }
 

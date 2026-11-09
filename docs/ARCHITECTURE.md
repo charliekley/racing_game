@@ -47,6 +47,7 @@ racing_game/
    │  ├─ protocol.ts           ✅ message types, input packet encode/decode, button bits
    │  ├─ roomCode.ts           ✅ 4-letter codes ↔ peer ids
    │  ├─ colors.ts, signal.ts  ✅
+   │  ├─ itemIcons.ts          ✅ canvas item icons + roulette, used by phone and TV HUD
    │  └─ net/
    │     ├─ transport.ts       ✅ interfaces (swap PeerJS for something else here)
    │     └─ peerTransport.ts   ✅ PeerJS implementation + true-unreliable input channel
@@ -79,6 +80,9 @@ racing_game/
    │  ├─ race.ts               ✅ countdown/rocket start, checkpoints, laps, ranking, finish
    │  ├─ world.ts              ✅ track + karts + race, respawn carrier, tick() → events
    │  ├─ autopilot.ts          ✅ computer driver (bots, tests)
+   │  ├─ items/                ✅ types.ts (ids, names, shared shapes), odds.ts (position-
+   │  │                           weighted rolls), items.ts (boxes, roulette, the five items,
+   │  │                           hits, shields, Nova bumps; bot item button)
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   ✅ track DATA only
    │  ├─ types.ts              ✅ TrackDef format
@@ -91,7 +95,8 @@ racing_game/
    │                              water), scenery.ts (biomes, trees, grandstands, banners,
    │                              mountains, clouds, gantry), meshBatch.ts (merges many shapes
    │                              into one draw call), layout.ts (split-screen rects),
-   │                              minimap.ts, effects.ts (drift sparks, boost flames, carrier drone)
+   │                              minimap.ts, effects.ts (drift sparks, boost flames, carrier drone),
+   │                              itemMeshes.ts (item box, slick, shots, Nova aura)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

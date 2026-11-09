@@ -9,6 +9,8 @@ import { KART } from '../sim/config';
 import { WHEEL_RADIUS, buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
+import type { ItemId } from '../sim/items/types';
+import { buildHeldItemMesh, buildNovaAura, type NovaAura } from './itemMeshes';
 
 
 /** Shortest-path angle interpolation (handles wrap-around at ±π). */
@@ -38,6 +40,11 @@ export class KartView {
   private sparks: SparkEmitter;
   private flames: THREE.Group[] = [];
   private drone: CarrierDrone;
+  private aura: NovaAura;
+  private heldMeshes = new Map<ItemId, THREE.Object3D>();
+  private shownHeld: THREE.Object3D | null = null;
+  /** Set by the game each frame: the item currently dragged behind this kart (shots only; a dragged Slick is a world entity). */
+  trailingItem: ItemId | null = null;
   private tmp = new THREE.Vector3();
   private back = new THREE.Vector3();
   /** Interpolated pose from the last `update` (the camera reads this). */
@@ -55,6 +62,8 @@ export class KartView {
       this.flames.push(f);
     }
     this.drone = new CarrierDrone(scene);
+    this.aura = buildNovaAura();
+    this.model.root.add(this.aura.object);
   }
 
   update(prev: KartState, cur: KartState, alpha: number, dt: number, ground?: Ground): void {
@@ -72,7 +81,9 @@ export class KartView {
     // heading (purely visual exaggeration of the slide).
     const targetDriftYaw = cur.driftDir === 0 ? 0 : -cur.driftDir * 0.22;
     this.driftYaw += (targetDriftYaw - this.driftYaw) * (1 - Math.exp(-dt / 0.1));
-    m.root.rotation.y = p.heading + this.driftYaw;
+    // Spin-out after a hit: two full turns while control is lost.
+    const spinYaw = cur.spinTime > 0 ? (1 - cur.spinTime / KART.spinTime) * Math.PI * 4 : 0;
+    m.root.rotation.y = p.heading + this.driftYaw + spinYaw;
 
     // Tilt with the ground (slopes, banking, ramp) or nose up/down in the air.
     let targetPitch = 0;
@@ -131,13 +142,39 @@ export class KartView {
       }
     }
 
+    // Nova glow, and a shot being dragged behind the kart.
+    this.aura.update(performance.now() / 1000, cur.starTime > 0);
+    this.showTrailing(this.trailingItem);
+
     // Respawn carrier: hovers above and lowers the kart back onto the track.
     this.tmp.set(p.x, p.y, p.z);
     const lowering = cur.respawnTime > 0;
     this.drone.update(this.tmp, p.heading, lowering ? 2.4 + CARRIER_HEIGHT * 0.15 : 0, dt, lowering);
   }
 
+  /** Show the small item mesh dragged behind the kart (or hide it). */
+  private showTrailing(id: ItemId | null): void {
+    let mesh: THREE.Object3D | null = null;
+    if (id) {
+      if (!this.heldMeshes.has(id)) {
+        const built = buildHeldItemMesh(id);
+        if (built) {
+          built.position.set(0, 0.35, -2.6);
+          this.model.root.add(built);
+          this.heldMeshes.set(id, built);
+        }
+      }
+      mesh = this.heldMeshes.get(id) ?? null;
+    }
+    if (mesh !== this.shownHeld) {
+      if (this.shownHeld) this.shownHeld.visible = false;
+      if (mesh) mesh.visible = true;
+      this.shownHeld = mesh;
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
+    this.aura.dispose();
     scene.remove(this.model.root);
     this.sparks.dispose(scene);
     this.drone.dispose(scene);

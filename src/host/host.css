@@ -241,6 +241,7 @@ body.no-debug .fps { display: none; }
   background: rgba(0, 0, 0, 0.3);
 }
 .view-hud.solo .hud-item { top: 3cqh; }
+.hud-item canvas { width: 100%; height: 100%; display: block; }
 .hud-topright { position: absolute; right: 3cqw; top: 3cqh; text-align: right; }
 .hud-lap { font-size: 6.5cqh; }
 .hud-lap b { color: var(--slot-color, #fff); }

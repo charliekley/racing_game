@@ -12,12 +12,15 @@ import { colorHex } from '../shared/colors';
 import type { ControlInput, HostToController } from '../shared/protocol';
 import { autopilot, botStyleFor } from '../sim/autopilot';
 import { SIM_DT } from '../sim/config';
+import { botItemButton } from '../sim/items/items';
+import { ITEM_IDS, ITEM_INFO, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
 import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera } from '../render/chaseCamera';
 import { KartView } from '../render/kartView';
+import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { Minimap } from '../render/minimap';
 import {
@@ -51,6 +54,10 @@ const HAPTICS = {
   stall: [250],
   lap: [60, 60, 60],
   finish: [120, 60, 120, 60, 250],
+  itemGet: [15, 30, 15],
+  itemUse: [20],
+  spunOut: [60, 40, 120, 40, 60],
+  novaHit: [40, 20, 40],
   driftTier: [12],
   miniTurbo: [30, 30, 70],
   trick: [20, 25, 20],
@@ -91,6 +98,13 @@ export class Game {
   private hudLayer: HTMLElement;
   private results: HTMLElement;
   private minimap: Minimap;
+  private boxMeshes: THREE.Object3D[] = [];
+  /**
+   * Practice/testing aid (URL `?give=nova`): everyone gets an endless supply of
+   * this item (or "random" = random item each time). Null = normal item boxes only.
+   */
+  devItem: ItemId | 'random' | null = null;
+  private itemPool: ItemMeshPool;
 
   constructor(
     private readonly container: HTMLElement,
@@ -105,6 +119,7 @@ export class Game {
     this.sun = parts.sun;
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
+    this.itemPool = new ItemMeshPool(this.scene);
     applySceneQuality(this.scene, this.sun, quality);
     this.world = new World(this.track, this.track);
     this.loop = new FixedStepLoop(() => this.handleEvents(this.world.tick((slot) => this.inputFor(slot))), SIM_DT);
@@ -156,6 +171,17 @@ export class Game {
     this.world = new World(this.track, this.track);
     this.world.startRace(slots, this.track.def.laps);
 
+    // Item boxes (one floating mesh per box) and any leftover item objects.
+    for (const m of this.boxMeshes) this.scene.remove(m);
+    this.itemPool.clear();
+    this.boxMeshes = this.world.items!.boxes.map((b) => {
+      const m = buildItemBox();
+      m.scale.setScalar(1.3); // a bit bigger than modeled so boxes read from the chase camera
+      m.position.set(b.x, b.y, b.z);
+      this.scene.add(m);
+      return m;
+    });
+
     const layout = splitLayout(slots.length);
     this.views = slots.map((slot, i) => {
       const p = this.players.slots.slots[slot];
@@ -183,7 +209,10 @@ export class Game {
   private inputFor(slot: number): ControlInput {
     if (this.players.isBot(slot)) {
       const k = this.world.karts.get(slot);
-      if (k) return autopilot(k, this.track, botStyleFor(slot));
+      if (k) {
+        const base = autopilot(k, this.track, botStyleFor(slot));
+        return { ...base, buttons: base.buttons | botItemButton(slot, this.world.items?.states.get(slot)) };
+      }
     }
     return this.players.inputFor(slot);
   }
@@ -195,10 +224,30 @@ export class Game {
     const race = this.world.race!;
     this.trackView.update(this.elapsed);
 
+    // Item boxes spin and bob (hidden while waiting to respawn); item objects follow the sim.
+    const items = this.world.items!;
+    if (this.devItem && race.phase === 'racing') {
+      for (const st of items.states.values()) {
+        if (st.held || st.roulette > 0) continue;
+        const id = this.devItem === 'random' ? ITEM_IDS[Math.floor(Math.random() * ITEM_IDS.length)] : this.devItem;
+        st.held = { id, count: id === 'dash' ? 3 : 1 };
+        st.heldFor = 0;
+      }
+    }
+    items.boxes.forEach((b, i) => {
+      const mesh = this.boxMeshes[i];
+      mesh.visible = b.active;
+      if (b.active) animateItemBox(mesh, this.elapsed, i * 0.9);
+    });
+    this.itemPool.update(items.entityList, this.elapsed);
+
     // Update every kart's interpolated pose, then each player's camera.
     let cx = 0;
     let cz = 0;
     for (const v of this.views) {
+      const ist = items.states.get(v.slot);
+      // A dragged shot shows behind the kart (a dragged Slick is its own world object).
+      v.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' ? ist.held.id : null;
       v.kart.update(this.world.prevKarts.get(v.slot)!, this.world.karts.get(v.slot)!, alpha, dt, this.track);
       cx += v.kart.pose.x;
       cz += v.kart.pose.z;
@@ -241,6 +290,7 @@ export class Game {
           time: formatTime(Math.max(0, racer.finishTime ?? race.time)),
           speedKmh: Math.round(Math.abs(v.kart.pose.speed) * 3.6),
           boosting: kart.boostTime > 0,
+          item: items.displayFor(v.slot),
         },
         this.elapsed,
       );
@@ -336,8 +386,37 @@ export class Game {
           this.haptic(e.slot, HAPTICS.respawn);
           this.players.sendTo(e.slot, { t: 'drift', tier: null });
           break;
+        case 'itemBox':
+          this.sendStatus(); // roulette starts on the phone right away
+          break;
+        case 'itemGet':
+          this.haptic(e.slot, HAPTICS.itemGet);
+          this.sendStatus();
+          this.toast(e.slot, ITEM_INFO[e.item.id].name.toUpperCase() + (e.item.count > 1 ? ` x${e.item.count}` : '') + '!', 0.9);
+          break;
+        case 'itemUse':
+          this.haptic(e.slot, HAPTICS.itemUse);
+          this.sendStatus();
+          if (e.id === 'nova') this.toast(e.slot, 'NOVA!', 1.2);
+          break;
+        case 'hit': {
+          this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : HAPTICS.spunOut);
+          this.players.sendTo(e.slot, { t: 'drift', tier: null });
+          this.toast(e.slot, 'SPUN OUT!', 1.2);
+          if (e.attacker !== null && e.attacker !== e.slot) this.toast(e.attacker, `HIT ${this.nameOf(e.slot)}!`, 1.2);
+          this.sendStatus();
+          break;
+        }
+        case 'blocked':
+          this.haptic(e.slot, HAPTICS.itemUse);
+          this.toast(e.slot, 'BLOCKED!', 0.9);
+          break;
       }
     }
+  }
+
+  private nameOf(slot: number): string {
+    return (this.players.slots.slots[slot]?.name ?? `P${slot + 1}`).toUpperCase();
   }
 
   private haptic(slot: number, pattern: readonly number[]): void {
@@ -353,7 +432,7 @@ export class Game {
         position: r.place ?? race.positionOf(slot),
         lap: Math.min(race.totalLaps, Math.max(1, r.lap)),
         totalLaps: race.totalLaps,
-        item: { kind: 'none' },
+        item: this.world.items?.displayFor(slot) ?? { kind: 'none' },
       };
       const key = JSON.stringify(msg);
       if (this.lastStatus.get(slot) === key) continue;
