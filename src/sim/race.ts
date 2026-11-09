@@ -81,6 +81,52 @@ export class Race {
     }
   }
 
+  /**
+   * The racer enters their next checkpoint (r.next). Crossing checkpoint 0 means
+   * crossing the start/finish line with every checkpoint done: a lap.
+   */
+  private enterSegment(r: Racer, events: RaceEvent[]): void {
+    const seg = r.next;
+    r.next = (r.next + 1) % this.track.checkpoints.length;
+    if (seg !== 0) return;
+    if (r.lap >= 1) {
+      const lapTime = this.time - r.lapStartTime;
+      r.lapTimes.push(lapTime);
+      events.push({ kind: 'lap', slot: r.slot, lap: r.lap, lapTime });
+    }
+    r.lap++;
+    r.lapStartTime = this.time;
+    if (r.lap > this.totalLaps) {
+      r.finished = true;
+      r.finishTime = this.time;
+      this.finishOrder.push(r.slot);
+      r.place = this.finishOrder.length;
+      this.firstFinishAt ??= this.time;
+      events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
+    }
+  }
+
+  /**
+   * Credit a racer with having legitimately covered the track up to distance
+   * `toS` without driving through every checkpoint on the way (a cannon launch,
+   * a shortcut). They are treated as having entered every checkpoint segment from
+   * their next one up to and including the segment containing `toS`, so lap
+   * counting and positions stay consistent. Only moves forward, and only by less
+   * than half a lap (anything else is ignored: you can't use this to skip laps or
+   * go backwards). Returns lap/finish events like a normal crossing.
+   */
+  grantProgress(slot: number, toS: number): RaceEvent[] {
+    const events: RaceEvent[] = [];
+    const r = this.racers.get(slot);
+    if (!r || r.finished || this.phase !== 'racing') return events;
+    const K = this.track.checkpoints.length;
+    const target = this.segmentOf(toS);
+    const ahead = (target - r.next + K) % K; // 0 = the next checkpoint itself
+    if (ahead > K / 2 - 1 && ahead !== 0) return events;
+    for (let i = 0; i <= ahead && !r.finished; i++) this.enterSegment(r, events);
+    return events;
+  }
+
   /** Which checkpoint segment a distance s falls in. */
   segmentOf(s: number): number {
     const cps = this.track.checkpoints;
@@ -126,27 +172,7 @@ export class Race {
       if (s === undefined) continue;
       if (this.phase === 'racing' && !r.finished) {
         const seg = this.segmentOf(s);
-        if (seg === r.next) {
-          r.next = (r.next + 1) % K;
-          if (seg === 0) {
-            // Crossed the start/finish line with every checkpoint done.
-            if (r.lap >= 1) {
-              const lapTime = this.time - r.lapStartTime;
-              r.lapTimes.push(lapTime);
-              events.push({ kind: 'lap', slot: r.slot, lap: r.lap, lapTime });
-            }
-            r.lap++;
-            r.lapStartTime = this.time;
-            if (r.lap > this.totalLaps) {
-              r.finished = true;
-              r.finishTime = this.time;
-              this.finishOrder.push(r.slot);
-              r.place = this.finishOrder.length;
-              this.firstFinishAt ??= this.time;
-              events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
-            }
-          }
-        }
+        if (seg === r.next) this.enterSegment(r, events);
       }
       // Progress = completed laps + distance into the current checkpoint segment.
       const cur = (r.next - 1 + K) % K;

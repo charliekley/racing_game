@@ -98,3 +98,44 @@ describe('countdown start', () => {
     expect(k).not.toContain('stall');
   });
 });
+
+describe('grantProgress (cannons, shortcuts)', () => {
+  const seg = (i: number) => (i * L) / K + 5; // a point inside checkpoint segment i
+
+  it('jumps a racer forward to the target segment without driving the ones in between', () => {
+    const r = racing([0], 3);
+    driveAlong(r, 0, L - 5, L + 5); // lap 1, next checkpoint = 1
+    r.grantProgress(0, seg(6));
+    expect(r.racers.get(0)!.next).toBe(7);
+    // Entering segment 7 normally now counts; segment 2 (skipped) no longer does.
+    r.tick(DT, new Map([[0, seg(7)]]), none);
+    expect(r.racers.get(0)!.next).toBe(8);
+  });
+
+  it('is ignored for backward moves, huge skips and finished racers', () => {
+    const r = racing([0], 3);
+    driveAlong(r, 0, L - 5, L + 5);
+    r.grantProgress(0, seg(12)); // 11 segments ahead: more than half a lap
+    expect(r.racers.get(0)!.next).toBe(1);
+    driveAlong(r, 0, L + 5, L + seg(5));
+    r.grantProgress(0, seg(2)); // behind
+    expect(r.racers.get(0)!.next).toBe(6);
+  });
+
+  it('counts a lap when the skip crosses the start line, and can finish a race', () => {
+    const r = racing([0], 1);
+    driveAlong(r, 0, L - 5, L + seg(13)); // lap 1, next = 14
+    const ev = r.grantProgress(0, seg(1)); // across the line into lap 2 > 1 lap total
+    expect(ev.map((e) => e.kind)).toEqual(expect.arrayContaining(['lap', 'finish']));
+    expect(r.racers.get(0)!.finished).toBe(true);
+  });
+
+  it('ranking stays consistent after a skip', () => {
+    const r = racing([0, 1], 3);
+    driveAlong(r, 0, L - 5, L + 5, new Map([[1, L - 5]]));
+    driveAlong(r, 1, L - 5, L + 5);
+    r.grantProgress(0, seg(5));
+    r.tick(DT, new Map([[0, seg(5)], [1, 20]]), none);
+    expect(r.standings()[0]).toBe(0);
+  });
+});
