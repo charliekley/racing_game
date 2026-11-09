@@ -288,6 +288,106 @@ const nova = unit((ctx, t) => {
 });
 
 // ---------------------------------------------------------------------------
+// jumble: glossy indigo ink splat with two opposite curved arrows (steering flipped)
+// ---------------------------------------------------------------------------
+/** Spiky, organic splat outline: base circle plus a few lobes and sharp-ish spikes. */
+function splatPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+  ctx.beginPath();
+  const n = 72;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * TAU;
+    const rr = r * (1 + 0.14 * Math.sin(3 * a + 0.4) + 0.1 * Math.sin(5 * a + 2.1) + 0.12 * Math.max(0, Math.sin(9 * a)));
+    const x = cx + rr * Math.cos(a);
+    const y = cy + rr * Math.sin(a) * 0.94;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+/** A teardrop hanging from (x, y), `len` long and `w` wide. */
+function dripPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, len: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.45, y);
+  ctx.lineTo(x - w * 0.3, y + len * 0.6);
+  ctx.bezierCurveTo(x - w * 0.9, y + len * 0.85, x - w * 0.4, y + len * 1.15, x, y + len * 1.1);
+  ctx.bezierCurveTo(x + w * 0.4, y + len * 1.15, x + w * 0.9, y + len * 0.85, x + w * 0.3, y + len * 0.6);
+  ctx.lineTo(x + w * 0.45, y);
+  ctx.closePath();
+}
+
+/** Thick curved arrow along a quadratic curve (start, control, end) with a triangular head. */
+function curvedArrow(
+  ctx: CanvasRenderingContext2D,
+  p0: number[], p1: number[], p2: number[],
+): void {
+  const curve = () => {
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    ctx.quadraticCurveTo(p1[0], p1[1], p2[0], p2[1]);
+  };
+  // Heading at the tip, from the curve's end tangent.
+  const ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
+  // Shaft: dark outline stroke, then bright stroke on top.
+  curve();
+  ctx.lineWidth = 0.15;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  // Head: outline + fill.
+  ctx.save();
+  ctx.translate(p2[0], p2[1]);
+  ctx.rotate(ang);
+  polygon(ctx, [[0.1, 0], [-0.06, -0.12], [-0.06, 0.12]]);
+  fillOutline(ctx, '#c6ff3d', 0.045);
+  ctx.restore();
+  curve();
+  ctx.lineWidth = 0.085;
+  ctx.strokeStyle = '#c6ff3d';
+  ctx.stroke();
+}
+
+const jumble = unit((ctx, t) => {
+  // Drips first so the splat covers their tops.
+  for (const [x, y, w, len] of [[0.3, 0.72, 0.1, 0.14], [0.66, 0.74, 0.12, 0.1]]) {
+    dripPath(ctx, x, y, w, len);
+    fillOutline(ctx, '#2b2a8c', 0.04);
+  }
+  // Satellite droplets
+  for (const [x, y, r] of [[0.08, 0.22, 0.04], [0.93, 0.3, 0.035], [0.88, 0.84, 0.03]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    fillOutline(ctx, '#2b2a8c', 0.03);
+  }
+
+  // Main splat: outline, deep indigo body, teal inner glow
+  splatPath(ctx, 0.5, 0.46, 0.4);
+  fillOutline(ctx, '#2b2a8c');
+  splatPath(ctx, 0.46, 0.42, 0.3);
+  ctx.fillStyle = '#3a4fd0';
+  ctx.fill();
+  // Teal rim light along the lower right
+  ctx.beginPath();
+  ctx.arc(0.5, 0.46, 0.34, 0.1 * Math.PI, 0.45 * Math.PI);
+  ctx.lineWidth = 0.03;
+  ctx.strokeStyle = '#2ec4b6';
+  ctx.stroke();
+  // Glossy highlights
+  shine(ctx, 0.27, 0.27, 0.08, 0.04, -0.7);
+  shine(ctx, 0.2, 0.36, 0.02, 0.02);
+
+  // Swap arrows wobble in opposite directions (left/right).
+  const w = Math.sin(t / 220) * 0.012;
+  ctx.save();
+  ctx.translate(w, 0);
+  curvedArrow(ctx, [0.2, 0.46], [0.46, 0.2], [0.76, 0.38]);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(-w, 0);
+  curvedArrow(ctx, [0.8, 0.54], [0.54, 0.8], [0.24, 0.62]);
+  ctx.restore();
+});
+
+// ---------------------------------------------------------------------------
 // Fallback "?" icon for unknown ids
 // ---------------------------------------------------------------------------
 const unknown = unit((ctx) => {
@@ -304,12 +404,11 @@ const unknown = unit((ctx) => {
   ctx.fillText('?', 0.5, 0.54);
 });
 
-// TODO(jumble): placeholder that reuses the slick art until the real icon is drawn.
-export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble: slick };
+export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble };
 
 /** Icons that move over time, so the host view must keep redrawing them. */
 export function isIconAnimated(id: string): boolean {
-  return id === 'dash' || id === 'nova' || id === 'seeker';
+  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble';
 }
 
 /** Draw `id` (any string; unknown ids get a "?"), plus a "×N" badge if count > 1. Clears nothing. */

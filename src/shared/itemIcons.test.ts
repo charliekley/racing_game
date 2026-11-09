@@ -33,6 +33,16 @@ describe('item icons', () => {
     expect(calls.length).toBeGreaterThan(0);
   });
 
+  it('includes every item id in the roulette cycle', () => {
+    // One 90 ms step per id; each step must draw something.
+    for (let i = 0; i < ITEM_IDS.length; i++) {
+      const { ctx, calls } = stubContext();
+      paintRoulette(ctx, 100, i * 90 + 10);
+      expect(calls.length).toBeGreaterThan(0);
+    }
+    expect(ITEM_IDS).toContain('jumble');
+  });
+
   it('draws a count badge only when count > 1', () => {
     const one = stubContext();
     paintItemIcon(one.ctx, 'dash', 100, 0, 1);
