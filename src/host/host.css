@@ -290,3 +290,7 @@ body.no-debug .fps { display: none; }
 .results-box td.place { font-style: italic; color: #ffd23f; width: 3em; }
 .results-box .dot { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.5em; vertical-align: middle; }
 .results-help { text-align: center; color: var(--muted); font-size: 15px; font-weight: 400; margin: 3vh 0 0; }
+
+/* Ink splat shown over a viewport while steering is flipped (Jumble). Insert it into the HUD BEFORE the text
+   elements so it sits under them and above the 3D view. */
+.ink-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
