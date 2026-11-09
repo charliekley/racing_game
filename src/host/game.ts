@@ -208,12 +208,12 @@ export class Game {
     });
     this.minimap.place(layout.minimap);
 
-    // Phones draw a minimap: send them the track outline once (about 12 m between points).
+    // Phones draw a minimap: send them the track outline (about 12 m between points) plus the rich map data, once.
     const pts: number[] = [];
     for (let i = 0; i < this.track.samples.length; i += 6) {
       pts.push(Math.round(this.track.samples[i].x * 10) / 10, Math.round(this.track.samples[i].z * 10) / 10);
     }
-    this.players.setTrackMessage({ t: 'track', pts, w: this.track.def.width });
+    this.players.setTrackMessage({ t: 'track', pts, w: this.track.def.width, map: this.minimap.data });
 
     this.loop.reset();
     this.resultsShown = false;

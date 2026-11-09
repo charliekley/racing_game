@@ -10,6 +10,8 @@
  *    packet with the highest sequence number.
  */
 
+import type { MapData } from './mapDraw';
+
 /** Bump when the message format changes incompatibly. */
 export const PROTOCOL_VERSION = 1;
 
@@ -111,8 +113,12 @@ export type HostToController =
       item: ItemDisplay;
     }
   | { t: 'haptic'; pattern: number[] }
-  /** Track outline for the phone's minimap: flat [x, z, x, z, …] along the centerline, road width `w` (m). */
-  | { t: 'track'; pts: number[]; w: number }
+  /**
+   * Track outline for the phone's minimap: flat [x, z, x, z, …] along the centerline, road width `w` (m).
+   * `map` (optional, so older hosts still work) is the full picture: roads with heights, bridges, cliffs,
+   * cannons, gaps (see shared/mapDraw.ts). Phones fall back to `pts` when it is missing or malformed.
+   */
+  | { t: 'track'; pts: number[]; w: number; map?: MapData }
   /** Kart positions for the minimap: flat [slot, x, z, slot, x, z, …], sent ~8x/second. */
   | { t: 'map'; d: number[] }
   /** Drift state for the DRIFT button glow: null = not drifting, 0 = charging, 1 = blue, 2 = orange. */
@@ -129,7 +135,14 @@ export function isControllerMessage(m: unknown): m is ControllerToHost {
 }
 
 export function isHostMessage(m: unknown): m is HostToController {
-  return typeof m === 'object' && m !== null && HOST_TYPES.has((m as { t?: unknown }).t as string);
+  if (typeof m !== 'object' || m === null || !HOST_TYPES.has((m as { t?: unknown }).t as string)) return false;
+  // A track message needs its outline; the optional rich `map` is checked by the phone (isMapData),
+  // which falls back to the outline, so a bad `map` never loses the whole message.
+  if ((m as { t: string }).t === 'track') {
+    const { pts, w } = m as { pts?: unknown; w?: unknown };
+    return Array.isArray(pts) && typeof w === 'number';
+  }
+  return true;
 }
 
 /** Trim and limit player names so a phone can't break the TV layout. */

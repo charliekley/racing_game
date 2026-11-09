@@ -109,3 +109,10 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * `kart.ts`: crest launch (`KART.crestMinRise`, `crestLaunchDecel`): a rising grounded kart whose ground bends away faster than ~1.3 g leaves the ground.
 * `autopilot.ts`: flat out through ramps of every shape; simple unstick (reverse out when pinned beside the road).
 * `src/render/rampView.ts`: all ramp meshes (merged, one mesh per colour). Dev track: `src/track/tracks/_jumpTest.ts` (not in `TRACKS`).
+
+## Maps (maps agent)
+
+* `src/shared/mapDraw.ts` draws both maps (TV `Minimap`, phone `PhoneMap`): height-shaded roads, shortcut branches (thinner; dashed brown when dirt), overpass gaps (`findCrossings`), bridges, cliff ticks, water/void gap notches, cannon icon + dotted arc + target ring, start line, dots. Static layers are cached offscreen (`MapCache`).
+* `src/sim/mapData.ts` `mapDataFromTrack(track)` builds the compact `MapData` from `track.routes/bridges/cliffs/gaps/cannons` (≤120 points per route, 0.1 m rounding, ~2–4 KB JSON).
+* Protocol: `{ t: 'track', pts, w, map?: MapData }` (`map` optional; phones fall back to `pts`).
+* A new track needs nothing special: put roads in `track.routes` (shortcuts: `kind: 'shortcut'`, `surface`) and the maps pick them up.
