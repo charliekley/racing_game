@@ -76,15 +76,26 @@ export function autopilot(k: KartState, track: Track, style: BotStyle): ControlI
   const tz = ahead.z + ahead.rz * lane - k.pos.z;
   const want = Math.atan2(tx, tz);
   const err = Math.atan2(Math.sin(want - k.heading), Math.cos(want - k.heading));
-  const steer = Math.max(-1, Math.min(1, -err * 3));
+  let steer = Math.max(-1, Math.min(1, -err * 3));
+
+  // Stuck against a wall or tree beside the road (almost stopped, off the asphalt, nose pointing
+  // away from where we want to go): a kart that slow can barely turn, so back up while swinging the
+  // nose round (reversing steers the other way), then drive on once it points the right way again.
+  if (k.speed < 2.5 && Math.abs(p.d) > track.def.width / 2 && Math.abs(err) > 0.6) {
+    return { steer: -steer, buttons: Buttons.BRAKE };
+  }
 
   // Ease off for sharp corners coming up and when above our target pace.
   let sharp = 0;
   for (let o = 5; o <= 25; o += 5) sharp = Math.max(sharp, Math.abs(track.sampleAhead(route, at, o).curvature));
-  // Flat out before a jump so we clear any water gap behind it.
+  // Flat out before, on and just after every jump so we clear any gap behind it. Gapless
+  // humps need no run-up, but the bot must not brake over them either (it stays on the gas
+  // from 25 m before until the end of the ramp).
   const jumpAhead = track.ramps.some((r) => {
-    const d = track.deltaS(p.s, r.s0);
-    return d > -2 && d < 80;
+    const d = track.deltaS(p.s, r.s0); // distance to the ramp start (negative = already on/past it)
+    const lookAhead = r.gap > 0 || r.shape !== 'hump' ? 80 : 25;
+    const past = r.s1 - r.s0 + r.gap + 6; // stay on the gas through the ramp, the gap and the landing
+    return d > -past && d < lookAhead;
   });
   const target = jumpAhead ? Infinity : KART.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
   const gas = k.speed < target;

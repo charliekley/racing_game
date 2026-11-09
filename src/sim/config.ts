@@ -114,6 +114,14 @@ export const KART = {
   gravity: 28,
   /** Ground closer than this below the kart counts as "still touching" (m); keeps karts glued over bumps. */
   groundSnap: 0.35,
+  /**
+   * Crest launch: a grounded kart that was rising (faster than crestMinRise m/s) and whose
+   * ground suddenly bends away faster than crestLaunchDecel (m/s^2) leaves the ground, as a
+   * real car would over a crest. Gravity is 28, so 1.3x means "bends away faster than a
+   * free-falling kart drops" with a margin so small road kinks don't cause hops.
+   */
+  crestMinRise: 1.5,
+  crestLaunchDecel: 36.4,
 
   // --- Body ---------------------------------------------------------------------
   /** Collision radius for kart-vs-kart and walls (m). */

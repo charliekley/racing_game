@@ -373,8 +373,12 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
     // Follow the ground as long as it doesn't drop away faster than `groundSnap`
     // per step. Vertical speed = slope × speed, so driving up a ramp builds
     // upward velocity and you fly off the end.
-    if (hit && hit.height >= prevY - c.groundSnap) {
-      k.vel.y = clamp((hit.height - prevY) / dt, -30, 30);
+    const newVy = hit ? clamp((hit.height - prevY) / dt, -30, 30) : 0;
+    // Crest: still rising, but the ground bends away faster than gravity can pull us down
+    // -> we leave the ground (this is what makes a smooth hump launch fast karts).
+    const crest = hit !== null && k.vel.y > c.crestMinRise && (k.vel.y - newVy) / dt > c.crestLaunchDecel;
+    if (hit && hit.height >= prevY - c.groundSnap && !crest) {
+      k.vel.y = newVy;
       k.pos.y = hit.height;
       k.surface = hit.surface;
     } else {

@@ -91,11 +91,11 @@ export function checkerTexture(): THREE.CanvasTexture {
 }
 
 /** Yellow/black chevrons for jump ramps (V along the ramp). */
-export function rampTexture(): THREE.CanvasTexture {
+export function rampTexture(base = '#f2c230', stripe = '#222'): THREE.CanvasTexture {
   return canvasTexture(128, (ctx, n) => {
-    ctx.fillStyle = '#f2c230';
+    ctx.fillStyle = base;
     ctx.fillRect(0, 0, n, n);
-    ctx.fillStyle = '#222';
+    ctx.fillStyle = stripe;
     for (let k = -1; k < 3; k++) {
       ctx.beginPath();
       const y = k * (n / 2);

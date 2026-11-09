@@ -100,3 +100,12 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * `track.routes` = main line + one `kind: 'shortcut'` `RouteLine` per branch (open polyline, ~8 m points, with y).
 * Bots: `BotStyle.shortcutBias` (slots 0 and 2 > 0.5 take every shortcut); `track.sampleAhead(route, i, k)` follows a branch back onto the main road.
 * Scenery planning keeps clear of branch roads (`distToTrack`).
+
+## Jumps (jump agent): what is implemented
+
+* `ramps[].shape`: `'kicker'` (default, unchanged), `'hump'` (cosine mound, no lip: karts leave the ground over the crest above ~21 m/s), `'double'` (two kickers, `length` is the total). `ramps[].landing` (default true when there is a gap): a 10 m apron after the gap, raised up to 1.2 m at the gap edge and sloping to 0.
+* `src/sim/jumps.ts`: `shapeHeight`, `jumpClearance(ramp, speed)` (ballistic, uses `KART.gravity`), `minClearSpeed(ramp)`. Rule of thumb: kicker height 2.2 / length 10 clears a 10 m gap at 20 m/s; 12 m at ~22 m/s.
+* `Track.rampHeight(s)` takes the max over all ramps (chains of touching humps are fine); `Track.ramps[]` now has `shape`, `gap`, `landHeight`.
+* `kart.ts`: crest launch (`KART.crestMinRise`, `crestLaunchDecel`): a rising grounded kart whose ground bends away faster than ~1.3 g leaves the ground.
+* `autopilot.ts`: flat out through ramps of every shape; simple unstick (reverse out when pinned beside the road).
+* `src/render/rampView.ts`: all ramp meshes (merged, one mesh per colour). Dev track: `src/track/tracks/_jumpTest.ts` (not in `TRACKS`).
