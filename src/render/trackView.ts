@@ -16,6 +16,7 @@ import {
   waterTexture,
 } from './textures';
 import { buildGantry, buildScenery } from './scenery';
+import { TerrainView } from './terrainView';
 
 interface Edge {
   d: number;
@@ -88,6 +89,8 @@ export class TrackView {
   readonly group = new THREE.Group();
   private boostTex: THREE.Texture;
   private waterTex: THREE.Texture | null = null;
+  /** The ground meshes (terrain, cliff faces, bridges); `stats` holds triangle counts. */
+  readonly terrainView: TerrainView;
 
   constructor(readonly track: Track) {
     const def = track.def;
@@ -100,17 +103,19 @@ export class TrackView {
       return m;
     };
 
-    // Terrain
-    const grassTex = grassTexture(def.theme.grass);
-    grassTex.repeat.set(250, 250);
-    const terrain = add(new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: grassTex }));
-    terrain.position.y = -0.05;
+    // Terrain: height-field mesh + cliff faces + bridge pillars (or the old flat plane without a terrain def).
+    const terrainView = new TerrainView(track);
+    this.group.add(terrainView.group);
+    this.terrainView = terrainView;
+    const hasTerrain = track.terrain.enabled;
 
-    // Surfaces that run along the whole loop, interrupted only by water gaps.
+    // Surfaces that run along the whole loop, interrupted by gaps (water or chasm).
+    // Off-road strips are also left out beside bridges (nothing to stand on there).
     const solidRuns = track.gaps.length ? runs(track.samples, (p) => !track.inGap(p.s)) : null;
-    const alongTrack = (edges: (p: TrackSample) => [Edge, Edge], vRepeat: number, mat: THREE.Material) => {
-      if (!solidRuns) return void add(strip(track.samples, true, edges, vRepeat), mat);
-      for (const run of solidRuns) add(strip(run, false, edges, vRepeat), mat);
+    const groundRuns = track.bridges.length ? runs(track.samples, (p) => !track.inGap(p.s) && !track.onBridge(p.s)) : solidRuns;
+    const alongTrack = (edges: (p: TrackSample) => [Edge, Edge], vRepeat: number, mat: THREE.Material, rs = solidRuns) => {
+      if (!rs) return void add(strip(track.samples, true, edges, vRepeat), mat);
+      for (const run of rs) add(strip(run, false, edges, vRepeat), mat);
     };
 
     // Road (banked), curbs, off-road strips
@@ -122,15 +127,29 @@ export class TrackView {
     offTex.repeat.set(1, 1);
     const offMat = new THREE.MeshLambertMaterial({ map: offTex });
     const outer = hw + def.offroadWidth;
-    alongTrack((p) => [{ d: -outer, h: 0.01 }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }], 8, offMat);
-    alongTrack((p) => [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: outer, h: 0.01 }], 8, offMat);
+    // The strip slopes from the road edge down to the road's base height at its outer edge (same formula
+    // as Track.groundLevel); along a cliff it stops where the ground ends.
+    const stripH = (p: TrackSample, d: number) => Track.groundLevel(p.y, p.bank, hw, d, def.offroadWidth) - p.y + 0.01;
+    const outerD = (p: TrackSample, side: number) => Math.min(outer, track.cliffEdgeAt(p.s, side));
+    alongTrack((p) => {
+      const o = outerD(p, -1);
+      return [{ d: -o, h: stripH(p, -o) }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }];
+    }, 8, offMat, groundRuns);
+    alongTrack((p) => {
+      const o = outerD(p, 1);
+      return [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: o, h: stripH(p, o) }];
+    }, 8, offMat, groundRuns);
 
     // Water in the gaps after jumps (flush with the ground; karts that fall in sink below it).
+    // Chasm ('void') gaps get no water: TerrainView draws dark walls there instead.
     this.waterTex = waterTexture();
     const waterMat = new THREE.MeshLambertMaterial({ map: this.waterTex, emissive: '#0b3a66' });
+    // With a terrain mesh the ground in the gap sits at road level, so lift the water a little above it.
+    const waterH = hasTerrain ? 0.12 : 0.0;
     for (const g of track.gaps) {
+      if (g.kind !== 'water') continue;
       const ss = samplesBetween(track, g.s0 - track.spacing, g.s1 + track.spacing);
-      add(strip(ss, false, () => [{ d: -outer - 1, h: 0.0 }, { d: outer + 1, h: 0.0 }], 6), waterMat, false);
+      add(strip(ss, false, () => [{ d: -outer - 1, h: waterH }, { d: outer + 1, h: waterH }], 6), waterMat, false);
     }
 
     // Walls (tire barriers): vertical strips at the outer edge of the off-road.
@@ -140,7 +159,9 @@ export class TrackView {
       const has = (p: TrackSample) => (side < 0 ? p.wallLeft : p.wallRight);
       for (const run of runs(track.samples, has)) {
         // A vertical strip: "a" at the bottom, "b" at the top, same lateral position.
-        const g = strip(run, false, () => [{ d: side * outer, h: 0 }, { d: side * outer, h: WALL_H }], 2.2);
+        // A wall on a cliff side stands at the cliff edge (like the collision wall does).
+        const wallD = (p: TrackSample) => side * Math.min(outer, track.cliffEdgeAt(p.s, side));
+        const g = strip(run, false, (p) => [{ d: wallD(p), h: 0 }, { d: wallD(p), h: WALL_H }], 2.2);
         const w = add(g, wallMat);
         w.castShadow = true;
       }
@@ -187,7 +208,7 @@ export class TrackView {
     for (let i = 0; i < 4; i++) {
       const g = track.gridSpot(i);
       const mark = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.25).rotateX(-Math.PI / 2), gridMat);
-      mark.position.set(g.x + Math.sin(g.heading) * 1.4, 0.05, g.z + Math.cos(g.heading) * 1.4);
+      mark.position.set(g.x + Math.sin(g.heading) * 1.4, (track.sample(g.x, g.z)?.height ?? 0) + 0.05, g.z + Math.cos(g.heading) * 1.4);
       mark.rotation.y = g.heading;
       this.group.add(mark);
     }

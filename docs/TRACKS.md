@@ -64,3 +64,12 @@ Everything must stay original (no Nintendo names/characters/layout copies) and p
 4. **Switchback Summit** (alpine snow): hairpin climb, long fast downhill with a double kicker, a frozen-lake dirt shortcut, tree-lined (solid) forest section, a ski-jump finale.
 
 Each track must be 1.2–2.0 km, include at least one signature feature from the list above, bots must be able to finish it, and the track geometry tests must pass.
+
+## Terrain, bridges, cliffs, voids: what is implemented (terrain agent)
+
+* `track.terrain` (`src/sim/terrain.ts`): `height(x, z)`, `natural(x, z)`, `roadWeight(dist)`, `roadDistance(x, z)`, `enabled`. Active when the def has `terrain` or `bridges`; otherwise the old flat behaviour is kept exactly.
+* `track.bridges`, `track.cliffs`, `track.gaps[].kind` (`'water' | 'void'`), `track.onBridge(s)`, `track.cliffEdgeAt(s, side)` (side -1 = left, +1 = right; Infinity = no cliff), `track.isVoid(p)`, `Track.groundLevel(y, bank, halfWidth, d, offroadWidth)`.
+* Cliff `edge` is clamped to the off-road strip's outer edge (road half-width + `offroadWidth`); the last 6 m at each end of a cliff widen back to it. Walls on a cliff side stand AT the edge (guard rail), in the view and in `wallsAt`.
+* Falling rule: `world.ts` `FALL_BELOW_ROAD` (5 m below the road at the nearest track point) and `FALL_FLOOR_Y` (-40 m).
+* Overpasses: the "never too close to itself" test skips pairs whose heights differ by >= 7 m.
+* `src/render/terrainView.ts` builds the ground mesh, cliff/chasm faces, bridge decks and pillars. `src/track/tracks/_terrainTest.ts` is a dev-only figure-8 with a climb, bridge, cliff ridge and void jump (not in `TRACKS`).
