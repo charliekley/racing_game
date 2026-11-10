@@ -51,3 +51,5 @@ to a few lines, and say so in your final report.
 (kept up to date by the integrator)
 
 * **classes**: done on branch `claude/classes-33d9bb`. Per-kart physics (`src/sim/classes.ts`: `kartConfigFor`, `botLoadoutFor`), `World.startRace(slots, laps, loadouts)` / `world.configOf(slot)`, optional `loadout` in `hello`/`profile`/`welcome`/`LobbyPlayerInfo`, lobby card names, keyboard/gamepad pickers, phone picker (`src/controller/picker.ts`, `portrait.ts`). Small edits outside the owned files: `src/sim/config.ts` (`KartConfig` type widened, `mass` added), `src/sim/items/items.ts` (`configOf` hook for spin-out), `src/host/game.ts` (loadouts to the world and `KartView`), `src/host/input/localInput.ts` (lobby keys).
+* **Wave 1 merged on main**: audio (`src/audio/**`), classes, kart-models (`src/render/kart/**`; karts and drivers use `MeshStandardMaterial`/`MeshPhysicalMaterial`).
+* **Wave 2 (running)**: render-pipeline, environment, game-feel.
