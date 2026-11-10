@@ -33,6 +33,7 @@ import {
   followWithSun,
   type QualitySettings,
 } from '../render/scene';
+import { RenderPipeline } from '../render/post/pipeline';
 import { TrackView } from '../render/trackView';
 import type { PlayerManager } from './playerManager';
 import { ViewHud } from './viewHud';
@@ -85,6 +86,9 @@ interface PlayerView {
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
+  /** Render pipeline (HDR target, bloom, grade); see src/render/post/pipeline.ts. */
+  private pipeline: RenderPipeline;
+  private quality: QualitySettings;
   private scene: THREE.Scene;
   private sun: THREE.DirectionalLight;
   private track: Track;
@@ -119,10 +123,14 @@ export class Game {
     quality: QualitySettings,
   ) {
     this.renderer = createRenderer(container, quality);
+    this.quality = quality;
     this.track = new Track(TRACKS[0]);
     const parts = createScene(this.track.def.theme);
     this.scene = parts.scene;
     this.sun = parts.sun;
+    // Sky environment map for reflections + render pipeline (post-processing).
+    applyTheme(this.scene, this.track.def.theme, this.renderer, quality.envSize);
+    this.pipeline = new RenderPipeline(this.renderer, quality, this.track.def.theme);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
     this.itemPool = new ItemMeshPool(this.scene);
@@ -151,7 +159,8 @@ export class Game {
    */
   setTrack(def: TrackDef): void {
     if (def === this.track.def) return;
-    applyTheme(this.scene, def.theme); // sky, fog and ambient light follow the track
+    applyTheme(this.scene, def.theme, this.renderer, this.quality.envSize); // sky, fog, lights and reflections follow the track
+    this.pipeline.setTheme(def.theme); // bloom / colour grade follow the track too
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
     this.minimap.canvas.remove();
@@ -165,7 +174,11 @@ export class Game {
   }
 
   setQuality(q: QualitySettings): void {
+    const envChanged = q.envSize !== this.quality.envSize;
+    this.quality = q;
     applyRendererQuality(this.renderer, q);
+    this.pipeline.setQuality(q);
+    if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
     applySceneQuality(this.scene, this.sun, q);
     this.resize();
   }
@@ -276,7 +289,10 @@ export class Game {
     cz /= Math.max(1, this.views.length);
     let spread = 0;
     for (const v of this.views) spread = Math.max(spread, Math.hypot(v.kart.pose.x - cx, v.kart.pose.z - cz));
-    followWithSun(this.sun, cx, cz, spread + 45);
+    // Shadows: when the karts are close together one shadow map covers all of them; when they are
+    // spread out (split-screen on a big track) the map is re-aimed and redrawn for each view below.
+    const sharedShadow = this.views.length <= 1 || spread < 50 || !this.quality.shadowPerView;
+    if (sharedShadow) followWithSun(this.sun, cx, cz, spread + 55);
 
     // Countdown numbers on every HUD.
     if (race.phase === 'countdown') {
@@ -289,17 +305,21 @@ export class Game {
 
     // Render: shadow map once, then the scene once per viewport.
     const size = this.renderer.getSize(new THREE.Vector2());
-    this.renderer.shadowMap.needsUpdate = true;
-    this.renderer.setScissorTest(true);
+    if (sharedShadow) this.renderer.shadowMap.needsUpdate = true;
+    this.pipeline.beginFrame();
     for (const v of this.views) {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
       const ground = (x: number, z: number) => this.track.sample(x, z, kart.trackIndex)?.height ?? null;
       v.chase.update(v.kart.pose, dt, kart.flight ? 20 : kart.boostTime > 0 ? 10 : 0, ground); // wider view while flying out of a cannon
-      this.renderer.setViewport(r.x, r.y, r.w, r.h);
-      this.renderer.setScissor(r.x, r.y, r.w, r.h);
-      this.renderer.render(this.scene, v.chase.camera);
+      if (!sharedShadow) {
+        // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
+        const fwd = v.chase.camera.getWorldDirection(new THREE.Vector3());
+        followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, 55);
+        this.renderer.shadowMap.needsUpdate = true;
+      }
+      this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 
       const racer = race.racers.get(v.slot)!;
       v.hud.update(
@@ -316,7 +336,7 @@ export class Game {
         this.elapsed,
       );
     }
-    this.renderer.setScissorTest(false);
+    this.pipeline.endFrame(); // bloom + colour grade + tone mapping, once for all viewports
 
     this.minimap.draw(
       race.standings().map((slot) => {
@@ -510,6 +530,7 @@ export class Game {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h);
+    this.pipeline.resize();
   }
 }
 
