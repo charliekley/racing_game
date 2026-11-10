@@ -19,6 +19,7 @@ import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
 import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera } from '../render/chaseCamera';
+import { setKartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
 import { DEFAULT_LOADOUT } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
@@ -119,6 +120,7 @@ export class Game {
     private readonly callbacks: GameCallbacks,
     quality: QualitySettings,
   ) {
+    setKartDetail(quality.name === 'Low' ? 'low' : 'high'); // kart-models: cheaper kart meshes on Low (applies to karts built from now on)
     this.renderer = createRenderer(container, quality);
     this.track = new Track(TRACKS[0]);
     const parts = createScene(this.track.def.theme);
@@ -166,6 +168,7 @@ export class Game {
   }
 
   setQuality(q: QualitySettings): void {
+    setKartDetail(q.name === 'Low' ? 'low' : 'high'); // kart-models: used by karts built from now on
     applyRendererQuality(this.renderer, q);
     applySceneQuality(this.scene, this.sun, q);
     this.resize();
