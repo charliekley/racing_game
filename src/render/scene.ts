@@ -463,12 +463,14 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
         // The layer drifts slowly with time; thresholds below make soft puffy edges.
         if (h > 0.0 && cloudCover > 0.0) {
           vec2 cp = dir.xz / (h + 0.22) * 1.3 + vec2(time * 0.012, time * 0.004);
-          float n = fbm(cp) * 0.75 + fbm(cp * 2.7 + 9.0) * 0.25;
+          float base = fbm(cp);
+          float n = base * 0.75 + fbm(cp * 2.7 + 9.0) * 0.25;
           float dens = smoothstep(1.0 - cloudCover * 0.6 - 0.18, 1.0 - cloudCover * 0.6 + 0.12, n);
           dens *= smoothstep(0.0, 0.14, h); // fade out into the haze at the horizon
           // Light: the side of a puff facing the sun is bright, the rest picks up the sky colour.
           #ifdef CHEAP_SKY
-          float lit = noise(cp * 2.0 + sunDir.xz * 0.3) * 0.9 + 0.05; // one noise layer instead of a whole fbm
+          // Cheaper: re-use the cloud noise and shift only its first (biggest) layer towards the sun.
+          float lit = base + (noise(cp + sunDir.xz * 0.15) - noise(cp)) * 0.57;
           #else
           float lit = fbm(cp + sunDir.xz * 0.15);
           #endif
@@ -502,6 +504,11 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
   return dome;
 }
 
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const SUN_RIGHT = new THREE.Vector3();
+const SUN_UP = new THREE.Vector3();
+const SUN_FOCUS = new THREE.Vector3();
+
 /**
  * Point the sun's shadow box at a spot on the ground and make it `radius` wide.
  *
@@ -518,15 +525,18 @@ export function followWithSun(sun: THREE.DirectionalLight, x: number, z: number,
   const texel = (2 * r) / sun.shadow.mapSize.x;
 
   // Light-space basis: snap the focus point to the texel grid on the two axes across the light.
-  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
-  const up = new THREE.Vector3().crossVectors(dir, right).normalize();
-  const focus = new THREE.Vector3(x, 0, z);
+  const right = SUN_RIGHT.crossVectors(WORLD_UP, dir).normalize(); // reused vectors: called up to 4x per frame
+  const up = SUN_UP.crossVectors(dir, right).normalize();
+  const focus = SUN_FOCUS.set(x, 0, z);
   const a = Math.round(focus.dot(right) / texel) * texel;
   const b = Math.round(focus.dot(up) / texel) * texel;
   focus.addScaledVector(right, a - focus.dot(right)).addScaledVector(up, b - focus.dot(up));
 
   sun.target.position.copy(focus);
   sun.position.copy(focus).addScaledVector(dir, SUN_DISTANCE);
+  // Update both matrices right away: the game updates the scene's matrices only once per frame
+  // (Game.frame), but the sun is re-aimed between the split-screen views.
+  sun.updateMatrixWorld();
   sun.target.updateMatrixWorld();
   const cam = sun.shadow.camera;
   if (cam.right !== r) {

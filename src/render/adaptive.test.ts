@@ -66,6 +66,28 @@ describe('AdaptiveQuality', () => {
     expect(a.scale).toBeLessThanOrEqual(1);
   });
 
+  it('does not flip-flop: once full scale proved too slow it stays below it', () => {
+    // A GPU that manages 60 fps at scale 0.9 but not at 1.0.
+    const log: number[] = [];
+    const a = new AdaptiveQuality({ onScale: (s) => log.push(s), onStepDown: () => log.push(-1) });
+    let t = 1000;
+    for (let i = 0; i < 60 * 120; i++) {
+      t += a.scale > 0.95 ? 22 : 16.6;
+      a.frame(t, true);
+    }
+    expect(log).not.toContain(-1); // never drops a preset
+    const raisesTo1 = log.filter((s) => s >= 1).length;
+    expect(raisesTo1).toBeLessThanOrEqual(1); // tried full scale again at most once
+    expect(a.scale).toBeCloseTo(0.9, 5);
+  });
+
+  it('never asks for a higher preset', () => {
+    const { a, log } = make();
+    run(a, 1000, 60, 10); // very fast
+    expect(log.filter((l) => l !== 'down' && !l.startsWith('scale'))).toEqual([]);
+    expect(log).toEqual([]);
+  });
+
   it('measures nothing while disabled or between races', () => {
     const { a, log } = make();
     a.enabled = false;

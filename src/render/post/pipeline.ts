@@ -51,7 +51,7 @@ function passMaterial(fragmentShader: string, uniforms: Record<string, THREE.IUn
 // ---- Bloom shaders ---------------------------------------------------------
 
 /**
- * Bright pass: shrink the scene to half size and keep only what is brighter than
+ * Bright pass: shrink the scene to half (Medium: quarter) size and keep only what is brighter than
  * the threshold. A soft "knee" makes the cut-off gradual instead of a hard edge.
  * Every sample is also clamped so one tiny super-bright pixel cannot flicker.
  */
@@ -59,6 +59,7 @@ const BRIGHT_FRAG = /* glsl */ `
   uniform sampler2D tSource;
   uniform vec2 texel;      // size of one SOURCE pixel in uv units
   uniform float threshold;
+  uniform float tap;       // 0.5 when shrinking to 1/2 size, 1.0 for 1/4 (each bilinear tap then averages 2x2 pixels)
   varying vec2 vUv;
   vec3 prefilter(vec3 c) {
     c = min(c, vec3(24.0));
@@ -70,10 +71,11 @@ const BRIGHT_FRAG = /* glsl */ `
     return c * w;
   }
   void main() {
-    vec3 c = prefilter(texture2D(tSource, vUv + texel * vec2(-0.5, -0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2( 0.5, -0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2(-0.5,  0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2( 0.5,  0.5)).rgb);
+    // Four taps that together cover every source pixel under this bloom pixel (no flicker from skipped pixels).
+    vec3 c = prefilter(texture2D(tSource, vUv + texel * vec2(-tap, -tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2( tap, -tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2(-tap,  tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2( tap,  tap)).rgb);
     gl_FragColor = vec4(c * 0.25, 1.0);
   }`;
 
@@ -245,7 +247,7 @@ export class RenderPipeline {
     // Rendering into a floating point texture needs this GPU feature (virtually all desktop GPUs have it).
     this.supported = renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float');
 
-    this.brightMat = passMaterial(BRIGHT_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1 } });
+    this.brightMat = passMaterial(BRIGHT_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1 }, tap: { value: 0.5 } });
     this.downMat = passMaterial(DOWN_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() } });
     this.upMat = passMaterial(
       UP_FRAG,
@@ -339,6 +341,7 @@ export class RenderPipeline {
     }
     // Bloom pyramid: level 0 is 1/2 (or 1/4) of the screen size, each next level half again.
     const shift = this.q.bloomShift;
+    this.brightMat.uniforms.tap.value = shift >= 2 ? 1 : 0.5;
     for (let i = 0, bw = w >> shift, bh = h >> shift; i < this.q.bloomLevels && bw >= 4 && bh >= 4; i++, bw >>= 1, bh >>= 1) {
       this.bloomDown.push(
         new THREE.WebGLRenderTarget(bw, bh, {
@@ -448,10 +451,18 @@ export class RenderPipeline {
     const vs = u.views.value as THREE.Vector4[];
     for (let i = 0; i < this.viewCount; i++) vs[i].set(this.views[i].x, this.views[i].y, this.views[i].w, this.views[i].h);
     u.viewCount.value = this.viewCount;
-    r.setRenderTarget(this.ldr);
     r.setScissorTest(false);
     const k = r.getPixelRatio();
-    r.setViewport(0, 0, this.pxW / k, this.pxH / k);
+    if (this.ldr) {
+      // Into the 8-bit picture: a render target's viewport is in its own pixels (no pixel ratio), and it
+      // already covers the whole target. (setViewport() here would use CSS pixels and, at a render scale
+      // below 1, stretch the picture past the edges.)
+      this.ldr.viewport.set(0, 0, this.pxW, this.pxH);
+      r.setRenderTarget(this.ldr);
+    } else {
+      r.setRenderTarget(null);
+      r.setViewport(0, 0, this.pxW / k, this.pxH / k); // canvas: CSS pixels, Three.js applies the pixel ratio
+    }
     this.quad.material = this.compositeMat;
     this.quad.render(r);
 

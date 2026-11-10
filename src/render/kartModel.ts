@@ -22,6 +22,7 @@
  *    torso, head and 2 arms = 12 draw calls.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHARACTERS, DEFAULT_LOADOUT } from '../shared/characters';
 import { PartBuilder, withDetail, type Bucket } from './kart/geo';
 import { STYLE_BUILDERS, buildSteeringWheelGeometry, type StyleLayout } from './kart/bodies';
@@ -86,6 +87,11 @@ export interface KartModel {
    * and animation stay on the same objects.
    */
   setLod(tier: 0 | 1 | 2): void;
+  /**
+   * Build the one-draw-call version of the far model from the CURRENT pose (call once, after the driver
+   * has been put in their neutral pose). See `buildKartModel`.
+   */
+  bakeFarModel(): void;
 }
 
 /** Which build each LOD tier uses, for a kart built at the given detail. */
@@ -229,19 +235,70 @@ export function buildKartModel(
       material: chain.map((d) => pick(d)?.material ?? mesh.material),
     };
   });
+  // The far tier draws the kart as 3 meshes instead of 12: paint and accent (they carry the player's
+  // colour) plus ONE merged mesh holding every part that uses the shared detail material (wheels,
+  // driver, steering wheel...), frozen in a neutral pose. From far away nobody sees the wheels spin or
+  // the arms move, but every draw call costs CPU time in each of the 4 viewports.
+  const detailMat = getDetailMaterial();
+  const farParts = slots.filter((s) => s.material[2] === detailMat);
+  let farMerged: THREE.Mesh | null = null;
+  model.bakeFarModel = () => {
+    if (farMerged || farParts.length === 0) return;
+    const key = `${model.style}|${model.character}|${chain[2]}`;
+    let geo = farMergedCache.get(key);
+    if (!geo) {
+      model.root.updateMatrixWorld(true);
+      const toBody = new THREE.Matrix4().copy(model.body.matrixWorld).invert();
+      const parts = farParts
+        .filter((s) => s.geometry[2] !== EMPTY_GEOMETRY)
+        .map((s) => bakePart(s.geometry[2], new THREE.Matrix4().multiplyMatrices(toBody, s.mesh.matrixWorld)));
+      geo = mergeGeometries(parts, false) ?? undefined;
+      parts.forEach((p) => p.dispose());
+      if (!geo) return; // attribute mismatch: keep using the separate meshes
+      geo.computeBoundingSphere();
+      farMergedCache.set(key, geo);
+    }
+    farMerged = new THREE.Mesh(geo, detailMat);
+    farMerged.name = 'kart-far';
+    farMerged.castShadow = true;
+    farMerged.visible = tier === 2;
+    model.body.add(farMerged); // under `body`, so it still leans and bobs with the kart
+  };
+
   let tier = 0;
   model.setLod = (t) => {
     if (t === tier) return;
     tier = t;
+    const merged = t === 2 && farMerged !== null;
     for (const s of slots) {
       s.mesh.geometry = s.geometry[t];
       s.mesh.material = s.material[t];
       // Shadow passes are drawn once per viewport, so every draw call counts: a reduced kart only casts
       // its body and torso (a blob of shadow looks the same), a full-detail kart casts all its parts.
       s.mesh.castShadow = t === 0 || SHADOW_PARTS.has(s.mesh.name);
+      // Parts that live in the merged far mesh are hidden while it is shown.
+      s.mesh.visible = !(merged && s.material[2] === detailMat);
     }
+    if (farMerged) farMerged.visible = merged;
   };
   return model;
+}
+
+/** Merged far-model geometry per (style, character, detail): every kart of that look shares it. */
+const farMergedCache = new Map<string, THREE.BufferGeometry>();
+
+/** Copy of `geo` moved by `m`. A mirrored transform (the left arm) also flips the triangle order so the faces stay outward. */
+function bakePart(geo: THREE.BufferGeometry, m: THREE.Matrix4): THREE.BufferGeometry {
+  const g = geo.clone().applyMatrix4(m);
+  const index = g.getIndex();
+  if (m.determinant() < 0 && index) {
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const b = index.getX(i + 1);
+      index.setX(i + 1, index.getX(i + 2));
+      index.setX(i + 2, b);
+    }
+  }
+  return g;
 }
 
 function buildOneLevel(
@@ -346,6 +403,7 @@ function buildOneLevel(
     character, driver, torso, head, arms, steeringWheel,
     wheelSpec: { pos: new THREE.Vector3(...wheel.pos), tilt: wheel.tilt, handRadius: 0.15 },
     setLod: () => {},
+    bakeFarModel: () => {},
   };
 }
 

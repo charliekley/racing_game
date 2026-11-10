@@ -93,6 +93,9 @@ export class KartView {
     this.aura = buildNovaAura();
     this.model.root.add(this.aura.object);
     this.rig = new DriverRig(this.model);
+    // Put the driver in the neutral pose (hands on the wheel) and freeze that into the merged far model.
+    this.rig.update(0, this.riderInput);
+    this.model.bakeFarModel();
   }
 
   update(prev: KartState, cur: KartState, alpha: number, dt: number, ground?: Ground): void {

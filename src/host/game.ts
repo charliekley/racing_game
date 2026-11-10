@@ -162,6 +162,7 @@ export class Game {
     this.track = new Track(TRACKS[0]);
     const parts = createScene(this.track.def.theme);
     this.scene = parts.scene;
+    this.scene.matrixWorldAutoUpdate = false; // world matrices are updated once per frame in frame()
     this.sun = parts.sun;
     // Sky environment map for reflections + render pipeline (post-processing).
     applyTheme(this.scene, this.track.def.theme, this.renderer, quality.envSize);
@@ -482,6 +483,9 @@ export class Game {
     }
 
     // Render: shadow map once, then the scene once per viewport.
+    // Three.js would recompute every object's world matrix inside each render() call (4 views + shadow
+    // passes); nothing moves between the views, so do it once here (scene.matrixWorldAutoUpdate is off).
+    this.scene.updateMatrixWorld();
     const size = this.renderer.getSize(this.sizeScratch); // reused vector: no allocation in the frame loop
     if (sharedShadow) this.renderer.shadowMap.needsUpdate = true;
     this.pipeline.beginFrame();

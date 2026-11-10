@@ -114,12 +114,17 @@ const AUTO_QUALITY_KEY = 'tiltkart.autoQuality'; // the last preset adaptive qua
  * First-run choice. Priority: ?quality=low|medium|high in the address (testing), the player's saved
  * choice, otherwise a guess from the GPU name, lowered to wherever adaptive quality ended up last time.
  */
+const URL_QUALITY = presetByName(new URLSearchParams(location.search).get('quality'));
+/** True once the player picked a preset with Q (now or on an earlier visit): adaptive quality must not change it. */
+let manualQuality = false;
 function loadQuality(): QualitySettings {
-  const fromUrl = presetByName(new URLSearchParams(location.search).get('quality'));
-  if (fromUrl) return fromUrl;
+  if (URL_QUALITY) return URL_QUALITY;
   try {
     const manual = presetByName(localStorage.getItem(QUALITY_KEY));
-    if (manual) return manual;
+    if (manual) {
+      manualQuality = true;
+      return manual;
+    }
     const guess = presetByName(presetNameForGpu(gpuName())) ?? DEFAULT_QUALITY;
     const auto = presetByName(localStorage.getItem(AUTO_QUALITY_KEY));
     return auto && QUALITY_PRESETS.indexOf(auto) > QUALITY_PRESETS.indexOf(guess) ? auto : guess;
@@ -127,8 +132,12 @@ function loadQuality(): QualitySettings {
     return DEFAULT_QUALITY;
   }
 }
-/** Adaptive quality says frames stay too slow even at the lowest render scale: go one preset down (never up on its own). */
+/**
+ * Adaptive quality says frames stay too slow even at the lowest render scale: go one preset down (never up
+ * on its own). A preset the player chose with Q is respected (only the render scale adapts then).
+ */
 function stepDownQuality() {
+  if (manualQuality || URL_QUALITY) return;
   const next = QUALITY_PRESETS[QUALITY_PRESETS.indexOf(quality) + 1];
   if (!next) return;
   quality = next;
@@ -148,6 +157,7 @@ qualityEl.textContent = quality.name;
 qualityChip.textContent = quality.name;
 function cycleQuality() {
   quality = QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length];
+  manualQuality = true;
   qualityEl.textContent = quality.name;
   qualityChip.textContent = quality.name;
   try {
@@ -238,6 +248,8 @@ function startDriving() {
     },
     quality,
   );
+  // ?quality=... in the address is for testing and measuring: keep that preset exactly as it is (no adaptive scaling).
+  if (URL_QUALITY) game.adaptive.enabled = false;
   game.audio = audio; // AUDIO
   game.setTrack(track);
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
