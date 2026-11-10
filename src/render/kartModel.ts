@@ -79,13 +79,52 @@ export interface KartModel {
   steeringWheel: THREE.Object3D;
   /** Steering wheel centre and tilt in body space, and the radius where the hands grip. */
   wheelSpec: { pos: THREE.Vector3; tilt: number; handRadius: number };
+  /**
+   * Switch the kart's meshes to a cheaper build: 0 = the detail this kart was built with, 1 = about half
+   * the triangles, 2 = a few thousand (far away / small viewport). The game calls it before drawing each
+   * viewport, using the distance from that camera. Only geometry and materials are swapped; the poses
+   * and animation stay on the same objects.
+   */
+  setLod(tier: 0 | 1 | 2): void;
+}
+
+/** Which build each LOD tier uses, for a kart built at the given detail. */
+const LOD_CHAIN: Record<KartDetail, [KartDetail, KartDetail, KartDetail]> = {
+  high: ['high', 'mid', 'far'],
+  mid: ['mid', 'mid', 'far'],
+  low: ['low', 'low', 'far'],
+  far: ['far', 'far', 'far'],
+};
+const EMPTY_GEOMETRY = new THREE.BufferGeometry();
+
+/** Meshes of a model in a stable order, keyed by name + occurrence (the same builder makes the same names at every detail). */
+function meshesByKey(model: KartModel): Map<string, THREE.Mesh> {
+  const out = new Map<string, THREE.Mesh>();
+  const seen = new Map<string, number>();
+  model.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const n = seen.get(m.name) ?? 0;
+    seen.set(m.name, n + 1);
+    out.set(`${m.name}#${n}`, m);
+  });
+  return out;
 }
 
 // ---------------------------------------------------------------------------
 // Quality level (Low = fewer segments, no clear coat)
 // ---------------------------------------------------------------------------
 
-export type KartDetail = 'high' | 'low';
+/**
+ * Levels of detail of a kart. Each is a separate (shared, cached) set of geometry:
+ *  high  full smooth model with clear-coat paint (High preset, the kart the camera follows)
+ *  mid   about a third of the triangles, plain paint (Medium preset)
+ *  low   about a fifth (Low preset; other players' karts a medium distance away)
+ *  far   a few thousand triangles: karts far from a camera, or in 4-way split-screen
+ */
+export type KartDetail = 'high' | 'mid' | 'low' | 'far';
+/** Segment-count multiplier used while building each level (see `withDetail` in kart/geo.ts). */
+const DETAIL_FACTOR: Record<KartDetail, number> = { high: 0.8, mid: 0.4, low: 0.28, far: 0.14 };
 let currentDetail: KartDetail = 'high';
 
 /** Choose the level of detail used by karts built from now on (call it when the quality preset changes, before building karts). */
@@ -109,11 +148,12 @@ interface StyleAssets {
 
 const styleCache = new Map<string, StyleAssets>();
 
-function getStyleAssets(style: number, high: boolean): StyleAssets {
-  const key = `${style}|${high ? 1 : 0}`;
+function getStyleAssets(style: number, detail: KartDetail): StyleAssets {
+  const high = detail === 'high';
+  const key = `${style}|${detail}`;
   let a = styleCache.get(key);
   if (!a) {
-    a = withDetail(high ? 0.8 : 0.5, () => {
+    a = withDetail(DETAIL_FACTOR[detail], () => {
       const b = new PartBuilder();
       const layout = STYLE_BUILDERS[style](b, high);
       return {
@@ -135,11 +175,11 @@ function getStyleAssets(style: number, high: boolean): StyleAssets {
 
 const driverCache = new Map<string, DriverGeometries>();
 
-function getDriverGeometries(character: number, high: boolean): DriverGeometries {
-  const key = `${character}|${high ? 1 : 0}`;
+function getDriverGeometries(character: number, detail: KartDetail): DriverGeometries {
+  const key = `${character}|${detail}`;
   let g = driverCache.get(key);
   if (!g) {
-    g = withDetail(high ? 0.8 : 0.5, () => buildDriverGeometries(CHARACTERS[character].look));
+    g = withDetail(DETAIL_FACTOR[detail], () => buildDriverGeometries(CHARACTERS[character].look), false);
     driverCache.set(key, g);
   }
   return g;
@@ -147,9 +187,8 @@ function getDriverGeometries(character: number, high: boolean): DriverGeometries
 
 /** Triangle count of one kart (body + 4 wheels + steering wheel + driver), for the preview page and tests. */
 export function kartTriangleCount(style: number, character: number, detail: KartDetail = currentDetail): number {
-  const high = detail === 'high';
-  const a = getStyleAssets(style, high);
-  const d = getDriverGeometries(character, high);
+  const a = getStyleAssets(style, detail);
+  const d = getDriverGeometries(character, detail);
   const tri = (g?: THREE.BufferGeometry) => (g ? (g.index ? g.index.count : g.getAttribute('position').count) / 3 : 0);
   let n = tri(a.body.paint) + tri(a.body.accent) + tri(a.body.detail) + tri(a.steering) + tri(d.torso) + tri(d.head) + 2 * tri(d.arm);
   n += 2 * tri(a.wheels[0]) + 2 * tri(a.wheels[2]);
@@ -171,12 +210,46 @@ export function buildKartModel(
   character: number = DEFAULT_LOADOUT.character,
   detail: KartDetail = currentDetail,
 ): KartModel {
+  const model = buildOneLevel(colorHex, style, character, detail);
+  // Cheaper builds of the same kart: we only keep their geometry and materials (shared and cached),
+  // and `setLod` swaps them onto the meshes of this model.
+  const chain = LOD_CHAIN[detail];
+  const byDetail = new Map<KartDetail, Map<string, THREE.Mesh>>();
+  for (const d of chain) {
+    if (d === detail || byDetail.has(d)) continue;
+    byDetail.set(d, meshesByKey(buildOneLevel(colorHex, style, character, d)));
+  }
+  const slots = [...meshesByKey(model)].map(([key, mesh]) => {
+    const pick = (d: KartDetail) => (d === detail ? mesh : byDetail.get(d)!.get(key));
+    return {
+      mesh,
+      geometry: chain.map((d) => pick(d)?.geometry ?? EMPTY_GEOMETRY),
+      material: chain.map((d) => pick(d)?.material ?? mesh.material),
+    };
+  });
+  let tier = 0;
+  model.setLod = (t) => {
+    if (t === tier) return;
+    tier = t;
+    for (const s of slots) {
+      s.mesh.geometry = s.geometry[t];
+      s.mesh.material = s.material[t];
+    }
+  };
+  return model;
+}
+
+function buildOneLevel(
+  colorHex: string,
+  style: number,
+  character: number,
+  detail: KartDetail,
+): KartModel {
   const wrap = (v: number, n: number) => ((Math.trunc(v) % n) + n) % n;
   style = wrap(style, STYLE_BUILDERS.length);
   character = wrap(character, CHARACTERS.length);
-  const high = detail === 'high';
-  const assets = getStyleAssets(style, high);
-  const paint = getPaintMaterials(colorHex, high);
+  const assets = getStyleAssets(style, detail);
+  const paint = getPaintMaterials(colorHex, detail === 'high');
   const detailMat = getDetailMaterial();
 
   const root = new THREE.Group();
@@ -216,7 +289,7 @@ export function buildKartModel(
 
   // Driver: root at the hip, scaled by the character; torso > head + arms.
   const look = CHARACTERS[character].look;
-  const dg = getDriverGeometries(character, high);
+  const dg = getDriverGeometries(character, detail);
   const driver = new THREE.Group();
   driver.name = 'driver';
   driver.position.set(...assets.layout.hip);
@@ -267,6 +340,7 @@ export function buildKartModel(
     root, body, frontPivots, wheels, wheelRadii, exhausts, rearWheelContacts, style,
     character, driver, torso, head, arms, steeringWheel,
     wheelSpec: { pos: new THREE.Vector3(...wheel.pos), tilt: wheel.tilt, handRadius: 0.15 },
+    setLod: () => {},
   };
 }
 

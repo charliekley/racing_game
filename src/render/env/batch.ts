@@ -15,8 +15,13 @@
  */
 import * as THREE from 'three';
 
-/** Shared quality hint: set by env meshes from the renderer (shadows off = the Low preset). */
-export const envQuality = { low: false };
+/**
+ * Shared quality hints.
+ *  low: set by env meshes from the renderer (shadows off = the Low preset).
+ *  lod: multiplier on every scenery level-of-detail distance. The game sets it from the preset
+ *       and the number of split-screen viewports (a quarter-size view needs less detail).
+ */
+export const envQuality = { low: false, lod: 1 };
 
 interface Chunk {
   ix: number;
@@ -149,7 +154,7 @@ export class ChunkLod extends THREE.LOD {
   }
 
   override update(camera: THREE.Camera): void {
-    const scale = envQuality.low ? 0.55 : 1;
+    const scale = envQuality.lod;
     const d = _v.setFromMatrixPosition(this.matrixWorld).distanceTo(_cam.setFromMatrixPosition(camera.matrixWorld)) / ((camera as THREE.PerspectiveCamera).zoom || 1);
     const useNear = d < this.switchDistance * scale;
     const [near, far] = [this.levels[0].object, this.levels[1].object];

@@ -24,9 +24,10 @@ import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
 import { concreteMaps, grassMaps, rockMaps } from './textures';
 import { fbm3, noise3, ridged3, smoothstep } from './env/noise';
 import { fluidMaterial, discGeo, gridPlane } from './env/fluids';
-import { groundMaterial, watchQuality } from './env/materials';
+import { groundMaterial } from './env/materials';
 import { latheGeo, merge, paint, scratch, tubeGeo, matrix } from './env/geo';
 import { boxPart } from './env/parts';
+import { tiledGroup } from './env/tiles';
 import { styleFor } from './scenery';
 import { biomeFor } from '../track/sceneryPlan';
 
@@ -38,6 +39,9 @@ const PIT_DEPTH = 3.2;
 const GRID_REACH = 900;
 const MAX_INNER_CELLS = 230;
 const MIN_CELL = 2.6;
+/** Edge length (m) of the culling tiles the ground and the rock walls are cut into (see env/tiles.ts). */
+const TERRAIN_TILE = 300;
+const WALL_TILE = 200;
 
 interface V3 {
   x: number;
@@ -217,10 +221,10 @@ export class TerrainView {
     this.buildBridges();
     if (!walls.isEmpty) {
       const mesh = walls.build(groundMaterial({ maps: rockMaps(), strata: 0.9, mottle: 0.4, side: THREE.DoubleSide }));
-      mesh.castShadow = true;
-      this.group.add(mesh);
       this.stats.faceTriangles = (mesh.geometry.getIndex()!.count / 3) | 0;
-      this.stats.meshes++;
+      const tiles = tiledGroup(mesh.geometry, mesh.material as THREE.Material, WALL_TILE, true, true);
+      this.group.add(tiles);
+      this.stats.meshes += tiles.children.length;
     }
     this.buildFloorAndLakes();
   }
@@ -455,12 +459,12 @@ export class TerrainView {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(index);
     geo.computeVertexNormals(); // shared vertices -> smooth shading, no facets
-    const mesh = new THREE.Mesh(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }));
-    mesh.receiveShadow = true;
-    watchQuality(mesh);
-    this.group.add(mesh);
+    // One mesh per ~300 m tile instead of one huge mesh: tiles outside the camera view (or outside the
+    // shadow box) are skipped, which cuts the terrain triangles per view to a fraction.
+    const tiles = tiledGroup(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }), TERRAIN_TILE, false, true);
+    this.group.add(tiles);
     this.stats.terrainTriangles = index.length / 3;
-    this.stats.meshes++;
+    this.stats.meshes += tiles.children.length;
   }
 
   // -------------------------------------------------------------------------

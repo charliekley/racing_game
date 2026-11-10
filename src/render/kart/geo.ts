@@ -27,13 +27,18 @@ export type V3 = readonly [number, number, number];
  * Set it around a build with `withDetail`.
  */
 let DETAIL = 1;
-export function withDetail<T>(level: number, fn: () => T): T {
+/** Drop tiny parts in cheap builds (see PartBuilder.push); off for the driver, whose small parts are the face. */
+let PRUNE = true;
+export function withDetail<T>(level: number, fn: () => T, pruneTinyParts = true): T {
   const old = DETAIL;
+  const oldPrune = PRUNE;
   DETAIL = level;
+  PRUNE = pruneTinyParts;
   try {
     return fn();
   } finally {
     DETAIL = old;
+    PRUNE = oldPrune;
   }
 }
 const D = (n: number, min = 6) => Math.max(min, Math.round(n * DETAIL));
@@ -94,6 +99,7 @@ function flipWinding(g: THREE.BufferGeometry): void {
 }
 
 const _col = new THREE.Color();
+const _size = new THREE.Vector3();
 
 export class PartBuilder {
   private parts: Record<Bucket, THREE.BufferGeometry[]> = { paint: [], accent: [], detail: [] };
@@ -154,6 +160,17 @@ export class PartBuilder {
     if (geo.index) g.setIndex(geo.index.clone());
     else g.setIndex(Array.from({ length: geo.getAttribute('position').count }, (_, i) => i)); // non-indexed source (rounded boxes)
     g.applyMatrix4(m);
+    // Cheaper builds drop tiny parts (wheel nuts, bolts, eye pupils...): they are invisible at the distances
+    // where those builds are used, but each one costs triangles.
+    const minPart = DETAIL >= 0.6 ? 0 : DETAIL >= 0.3 ? 0.05 : DETAIL >= 0.2 ? 0.12 : 0.3;
+    if (PRUNE && minPart > 0) {
+      g.computeBoundingBox();
+      g.boundingBox!.getSize(_size);
+      if (Math.max(_size.x, _size.y, _size.z) < minPart) {
+        g.dispose();
+        return;
+      }
+    }
     if (m.determinant() < 0) flipWinding(g);
     if (bucket === 'detail') {
       const n = g.getAttribute('position').count;

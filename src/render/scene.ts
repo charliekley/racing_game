@@ -35,18 +35,31 @@ export interface QualitySettings {
   post: boolean;
   /** Number of blur levels in the bloom (each is half the size of the previous; 0 = no bloom). */
   bloomLevels: number;
-  /** MSAA samples of the HDR render target (anti-aliasing; 0 = none). */
+  /** MSAA samples of the HDR render target (hardware anti-aliasing; 0 = none). Costly on integrated GPUs. */
   msaa: number;
+  /** FXAA: a cheap edge-smoothing pass on the finished picture. Used instead of MSAA on Medium/Low. */
+  fxaa: boolean;
   /** Re-render the shadow map for every split-screen view when the karts are far apart. */
   shadowPerView: boolean;
+  /** Half-width (m) of the shadow box around each view in split-screen (smaller = sharper but shorter shadows). */
+  shadowRadius: number;
+  /** Multiplies the distances at which scenery switches to its cheap model (and, scaled again, when it is skipped). */
+  lodScale: number;
   /** Edge length of the sky cube used for environment lighting. */
   envSize: number;
 }
 
+/**
+ * The three presets. Rough cost on an integrated GPU (Intel Iris Plus, 4-way split):
+ *  High    strong GPUs: 4x MSAA, big shadow map, full bloom, all scenery detail.
+ *  Medium  integrated GPUs: FXAA instead of MSAA, 1024 shadow map with a tighter box, 3-level bloom,
+ *          70% ground detail and shorter scenery LOD distances in split-screen.
+ *  Low     fallback: no shadows or clouds, 75% render scale, FXAA, no bloom, little ground detail.
+ */
 export const QUALITY_PRESETS: QualitySettings[] = [
-  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, msaa: 4, shadowPerView: true, envSize: 256 },
-  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 4, msaa: 2, shadowPerView: true, envSize: 128 },
-  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: false, bloomLevels: 0, msaa: 0, shadowPerView: false, envSize: 64 },
+  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, lodScale: 1, envSize: 256 },
+  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 42, lodScale: 0.8, envSize: 128 },
+  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, lodScale: 0.55, envSize: 64 },
 ];
 export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 
@@ -54,7 +67,9 @@ export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 export const TONE_MAPPING = THREE.ACESFilmicToneMapping;
 
 export function createRenderer(parent: HTMLElement, q: QualitySettings = DEFAULT_QUALITY): THREE.WebGLRenderer {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  // `antialias: false`: the canvas itself is never multisampled (that would cost memory and a resolve every
+  // frame for nothing); anti-aliasing happens in the post pipeline (MSAA target on High, FXAA otherwise).
+  const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(parent.clientWidth, parent.clientHeight);
   // Output as sRGB (the monitor's colour space) and tone map the HDR result.
   // (With post-processing on, scene rendering goes into a linear float target and the
@@ -73,8 +88,9 @@ export function createRenderer(parent: HTMLElement, q: QualitySettings = DEFAULT
   return renderer;
 }
 
-export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySettings): void {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio) * q.renderScale);
+/** `dynamicScale` (0.6..1) is the adaptive-quality multiplier on top of the preset's own render scale. */
+export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySettings, dynamicScale = 1): void {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio) * q.renderScale * dynamicScale);
   renderer.shadowMap.enabled = q.shadows;
   renderer.shadowMap.needsUpdate = true;
 }

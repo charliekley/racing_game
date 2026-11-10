@@ -22,7 +22,7 @@ import { ChaseCamera, newCameraState } from '../render/chaseCamera';
 import { GameFx } from '../render/fx/gameFx';
 import { Flyover, introWanted } from '../render/fx/intro';
 import { buildResults, type ResultRow } from './resultsView';
-import { setKartDetail } from '../render/kartModel';
+import { setKartDetail, type KartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
@@ -39,6 +39,8 @@ import {
   type QualitySettings,
 } from '../render/scene';
 import { RenderPipeline } from '../render/post/pipeline';
+import { AdaptiveQuality } from '../render/adaptive';
+import { envQuality } from '../render/env/batch';
 import { TrackView } from '../render/trackView';
 import type { PlayerManager } from './playerManager';
 import { ViewHud } from './viewHud';
@@ -83,6 +85,8 @@ export interface GameCallbacks {
   /** Results screen buttons (the keyboard keys are handled in main.ts). */
   onRaceAgain?(): void;
   onChangeTrack?(): void;
+  /** Adaptive quality: frames stay too slow even at the lowest render scale, so main.ts should drop one preset. */
+  onQualityStepDown?(): void;
 }
 
 /** Everything that belongs to one player's screen area. */
@@ -99,6 +103,8 @@ export class Game {
   /** Render pipeline (HDR target, bloom, grade); see src/render/post/pipeline.ts. */
   private pipeline: RenderPipeline;
   private quality: QualitySettings;
+  /** Watches real frame times and lowers the render scale (then the preset) to hold 60 fps. */
+  readonly adaptive: AdaptiveQuality;
   private scene: THREE.Scene;
   private sun: THREE.DirectionalLight;
   private track: Track;
@@ -143,7 +149,7 @@ export class Game {
     private readonly callbacks: GameCallbacks,
     quality: QualitySettings,
   ) {
-    setKartDetail(quality.name === 'Low' ? 'low' : 'high'); // kart-models: cheaper kart meshes on Low (applies to karts built from now on)
+    setKartDetail(kartDetailFor(quality)); // cheaper kart meshes on Medium/Low (applies to karts built from now on)
     this.renderer = createRenderer(container, quality);
     this.quality = quality;
     this.track = new Track(TRACKS[0]);
@@ -153,6 +159,10 @@ export class Game {
     // Sky environment map for reflections + render pipeline (post-processing).
     applyTheme(this.scene, this.track.def.theme, this.renderer, quality.envSize);
     this.pipeline = new RenderPipeline(this.renderer, quality, this.track.def.theme);
+    this.adaptive = new AdaptiveQuality({
+      onScale: (scale) => this.applyRenderScale(scale),
+      onStepDown: () => this.callbacks.onQualityStepDown?.(),
+    });
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
     this.itemPool = new ItemMeshPool(this.scene);
@@ -203,15 +213,55 @@ export class Game {
   }
 
   setQuality(q: QualitySettings): void {
-    setKartDetail(q.name === 'Low' ? 'low' : 'high'); // kart-models: used by karts built from now on
+    setKartDetail(kartDetailFor(q)); // used by karts built from now on
     const envChanged = q.envSize !== this.quality.envSize;
     this.quality = q;
+    this.adaptive.reset(1); // a new preset starts at full render scale and is measured afresh
     applyRendererQuality(this.renderer, q);
+    this.applyViewScaling();
     this.pipeline.setQuality(q);
     if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
     applySceneQuality(this.scene, this.sun, q);
     this.fx.setQuality(q);
     this.resize();
+  }
+
+  /** Adaptive quality asks for a different render scale (0.6..1 times the preset's own). */
+  private applyRenderScale(scale: number): void {
+    applyRendererQuality(this.renderer, this.quality, scale);
+    this.resize();
+  }
+
+  /**
+   * Scenery level-of-detail distances shrink with the preset and with the number of viewports:
+   * in 4-way split each view is a quarter of the screen, so far props are only a few pixels.
+   */
+  private applyViewScaling(): void {
+    const n = this.views.length;
+    envQuality.lod = this.quality.lodScale * (n >= 3 ? 0.75 : n === 2 ? 0.9 : 1);
+  }
+
+  /**
+   * Before drawing viewport `view`: give every kart the model detail that suits its distance from this
+   * camera. The kart you follow is always full detail; other karts drop to the reduced and then the far
+   * model sooner the smaller the viewport is (4-way split: beyond ~9 m).
+   */
+  private applyKartLods(view: PlayerView): void {
+    const n = this.views.length;
+    const near = n === 1 ? 16 : n === 2 ? 10 : 0; // full detail up to here
+    const mid = n === 1 ? 40 : n === 2 ? 28 : 9; // reduced detail up to here, far model beyond
+    const cam = view.chase.camera.position;
+    for (const other of this.views) {
+      if (other === view) {
+        other.kart.setLod(0);
+        continue;
+      }
+      const dx = other.kart.pose.x - cam.x;
+      const dy = other.kart.pose.y - cam.y;
+      const dz = other.kart.pose.z - cam.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      other.kart.setLod(d2 < near * near ? 0 : d2 < mid * mid ? 1 : 2);
+    }
   }
 
   /** Start a new race with a kart and a viewport for each slot. */
@@ -253,6 +303,7 @@ export class Game {
       return { slot, kart: new KartView(this.scene, color, loadouts.get(slot)), chase, hud, rect: layout.views[i] };
     });
     this.minimap.place(layout.minimap);
+    this.applyViewScaling();
 
     // Phones draw a minimap: send them the track outline (about 12 m between points) plus the rich map data, once.
     const pts: number[] = [];
@@ -268,6 +319,7 @@ export class Game {
     if (introWanted(location.search)) this.beginIntro();
 
     this.loop.reset();
+    this.adaptive.reset(this.adaptive.scale); // shader compiles and texture uploads at race start must not count as slowness
     this.resultsShown = false;
     this.doneAt = null;
     this.lastCountdown = 0;
@@ -293,6 +345,7 @@ export class Game {
 
   /** Called every animation frame while a race is on screen. */
   frame(dt: number): void {
+    this.adaptive.frame(performance.now(), !this.resultsShown);
     this.elapsed += dt;
     // While the intro flyover plays the simulation is paused (karts wait on the grid).
     if (this.flyover.tick(dt)) this.endIntro();
@@ -400,9 +453,10 @@ export class Game {
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
         const fwd = v.chase.camera.getWorldDirection(new THREE.Vector3());
-        followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, 55);
+        followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, this.quality.shadowRadius);
         this.renderer.shadowMap.needsUpdate = true;
       }
+      this.applyKartLods(v);
       this.fx.beginView(v.chase.camera, r.h * this.renderer.getPixelRatio()); // particle sizes depend on camera + viewport
       this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 
@@ -756,6 +810,11 @@ export class Game {
     this.renderer.setSize(w, h);
     this.pipeline.resize();
   }
+}
+
+/** Which kart model detail goes with a quality preset. */
+function kartDetailFor(q: QualitySettings): KartDetail {
+  return q.name === 'High' ? 'high' : q.name === 'Medium' ? 'mid' : 'low';
 }
 
 /**

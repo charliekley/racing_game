@@ -73,6 +73,11 @@ export class KartView {
   /** Interpolated pose from the last `update` (the camera reads this). */
   readonly pose: InterpolatedKart = { x: 0, y: 0, z: 0, heading: 0, speed: 0, yawRate: 0 };
 
+  /** Switch to a cheaper model (0 = full, 1 = reduced, 2 = far): see KartModel.setLod. */
+  setLod(tier: 0 | 1 | 2): void {
+    this.model.setLod(tier);
+  }
+
   constructor(scene: THREE.Scene, colorHex: string, loadout: Loadout = DEFAULT_LOADOUT) {
     this.model = buildKartModel(colorHex, loadout.kart, loadout.character);
     this.model.root.rotation.order = 'YXZ'; // yaw first, then pitch/roll in the kart's own frame
