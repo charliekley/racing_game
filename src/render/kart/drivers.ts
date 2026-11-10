@@ -119,7 +119,7 @@ function baseBody(p: Piece, o: { body: string; belly?: string; pants?: string; s
   // Torso egg: wider at the bottom.
   p.e([0, 0.22, 0], [0.2 * w, 0.25, 0.19 * w], o.body);
   p.e([0, 0.1, 0.0], [0.22 * w * rd, 0.16, 0.2 * w * rd], o.body);
-  if (o.belly) p.e([0, 0.2, 0.1 * w], [0.14 * w, 0.17, 0.1], o.belly);
+  if (o.belly) p.e([0, 0.2, 0.12 * w], [0.14 * w, 0.17, 0.105], o.belly);
   // Legs: thighs forward, shoes at the pedals.
   const legColor = o.pants ?? o.body;
   for (const sx of [1, -1]) {

@@ -135,7 +135,7 @@ export class PartBuilder {
 
   /** A constant-radius pipe through `points` with rounded ends. */
   pipe(bucket: Bucket, points: V3[], radius: number, color?: string, surf?: Surf, opts: { pair?: boolean; rad?: number; segsPerPoint?: number; closed?: boolean } = {}): this {
-    const g = sweep(points, radius, Math.max(6, points.length * (opts.segsPerPoint ?? 4)), opts.rad ?? 8, !!opts.closed);
+    const g = sweep(points, radius, Math.max(6, points.length * (opts.segsPerPoint ?? 3)), opts.rad ?? 7, !!opts.closed);
     const cap = sphere(8, 6);
     const first = points[0];
     const last = points[points.length - 1];

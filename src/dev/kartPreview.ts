@@ -51,12 +51,14 @@ container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#cfeaff');
-scene.add(new THREE.HemisphereLight('#e4f2ff', '#5d7f3a', 1.6));
+const hemi = new THREE.HemisphereLight('#e4f2ff', '#5d7f3a', 1.6);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff3dc', 2.4);
 sun.position.set(8, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.bias = -0.0005;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
 scene.add(sun);
 scene.add(sun.target);
 
@@ -180,7 +182,7 @@ function applyCamPreset(keepControls: boolean): void {
   const target = new THREE.Vector3(0, targetY, 0);
   const fov = (camera.fov * Math.PI) / 180;
   const span = Math.max(w / camera.aspect, d, 3);
-  let dist = single ? (state.focus === 'driver' ? 2.8 : 5.6) : (span / 2 / Math.tan(fov / 2)) * 1.05 + 2;
+  let dist = single ? (state.focus === 'driver' ? 2.8 : 5.6) : (span / 2 / Math.tan(fov / 2)) * 0.8 + 1.5;
   if (state.dist > 0) dist = state.dist;
   const elev = state.cam === 'top' ? 1.35 : single ? 0.22 : 0.62;
   if (!keepControls || true) {
@@ -337,8 +339,9 @@ applyEnv();
 buildKarts();
 const clock = new THREE.Clock();
 let t = 0;
-renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
+/** One animation step (also callable from scripts: __preview.step(frames, dt)). */
+function frame(dtIn: number): void {
+  const dt = dtIn;
   t += dt;
   const inp = poseInput(state.pose, t, dt);
   for (const s of slots) {
@@ -355,9 +358,13 @@ renderer.setAnimationLoop(() => {
   const ext = Math.max(8, cols.length * COL_SPACING * 0.7, rows.length * ROW_SPACING * 0.7);
   Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: 50 });
   sun.shadow.camera.updateProjectionMatrix();
+  // With an environment map the sky already lights the karts, so turn the plain lights down.
+  hemi.intensity = state.env ? 0.5 : 1.6;
+  sun.intensity = state.env ? 1.4 : 2.4;
   renderer.render(scene, camera);
   placeLabels();
-});
+}
+renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
 
 // Tiny hook for scripted screenshots.
 (window as unknown as { __preview: unknown }).__preview = {
@@ -367,6 +374,10 @@ renderer.setAnimationLoop(() => {
   camera,
   controls,
   fit: () => applyCamPreset(false),
+  /** Advance the animation by `frames` steps of `dt` seconds (the loop is paused when the tab is hidden). */
+  step: (frames: number, dt = 1 / 60) => {
+    for (let i = 0; i < frames; i++) frame(dt);
+  },
   /** Render one frame right now (the animation loop can be paused in a hidden tab). */
   render: () => {
     controls.update();

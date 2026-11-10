@@ -53,7 +53,7 @@ function tyreProfile(R: number, W: number, ri: number, kind: WheelSpec['kind'], 
   const y0 = -hw + cr;
   const y1 = hw - cr;
   if (kind === 'knob') {
-    for (let i = 0; i <= 6; i++) pts.push([R, y0 + ((y1 - y0) * i) / 6]);
+    for (let i = 0; i <= 4; i++) pts.push([R, y0 + ((y1 - y0) * i) / 4]);
   } else {
     const g = R * 0.016;
     const ys = [y0, y0 + (y1 - y0) * 0.3, y0 + (y1 - y0) * 0.36, y0 + (y1 - y0) * 0.64, y0 + (y1 - y0) * 0.7, y1];
@@ -107,7 +107,7 @@ export function addWheelParts(b: PartBuilder, spec: WheelSpec, _high: boolean, b
   const W = spec.width;
   const hw = W / 2;
   const ri = R * 0.6; // tyre inner radius = rim lip radius
-  const segs = spec.kind === 'knob' ? 40 : 30;
+  const segs = spec.kind === 'knob' ? 36 : 30;
   const flip = (t: Place): THREE.Matrix4 => {
     const m = new THREE.Matrix4();
     // Wheel parts are built around the Y axis; rotate so the axle runs along X (+Y -> +X).

@@ -181,7 +181,7 @@ const buildMudlark: StyleBuilder = (b, high) => {
   for (const x of [-0.26, 0, 0.26]) addLamp(b, [x, 1.9, 0.16], [0, 0.06, 1], 0.07, PAL.lampWhite);
   // Suspension: A-arms and coil springs over damper rods.
   const spring = (x: number, z: number) => {
-    b.pipe('detail', helix(0.055, 0.5, 0.74, 4.5, 9, x, z), 0.014, PAL.red, SURF.metal, { rad: 5, segsPerPoint: 2 });
+    b.pipe('detail', helix(0.055, 0.5, 0.74, 3.5, 7, x, z), 0.014, PAL.red, SURF.metal, { rad: 5, segsPerPoint: 2 });
     b.pipe('detail', [[x, 0.46, z], [x, 0.8, z]], 0.02, PAL.steel, SURF.metal, { rad: 6 });
   };
   for (const sx of [1, -1]) {
@@ -193,19 +193,19 @@ const buildMudlark: StyleBuilder = (b, high) => {
   addAxle(b, 0.36, 0.72, 0.68, 0.035);
   addAxle(b, 0.4, -0.7, 0.7, 0.04);
   // Spare tyre on the back and twin vertical exhaust stacks.
-  addWheelParts(b, { radius: 0.27, width: 0.14, rim: PAL.mustard, kind: 'knob', spokes: 6 }, high, new THREE.Matrix4().compose(new THREE.Vector3(0, 0.72, -0.96), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1)));
+  addWheelParts(b, { radius: 0.27, width: 0.14, rim: PAL.mustard, kind: 'retro', cap: PAL.mustard }, high, new THREE.Matrix4().compose(new THREE.Vector3(0, 0.72, -0.96), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1)));
   for (const sx of [1, -1]) {
     b.pipe('detail', [[0.42 * sx, 0.8, -0.82], [0.42 * sx, 1.15, -0.84], [0.41 * sx, 1.36, -0.9]], 0.05, PAL.chrome, SURF.chrome, { rad: 10 });
     addBell(b, [0.41 * sx, 1.38, -0.92], [0, 0.4, -1], 0.05);
   }
   // Seat.
-  b.part(roundBox(0.46, 0.09, 0.46, 0.04), { p: [0, 0.8, -0.28] }, PAL.seat, SURF.fur);
-  b.part(roundBox(0.46, 0.5, 0.12, 0.05), { p: [0, 1.04, -0.52], r: [-0.2, 0, 0] }, PAL.seat, SURF.fur);
+  b.part(roundBox(0.46, 0.09, 0.46, 0.04), { p: [0, 0.76, -0.28] }, PAL.seat, SURF.fur);
+  b.part(roundBox(0.46, 0.5, 0.12, 0.05), { p: [0, 1.0, -0.52], r: [-0.2, 0, 0] }, PAL.seat, SURF.fur);
   // Headlights in the hood and tail lights.
   addLamp(b, [0.28, 0.66, 1.03], [0.1, 0.1, 1], 0.07, PAL.lampWhite);
   addLamp(b, [-0.28, 0.66, 1.03], [-0.1, 0.1, 1], 0.07, PAL.lampWhite);
   b.partPair(roundBox(0.1, 0.07, 0.03, 0.014), { p: [0.2, 0.66, -0.92], r: [0, 0.2, 0] }, PAL.lampRed, SURF.glow);
-  const wheel: StyleLayout['wheel'] = { pos: [0, 1.1, 0.26], tilt: 0.8 };
+  const wheel: StyleLayout['wheel'] = { pos: [0, 1.05, 0.26], tilt: 0.8 };
   addColumn(b, wheel.pos, wheel.tilt, 0.34);
   return {
     front: { radius: 0.36, width: 0.3, rim: PAL.mustard, kind: 'knob', x: 0.8, z: 0.72 },
@@ -214,7 +214,7 @@ const buildMudlark: StyleBuilder = (b, high) => {
       { pos: [0.41, 1.4, -0.95], tilt: 1.15 },
       { pos: [-0.41, 1.4, -0.95], tilt: 1.15 },
     ],
-    hip: [0, 0.85, -0.28],
+    hip: [0, 0.8, -0.28],
     wheel,
   };
 };
