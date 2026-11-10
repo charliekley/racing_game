@@ -19,6 +19,7 @@ import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { PlayerManager } from './playerManager';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
+import { AudioEngine } from '../audio'; // AUDIO
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -27,6 +28,10 @@ const ROOM_STORAGE_KEY = 'tiltkart.hostRoom';
 const transport = new PeerHostTransport();
 const keys = new KeyboardState();
 const players = new PlayerManager(transport, keys);
+// AUDIO: starts silent, unlocks itself on the first key press / click / gamepad button. M = mute.
+const audio = new AudioEngine();
+audio.playMusic('lobby');
+if (import.meta.env.DEV) (window as unknown as { __audio?: AudioEngine }).__audio = audio; // debugging aid
 
 const netStatus = $('net-status');
 function setStatus(text: string, cls: 'ok' | 'warn' | 'bad' | '') {
@@ -179,6 +184,7 @@ function startDriving() {
     },
     quality,
   );
+  game.audio = audio; // AUDIO
   game.setTrack(track);
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
   // Practice aid: /host/?give=nova (or dash, slick, ricochet, seeker, random) = endless supply of that item.
@@ -196,6 +202,8 @@ function backToLobby() {
   if (!driving) return;
   driving = false;
   players.setPhase('lobby');
+  audio.stopKarts(); // AUDIO
+  audio.playMusic('lobby');
   gameEl.classList.add('hidden');
   $('app').classList.remove('hidden');
   lobbyView.render();

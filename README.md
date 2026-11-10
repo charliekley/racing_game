@@ -17,6 +17,20 @@ web page. There's no app to install. All names, art and sounds are original.
 
 ---
 
+## Sound
+
+All audio is generated in code with the Web Audio API (no sound files). It lives in `src/audio/`:
+engine loops per kart, about 35 one-shot effects, a looping tune per track (plus lobby and results),
+and a master limiter so four karts never clip. Browsers only allow sound after you interact, so it
+starts on your first key press, click or gamepad button.
+
+* **M** mutes (remembered on this computer), **[** and **]** lower/raise the music volume.
+* Which sound plays for which game event: `src/audio/mapping.ts`. The sounds themselves: `synth.ts`.
+  The tunes (key, tempo, notes as text patterns): `songs.ts`.
+* **Replace a sound with a real recording:** put the file (mp3, ogg or wav) in `public/sounds/`, then list it in
+  `src/audio/samples.ts`, for example `boostPad: 'sounds/boost.mp3'`. If it loads it is played instead of the
+  synth, otherwise the synth is used. The names you can use are the `SOUND_IDS` list in `mapping.ts`.
+
 ## 1. Running locally
 
 You need [Node.js](https://nodejs.org) 20+.
