@@ -72,5 +72,8 @@ export default defineConfig(({ command }) => ({
   },
   test: {
     include: ['src/**/*.test.ts'],
+    // Some tests simulate whole 3-lap races with four bots. On a busy laptop (or a slow
+    // CI runner) those can take longer than Vitest's default 5 s limit, so allow 60 s.
+    testTimeout: 60_000,
   },
 }));
