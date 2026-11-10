@@ -6,7 +6,7 @@
  * Deterministic: depends only on the world state.
  */
 import { Buttons, type ControlInput } from '../shared/protocol';
-import { KART } from './config';
+import { KART, type KartConfig } from './config';
 import type { KartState } from './kart';
 import type { Track } from './track';
 
@@ -36,7 +36,8 @@ export function botStyleFor(slot: number): BotStyle {
   return { pace: paces[slot % 4], lane: lanes[slot % 4], shortcutBias: shortcutBias[slot % 4] };
 }
 
-export function autopilot(k: KartState, track: Track, style: BotStyle): ControlInput {
+/** `c` is this kart's own physics (a bot in a faster kart aims for a higher speed). */
+export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartConfig = KART): ControlInput {
   let p = track.project(k.pos.x, k.pos.z, k.trackIndex);
   // Which road we steer along: (route, position on it). Normally where the kart is projected.
   let route = p.route;
@@ -97,7 +98,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle): ControlI
     const past = r.s1 - r.s0 + r.gap + 6; // stay on the gas through the ramp, the gap and the landing
     return d > -past && d < lookAhead;
   });
-  const target = jumpAhead ? Infinity : KART.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
+  const target = jumpAhead ? Infinity : c.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

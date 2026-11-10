@@ -55,4 +55,40 @@ describe('PlayerSlots', () => {
     expect(s.slots[0]!.ready).toBe(false);
     expect(s.slots[1]).toBeNull();
   });
+
+  describe('loadouts', () => {
+    it('start as the default and are sanitized when given', () => {
+      const s = new PlayerSlots();
+      const a = s.join(phone('a'), 'A', 0);
+      const b = s.join(phone('b'), 'B', 1, { character: 6, kart: 2 });
+      const c = s.join(phone('c'), 'C', 2, { character: 99, kart: -1 }); // garbage from the network
+      expect(a.ok && a.slot.loadout).toEqual({ character: 3, kart: 0 });
+      expect(b.ok && b.slot.loadout).toEqual({ character: 6, kart: 2 });
+      expect(c.ok && c.slot.loadout).toEqual({ character: 3, kart: 0 });
+    });
+
+    it('survive a reconnect and are shown in the lobby info', () => {
+      const s = new PlayerSlots();
+      const a = s.join(phone('a'), 'A', 0, { character: 1, kart: 3 });
+      if (!a.ok) throw new Error();
+      s.markDisconnected(a.slot.index);
+      const again = s.join(phone('a'), 'A', 0); // reconnect without a loadout in the hello
+      expect(again.ok && again.slot.loadout).toEqual({ character: 1, kart: 3 });
+      expect(s.lobbyInfo()[0].loadout).toEqual({ character: 1, kart: 3 });
+    });
+
+    it('can change between races but not during one', () => {
+      const s = new PlayerSlots();
+      const a = s.join(phone('a'), 'A', 0);
+      if (!a.ok) throw new Error();
+      s.setProfile(a.slot.index, 'A', 0, { character: 5, kart: 1 });
+      expect(s.slots[0]!.loadout).toEqual({ character: 5, kart: 1 });
+      s.phase = 'race';
+      s.setProfile(a.slot.index, 'A', 0, { character: 0, kart: 0 });
+      expect(s.setLoadout(0, { character: 0, kart: 0 })).toBe(false);
+      expect(s.slots[0]!.loadout).toEqual({ character: 5, kart: 1 });
+      s.phase = 'results';
+      expect(s.setLoadout(0, { character: 2, kart: 2 })).toBe(true);
+    });
+  });
 });

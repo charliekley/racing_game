@@ -102,7 +102,7 @@ export const cloudGarden: TrackDef = {
   // No trees: they would float in the sky next to the islands.
   scenery: { seed: 5, trees: 40, buildings: 0, openSky: true },
   // Fresh green islands, pale sandstone rock, blue sky fading to white cloud.
-  theme: { grass: '#7ccf5a', offroad: '#f0e2b4', sky: '#4aa8f0', horizon: '#f2f9ff' },
+  theme: { grass: '#7ccf5a', offroad: '#f0e2b4', sky: '#4aa8f0', horizon: '#f2f9ff', mood: 'bright' },
   terrain: {
     seed: 3,
     // One enormous bowl: about -100 m under the whole course, deeper in the middle.

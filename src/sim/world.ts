@@ -4,7 +4,9 @@
  * (lap done, wall hit, drift sparks, …) for the UI, audio and phone haptics.
  */
 import type { ControlInput } from '../shared/protocol';
-import { KART, SIM_DT } from './config';
+import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
+import { KART, SIM_DT, type KartConfig } from './config';
+import { kartConfigFor } from './classes';
 import { stepCannons, type CannonEvent } from './cannon';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import { Colliders } from './colliders';
@@ -50,6 +52,10 @@ export class World {
   items: ItemSystem | null = null;
   /** Solid scenery (trees, houses, grandstands…). Built from the scenery plan in startRace unless set before. */
   colliders: Colliders | null = null;
+  /** What each slot picked (character + kart body). Missing = the default loadout. */
+  readonly loadouts = new Map<number, Loadout>();
+  /** Per-slot physics numbers made from the loadout (cached in kartConfigFor). */
+  private readonly configs = new Map<number, KartConfig>();
   /** Where each respawning kart is being lowered to. */
   private respawnTargets = new Map<number, { x: number; y: number; z: number }>();
 
@@ -60,6 +66,23 @@ export class World {
     private readonly seed = 1234,
   ) {}
 
+  /** Set (or change) a slot's loadout. The default loadout is exactly the plain KART config. */
+  setLoadout(slot: number, loadout: Loadout | undefined): void {
+    if (!loadout) {
+      this.loadouts.delete(slot);
+      this.configs.delete(slot);
+      return;
+    }
+    const l = sanitizeLoadout(loadout);
+    this.loadouts.set(slot, l);
+    this.configs.set(slot, kartConfigFor(l));
+  }
+
+  /** The physics numbers of one kart (KART itself for slots without a loadout). */
+  configOf(slot: number): KartConfig {
+    return this.configs.get(slot) ?? KART;
+  }
+
   addKart(slot: number, spawn: SpawnPoint): void {
     const hit = this.ground.sample(spawn.x, spawn.z);
     const k = createKart(spawn.x, spawn.z, spawn.heading, hit?.height ?? 0);
@@ -68,15 +91,23 @@ export class World {
     this.prevKarts.set(slot, cloneKart(k));
   }
 
-  /** Put every slot on the starting grid and begin the countdown. */
-  startRace(slots: number[], laps: number): void {
+  /**
+   * Put every slot on the starting grid and begin the countdown.
+   * `loadouts` (optional) says which character + kart body each slot drives; slots missing
+   * from it get the default loadout, which behaves exactly like the original single kart.
+   */
+  startRace(slots: number[], laps: number, loadouts?: ReadonlyMap<number, Loadout>): void {
     if (!this.track) throw new Error('startRace needs a track');
+    this.loadouts.clear();
+    this.configs.clear();
+    for (const slot of slots) this.setLoadout(slot, loadouts?.get(slot) ?? DEFAULT_LOADOUT);
     this.karts.clear();
     this.prevKarts.clear();
     this.respawnTargets.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
+    this.items.configOf = (slot) => this.configOf(slot);
     // Solid scenery: same plan the renderer draws from, so what you see is what you hit.
     this.colliders ??= new Colliders(planScenery(this.track).colliders);
     this.items.setColliders(this.colliders);
@@ -95,16 +126,16 @@ export class World {
         this.lowerByCarrier(slot, kart);
         continue;
       }
-      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT)) events.push({ ...e, slot });
+      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT, this.configOf(slot))) events.push({ ...e, slot });
       if (kart.grounded && kart.surface === 'boost') {
         if (kart.boostTime < KART.boostPadTime * 0.5) events.push({ kind: 'boostPad', slot });
         applyBoost(kart, KART.boostPadTime);
       }
       if (this.track && !kart.flight) {
-        const impact = collideWalls(kart, this.track);
+        const impact = collideWalls(kart, this.track, this.configOf(slot));
         if (impact > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact });
         // Solid scenery bounces karts like walls do (and reports the same event for haptics/audio).
-        const bump = this.colliders?.collideKart(kart) ?? 0;
+        const bump = this.colliders?.collideKart(kart, this.configOf(slot)) ?? 0;
         if (bump > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact: bump });
         if (this.needsRespawn(kart)) {
           this.startRespawn(slot, kart);
@@ -124,7 +155,7 @@ export class World {
     if (!frozen) {
       // Karts being carried back or flying through a cannon don't bump into anything.
       const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0 && !k.flight));
-      events.push(...collideKarts(active));
+      events.push(...collideKarts(active, KART, (slot) => this.configOf(slot).mass));
     }
 
     // Items run while the race is on.

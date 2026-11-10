@@ -148,7 +148,11 @@ export interface TrackDef {
     openSky?: boolean;
   };
   /** Colors for this track's look. */
-  theme: { grass: string; offroad: string; sky: string; horizon: string };
+  /**
+   * `mood` (optional) picks the lighting preset in src/render/scene.ts (sun colour and height, exposure,
+   * bloom, colour grade, stars...). Default 'day'.
+   */
+  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' };
 
   // ---- v2 (all optional) ----
   terrain?: TerrainDef;

@@ -65,9 +65,14 @@ export function collideWalls(k: KartState, track: Track, c: KartConfig = KART): 
 
 /**
  * Push overlapping karts apart and exchange momentum along the contact
- * normal (equal masses). Returns events for haptics.
+ * normal. Returns events for haptics.
+ *
+ * `massOf(slot)` gives each kart's mass (default 1 for all). Like two billiard balls of
+ * different weight: the impulse is the same for both karts (Newton's 3rd law) but the velocity
+ * change is impulse / mass, so the lighter kart gets shoved more. With equal masses this is the
+ * plain "half each" split the game always had.
  */
-export function collideKarts(karts: Map<number, KartState>, c: KartConfig = KART): CollisionEvent[] {
+export function collideKarts(karts: Map<number, KartState>, c: KartConfig = KART, massOf: (slot: number) => number = () => 1): CollisionEvent[] {
   const events: CollisionEvent[] = [];
   const list = [...karts.entries()];
   const minDist = c.radius * 2;
@@ -87,19 +92,25 @@ export function collideKarts(karts: Map<number, KartState>, c: KartConfig = KART
         nx /= dist;
         nz /= dist;
       }
+      const ma = Math.max(0.05, massOf(sa));
+      const mb = Math.max(0.05, massOf(sb));
       const pen = minDist - dist;
-      a.pos.x -= (nx * pen) / 2;
-      a.pos.z -= (nz * pen) / 2;
-      b.pos.x += (nx * pen) / 2;
-      b.pos.z += (nz * pen) / 2;
+      // Separate the overlap too: the heavier kart gives way less.
+      const moveA = pen * (mb / (ma + mb));
+      const moveB = pen * (ma / (ma + mb));
+      a.pos.x -= nx * moveA;
+      a.pos.z -= nz * moveA;
+      b.pos.x += nx * moveB;
+      b.pos.z += nz * moveB;
       // Relative velocity along the normal; only resolve if approaching.
       const rel = (b.vel.x - a.vel.x) * nx + (b.vel.z - a.vel.z) * nz;
       if (rel < 0) {
-        const j2 = (-(1 + c.kartBounce) * rel) / 2;
-        a.vel.x -= nx * j2;
-        a.vel.z -= nz * j2;
-        b.vel.x += nx * j2;
-        b.vel.z += nz * j2;
+        // Impulse along the normal: j = -(1+e) * rel / (1/ma + 1/mb); equal masses -> -(1+e)*rel/2 each.
+        const j = (-(1 + c.kartBounce) * rel) / (1 / ma + 1 / mb);
+        a.vel.x -= (nx * j) / ma;
+        a.vel.z -= (nz * j) / ma;
+        b.vel.x += (nx * j) / mb;
+        b.vel.z += (nz * j) / mb;
         syncSpeed(a);
         syncSpeed(b);
         events.push({ kind: 'kart', slot: sa, impact: -rel }, { kind: 'kart', slot: sb, impact: -rel });

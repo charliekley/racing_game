@@ -98,7 +98,7 @@ export const switchbackSummit: TrackDef = {
   // Lots of trees: the plan clumps them in woods, which makes the forest section.
   scenery: { seed: 31, trees: 600, buildings: 0 },
   // Snow ground (pale -> snow biome: pines with snow caps), blue-grey packed snow verge, pale sky.
-  theme: { grass: '#eef3f8', offroad: '#aebccc', sky: '#9fc2e6', horizon: '#eef4fb' },
+  theme: { grass: '#eef3f8', offroad: '#aebccc', sky: '#9fc2e6', horizon: '#eef4fb', mood: 'snow' },
   terrain: {
     seed: 11,
     hills: { amplitude: 3, wavelength: 90 },
