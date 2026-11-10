@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { createKart } from '../sim/kart';
 import { KartView } from './kartView';
+import { GameFx } from './fx/gameFx';
+import { QUALITY_PRESETS } from './scene';
 
 function setup() {
   const scene = new THREE.Scene();
@@ -15,25 +17,19 @@ function setup() {
   return { scene, view, kart };
 }
 
-const visibleSparks = (scene: THREE.Scene) => {
-  const pts = scene.children.find((o) => o instanceof THREE.Points) as THREE.Points;
-  const pos = pts.geometry.getAttribute('position');
-  let n = 0;
-  for (let i = 0; i < pos.count; i++) if (pos.getY(i) > -100) n++;
-  return { n, color: (pts.material as THREE.PointsMaterial).color.getHexString() };
-};
-
 describe('KartView effects', () => {
-  it('emits blue sparks while drifting at tier 1, none when not drifting', () => {
+  it('feeds drift sparks to the shared particle system only while drifting', () => {
     const { scene, view, kart } = setup();
+    const fx = new GameFx(scene, QUALITY_PRESETS[0]);
     view.update(kart, kart, 1, 1 / 60);
-    expect(visibleSparks(scene).n).toBe(0);
+    fx.update(1 / 60);
+    expect(fx.glow.alive).toBe(0);
     kart.driftDir = 1;
     kart.driftTier = 1;
     for (let i = 0; i < 5; i++) view.update(kart, kart, 1, 1 / 60);
-    const s = visibleSparks(scene);
-    expect(s.n).toBeGreaterThan(0);
-    expect(s.color).toBe('45c8ff');
+    fx.update(1 / 60);
+    expect(fx.glow.alive).toBeGreaterThan(0);
+    fx.dispose();
   });
 
   it('shows boost flames only while boosting', () => {

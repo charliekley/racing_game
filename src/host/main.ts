@@ -7,6 +7,7 @@
  */
 import QRCode from 'qrcode';
 import './host.css';
+import './lobby.css'; // title screen + lobby polish (loaded after host.css so it overrides)
 import { PeerHostTransport } from '../shared/net/peerTransport';
 import { RoomTakenError } from '../shared/net/transport';
 import type { ItemDisplay } from '../shared/protocol';
@@ -17,6 +18,7 @@ import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
+import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
 import { AudioEngine } from '../audio'; // AUDIO
@@ -115,10 +117,13 @@ function loadQuality(): QualitySettings {
 }
 let quality = loadQuality();
 const qualityEl = $('quality');
+const qualityChip = $('chip-quality');
 qualityEl.textContent = quality.name;
+qualityChip.textContent = quality.name;
 function cycleQuality() {
   quality = QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length];
   qualityEl.textContent = quality.name;
+  qualityChip.textContent = quality.name;
   try {
     localStorage.setItem(QUALITY_KEY, quality.name);
   } catch {
@@ -151,15 +156,49 @@ function loadTrack(): TrackDef {
 let track = loadTrack();
 const trackEl = $('track');
 trackEl.textContent = track.name;
-function cycleTrack() {
-  track = TRACKS[(TRACKS.indexOf(track) + 1) % TRACKS.length];
+const trackPreview = new TrackPreview($<HTMLCanvasElement>('track-map'), $('track-name'), $('track-meta'));
+trackPreview.show(track);
+/** step = +1 next track, -1 previous. */
+function cycleTrack(step = 1) {
+  const i = Math.max(0, TRACKS.indexOf(track));
+  track = TRACKS[(i + step + TRACKS.length) % TRACKS.length];
   trackEl.textContent = track.name;
+  trackPreview.show(track);
   try {
     localStorage.setItem(TRACK_KEY, track.name);
   } catch {
     /* ignore */
   }
 }
+
+$('track-prev').addEventListener('click', () => cycleTrack(-1));
+$('track-next').addEventListener('click', () => cycleTrack(1));
+
+// --- Mute indicator (M in the lobby) -----------------------------------------
+// Remembers the choice in localStorage and announces it with a `tiltkart:mute`
+// event (detail = true when muted) so a sound system can listen for it.
+const MUTE_KEY = 'tiltkart.muted';
+let muted = false;
+try {
+  muted = localStorage.getItem(MUTE_KEY) === '1';
+} catch {
+  /* storage can be blocked */
+}
+function showMute() {
+  $('chip-mute').textContent = muted ? 'OFF' : 'ON';
+  $('chip-mute-wrap').classList.toggle('off', muted);
+}
+function toggleMute() {
+  muted = !muted;
+  try {
+    localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+  showMute();
+  window.dispatchEvent(new CustomEvent('tiltkart:mute', { detail: muted }));
+}
+showMute();
 
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
@@ -181,6 +220,9 @@ function startDriving() {
     {
       onGo: () => players.setPhase('race'),
       onResults: () => players.setPhase('results'),
+      // Results screen buttons (same as the Enter / Esc keys).
+      onRaceAgain: () => raceAgain(),
+      onChangeTrack: () => backToLobby(),
     },
     quality,
   );
@@ -239,6 +281,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
     if (e.code === 'KeyT') cycleTrack();
+    if (e.code === 'KeyM') toggleMute();
   }
 });
 

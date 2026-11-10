@@ -1,3 +1,5 @@
+@import './hud.css';
+@import './results.css';
 :root {
   --bg: #0f1226;
   --bg2: #1a1f3d;
@@ -199,97 +201,12 @@ body.no-debug .fps { display: none; }
 /* ---------- Driving view ---------- */
 .game { position: fixed; inset: 0; }
 .game canvas { display: block; width: 100%; height: 100%; }
-/* Split-screen HUDs: one .view-hud per player, positioned over its viewport. */
+/* The HUD, intro and results styles live in hud.css / results.css. */
 .hud-layer { position: absolute; inset: 0; pointer-events: none; }
-.view-hud {
-  position: absolute;
-  container-type: size; /* children size their fonts with cqh = % of this view's height */
-  color: #fff;
-  font-weight: 800;
-  font-style: italic;
-  text-shadow: 0 3px 6px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.6);
-}
-.view-hud.boosting { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.6), inset 0 0 6cqh rgba(255, 170, 0, 0.45); }
-.hud-pos { position: absolute; left: 3cqw; top: 3cqh; line-height: 1; }
-.pos-num { font-size: 15cqh; color: var(--slot-color, #fff); -webkit-text-stroke: 0.4cqh #fff; }
-.pos-suffix { font-size: 6cqh; vertical-align: top; }
-.hud-tag {
-  position: absolute;
-  left: 50%;
-  top: 2cqh;
-  transform: translateX(-50%);
-  font-size: 4.5cqh;
-  font-style: normal;
-  padding: 0.3cqh 1.2cqh;
-  border-radius: 1cqh;
-  background: var(--slot-color, #444);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  white-space: nowrap;
-}
-.view-hud.solo .hud-tag { display: none; }
-.hud-item {
-  position: absolute;
-  left: 50%;
-  top: 9cqh;
-  transform: translateX(-50%);
-  width: 12cqh;
-  height: 12cqh;
-  border-radius: 2.4cqh;
-  border: 0.6cqh solid rgba(255, 255, 255, 0.85);
-  background: rgba(0, 0, 0, 0.3);
-}
-.view-hud.solo .hud-item { top: 3cqh; }
-.hud-item canvas { width: 100%; height: 100%; display: block; }
-.hud-topright { position: absolute; right: 3cqw; top: 3cqh; text-align: right; }
-.hud-lap { font-size: 6.5cqh; }
-.hud-lap b { color: var(--slot-color, #fff); }
-.hud-time { font-size: 4.2cqh; font-style: normal; font-variant-numeric: tabular-nums; opacity: 0.95; }
-.hud-speed { position: absolute; left: 3cqw; bottom: 3cqh; font-size: 4cqh; }
-.hud-speed b { font-size: 10cqh; color: var(--slot-color, #fff); }
-.hud-center {
-  position: absolute;
-  left: 50%;
-  top: 42%;
-  transform: translate(-50%, -50%) scale(0.6);
-  font-size: 18cqh;
-  opacity: 0;
-  white-space: nowrap;
-  color: #ffd23f;
-  -webkit-text-stroke: 0.4cqh #7a2b00;
-  transition: opacity 0.25s, transform 0.25s;
-}
-.hud-center.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 .minimap { position: absolute; display: none; }
 .hud-help { position: absolute; right: 1vw; bottom: 0.6vh; font-size: 12px; color: #fff; opacity: 0.55; pointer-events: none; }
 
 .lobby-hint { text-align: center; color: var(--muted); font-size: clamp(14px, 2.2vh, 22px); }
-
-.results {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 12, 30, 0.55);
-  pointer-events: auto;
-}
-.results-box {
-  background: rgba(20, 24, 56, 0.92);
-  border-radius: 24px;
-  padding: 3vh 4vw;
-  min-width: min(720px, 90vw);
-  font-style: normal;
-  text-shadow: none;
-}
-.results-box h2 { margin: 0 0 2vh; font-size: clamp(28px, 6vh, 60px); font-style: italic; color: #ffd23f; text-align: center; }
-.results-box table { width: 100%; border-collapse: collapse; font-size: clamp(16px, 3.4vh, 34px); }
-.results-box th { text-align: left; color: var(--muted); font-size: 0.6em; font-weight: 600; padding-bottom: 1vh; }
-.results-box td { padding: 0.8vh 1vw; font-variant-numeric: tabular-nums; }
-.results-box td.place { font-style: italic; color: #ffd23f; width: 3em; }
-.results-box .dot { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.5em; vertical-align: middle; }
-.results-help { text-align: center; color: var(--muted); font-size: 15px; font-weight: 400; margin: 3vh 0 0; }
 
 /* Ink splat shown over a viewport while steering is flipped (Jumble). Insert it into the HUD BEFORE the text
    elements so it sits under them and above the 3D view. */
@@ -298,3 +215,4 @@ body.no-debug .fps { display: none; }
 /* Keep the HUD text above the ink splat (the overlay is added after the text in the DOM). */
 .view-hud > .ink-overlay { z-index: 0; }
 .view-hud > :not(.ink-overlay) { z-index: 1; }
+

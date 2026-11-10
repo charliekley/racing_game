@@ -191,4 +191,31 @@ export const CAMERA = {
   fovBase: 68,
   /** Extra FOV at top speed (deg) – boosts later push past this. */
   fovSpeedBonus: 8,
+
+  // --- Game-feel camera work (render only; tuned by eye) ---
+  /** Extra FOV (deg) and extra distance (m) while boosting: the "kick". */
+  fovBoost: 12,
+  boostPull: 1.2,
+  /** Extra FOV (deg) and distance (m) while airborne high above the ground (big jumps). */
+  fovAir: 9,
+  airPull: 1.4,
+  /** Only counts as a big jump when the kart is this far above the ground (m). */
+  airMinHeight: 1.6,
+  /** Cannon flight: camera drops back and widens for a dramatic shot. */
+  cannonFov: 16,
+  cannonPull: 5,
+  /** Camera heading smoothing (s): how far the view lags behind the kart's heading in corners. */
+  headingLag: 0.2,
+  headingLagDrift: 0.38,
+  /** Camera roll into corners (rad, at full yaw rate and speed). */
+  rollMax: 0.055,
+  /** Camera shake: how fast trauma fades (1/s) and the biggest shake (m). */
+  shakeDecay: 1.6,
+  shakeMax: 0.28,
+  /** Finish orbit: distance (m), height (m) and angular speed (rad/s) around the kart. */
+  orbitDistance: 6.5,
+  orbitHeight: 2.4,
+  orbitSpeed: 0.55,
+  /** Race intro flyover length (s). */
+  introSeconds: 3.2,
 } as const;

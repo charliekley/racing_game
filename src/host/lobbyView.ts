@@ -7,7 +7,7 @@
  * values every frame (`updateDebug`), which is cheap.
  */
 import { CHARACTERS, KART_BODIES, sanitizeLoadout } from '../shared/characters';
-import { colorHex } from '../shared/colors';
+import { KART_COLORS, colorHex } from '../shared/colors';
 import { BUTTON_NAMES, Buttons } from '../shared/protocol';
 import { MAX_PLAYERS, type PlayerManager } from './playerManager';
 import { KEY_CHARACTER, KEY_KART, KEY_SCHEMES } from './input/localInput';
@@ -74,6 +74,7 @@ export class LobbyView {
         <span class="slot-name"></span>
         <span class="slot-device">${device}</span>
       </div>
+      <div class="slot-kart"><span class="kart-swatch"></span><span class="kart-name">${KART_COLORS[slot.color % KART_COLORS.length].name}</span></div>
       <div class="slot-state ${stateClass}">${stateText}</div>
       <div class="slot-loadout"></div>
       <div class="debug">

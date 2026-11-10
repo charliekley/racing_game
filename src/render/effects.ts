@@ -4,85 +4,46 @@
  * Math.random is fine here.
  */
 import * as THREE from 'three';
+import { fxHub } from './fx/hub';
 
 /** Spark colors by drift tier: 0 = charging (white-ish dust), 1 = blue, 2 = orange. */
 export const SPARK_COLORS = ['#e8e8e8', '#45c8ff', '#ff8a1a'];
 
 /**
- * A small pool of particles (THREE.Points = one draw call) living in world
- * space, so sparks trail behind the kart instead of moving with it.
+ * Drift sparks / cannon trail emitter. It used to own its own THREE.Points; it
+ * now just forwards to the shared, pooled particle system in `fx/gameFx.ts`
+ * (via the hub), so every spark is a soft glowing sprite in ONE draw call and
+ * the colour/size follow the mini-turbo tier. With no GameFx registered
+ * (unit tests, the kart preview page) it does nothing.
  */
 export class SparkEmitter {
-  private readonly count = 64;
-  private readonly positions = new Float32Array(this.count * 3);
-  private readonly velocities = new Float32Array(this.count * 3);
-  private readonly life = new Float32Array(this.count);
-  private next = 0;
-  private readonly geo = new THREE.BufferGeometry();
-  private readonly mat = new THREE.PointsMaterial({
-    size: 0.22,
-    color: SPARK_COLORS[1],
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  readonly points: THREE.Points;
+  private tier = 1;
 
-  constructor(scene: THREE.Scene) {
-    this.positions.fill(-9999); // park unused particles far away
-    this.geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
-    this.points = new THREE.Points(this.geo, this.mat);
-    this.points.frustumCulled = false;
-    scene.add(this.points);
-  }
+  // `scene` is unused now but kept so callers (KartView, CannonView) need no changes.
+  constructor(_scene?: THREE.Scene) {}
 
   setTier(tier: number): void {
-    this.mat.color.set(SPARK_COLORS[tier] ?? SPARK_COLORS[0]);
-    this.mat.size = tier === 0 ? 0.14 : tier === 1 ? 0.22 : 0.3;
+    this.tier = tier;
   }
 
-  /** Emit `n` sparks at a world position, flying back/up/outward. */
+  /** Emit `n` sparks at a world position, thrown back/up/outward (`back` = unit vector behind the kart). */
   emit(at: THREE.Vector3, back: THREE.Vector3, n: number): void {
-    for (let i = 0; i < n; i++) {
-      const j = this.next;
-      this.next = (this.next + 1) % this.count;
-      this.positions.set([at.x, at.y, at.z], j * 3);
-      this.velocities.set(
-        [back.x * 3 + (Math.random() - 0.5) * 4, 1.5 + Math.random() * 3, back.z * 3 + (Math.random() - 0.5) * 4],
-        j * 3,
-      );
-      this.life[j] = 0.18 + Math.random() * 0.15;
-    }
+    fxHub.current?.legacySparks(at.x, at.y, at.z, back.x, back.z, n, this.tier);
   }
 
-  update(dt: number): void {
-    for (let i = 0; i < this.count; i++) {
-      if (this.life[i] <= 0) continue;
-      this.life[i] -= dt;
-      const k = i * 3;
-      if (this.life[i] <= 0) {
-        this.positions[k + 1] = -9999;
-        continue;
-      }
-      this.velocities[k + 1] -= 18 * dt; // gravity
-      this.positions[k] += this.velocities[k] * dt;
-      this.positions[k + 1] += this.velocities[k + 1] * dt;
-      this.positions[k + 2] += this.velocities[k + 2] * dt;
-    }
-    (this.geo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+  update(_dt: number): void {
+    /* the shared system updates itself */
   }
 
-  dispose(scene: THREE.Scene): void {
-    scene.remove(this.points);
-    this.geo.dispose();
-    this.mat.dispose();
+  dispose(_scene?: THREE.Scene): void {
+    /* nothing owned */
   }
 }
 
 // --- Boost flame -----------------------------------------------------------------
 const flameGeo = new THREE.ConeGeometry(0.11, 0.6, 8, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.3);
-const flameOuterMat = new THREE.MeshBasicMaterial({ color: '#ff9a2e', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
-const flameInnerMat = new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+const flameOuterMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff9a2e').multiplyScalar(3), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+const flameInnerMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff3b0').multiplyScalar(4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
 
 /** Two-layer flame pointing out of the back (-Z) of an exhaust. */
 export function buildFlame(): THREE.Group {

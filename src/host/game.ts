@@ -11,17 +11,20 @@ import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
 import type { ControlInput, HostToController } from '../shared/protocol';
 import { autopilot, botStyleFor } from '../sim/autopilot';
-import { ITEMS, SIM_DT } from '../sim/config';
+import { ITEMS, KART, SIM_DT } from '../sim/config';
 import { botItemButton } from '../sim/items/items';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
 import { TRACKS, type TrackDef } from '../track';
-import { ChaseCamera } from '../render/chaseCamera';
+import { ChaseCamera, newCameraState } from '../render/chaseCamera';
+import { GameFx } from '../render/fx/gameFx';
+import { Flyover, introWanted } from '../render/fx/intro';
+import { buildResults, type ResultRow } from './resultsView';
 import { setKartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
-import { DEFAULT_LOADOUT } from '../shared/characters';
+import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
@@ -77,6 +80,9 @@ export interface GameCallbacks {
   onGo(): void;
   /** Race over and the results screen is up. */
   onResults(): void;
+  /** Results screen buttons (the keyboard keys are handled in main.ts). */
+  onRaceAgain?(): void;
+  onChangeTrack?(): void;
 }
 
 /** Everything that belongs to one player's screen area. */
@@ -119,6 +125,15 @@ export class Game {
   /** AUDIO: set by main.ts; null = silent (every use below is optional-chained). */
   audio: AudioEngine | null = null;
   private itemPool: ItemMeshPool;
+  // --- Game feel (see src/render/fx/*) ---
+  /** All particles, skid marks and one-shot bursts. */
+  private fx: GameFx;
+  /** The pre-race camera flyover (skipped with ?drive unless ?intro=1). */
+  private flyover = new Flyover();
+  private camState = newCameraState();
+  private introTitle: HTMLElement | null = null;
+  /** Was each item box active last frame? (to spot the moment one is smashed) */
+  private boxWasActive: boolean[] = [];
   /** Launch cannons of the current track (rebuilt for every race). */
   private cannonView: CannonView | null = null;
 
@@ -142,6 +157,8 @@ export class Game {
     this.scene.add(this.trackView.group);
     this.itemPool = new ItemMeshPool(this.scene);
     applySceneQuality(this.scene, this.sun, quality);
+    this.fx = new GameFx(this.scene, quality);
+    this.fx.setTheme(this.track.def.theme.offroad);
     this.world = new World(this.track, this.track);
     this.loop = new FixedStepLoop(() => this.handleEvents(this.world.tick((slot) => this.inputFor(slot))), SIM_DT);
 
@@ -158,6 +175,10 @@ export class Game {
     container.appendChild(help);
 
     window.addEventListener('resize', () => this.resize());
+    // Space / Enter skips the intro flyover.
+    window.addEventListener('keydown', (e) => {
+      if (this.flyover.active && (e.code === 'Space' || e.code === 'Enter')) this.endIntro();
+    });
   }
 
   /**
@@ -167,6 +188,7 @@ export class Game {
   setTrack(def: TrackDef): void {
     if (def === this.track.def) return;
     applyTheme(this.scene, def.theme, this.renderer, this.quality.envSize); // sky, fog, lights and reflections follow the track
+    this.fx.setTheme(def.theme.offroad); // dust takes the off-road colour
     this.pipeline.setTheme(def.theme); // bloom / colour grade follow the track too
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
@@ -188,6 +210,7 @@ export class Game {
     this.pipeline.setQuality(q);
     if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
     applySceneQuality(this.scene, this.sun, q);
+    this.fx.setQuality(q);
     this.resize();
   }
 
@@ -238,6 +261,12 @@ export class Game {
     }
     this.players.setTrackMessage({ t: 'track', pts, w: this.track.def.width, map: this.minimap.data });
 
+    // Fresh effects, and the intro flyover (it holds the countdown back until it is over).
+    this.fx.reset();
+    this.boxWasActive = this.world.items!.boxes.map((b) => b.active);
+    this.endIntro();
+    if (introWanted(location.search)) this.beginIntro();
+
     this.loop.reset();
     this.resultsShown = false;
     this.doneAt = null;
@@ -265,7 +294,10 @@ export class Game {
   /** Called every animation frame while a race is on screen. */
   frame(dt: number): void {
     this.elapsed += dt;
-    const alpha = this.loop.advance(dt);
+    // While the intro flyover plays the simulation is paused (karts wait on the grid).
+    if (this.flyover.tick(dt)) this.endIntro();
+    const intro = this.flyover.active;
+    const alpha = intro ? 1 : this.loop.advance(dt);
     const race = this.world.race!;
     this.trackView.update(this.elapsed);
     this.cannonView?.update(this.elapsed, dt);
@@ -286,6 +318,12 @@ export class Game {
       if (b.active) animateItemBox(mesh, this.elapsed, i * 0.9);
     });
     this.itemPool.update(items.entityList, this.elapsed);
+    // Effects tied to items: a box smashes into confetti the moment it deactivates; shots leave trails.
+    items.boxes.forEach((b, i) => {
+      if (this.boxWasActive[i] && !b.active) this.fx.shatterBox(b.x, b.y + 1, b.z);
+      this.boxWasActive[i] = b.active;
+    });
+    for (const e of items.entityList) if (e.kind !== 'slick') this.fx.itemTrail(e.kind, e.x, e.y, e.z, e.heading);
 
     // Update every kart's interpolated pose, then each player's camera.
     let cx = 0;
@@ -295,6 +333,7 @@ export class Game {
       // A dragged shot shows behind the kart (a dragged Slick is its own world object).
       v.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' ? ist.held.id : null;
       v.kart.update(this.world.prevKarts.get(v.slot)!, this.world.karts.get(v.slot)!, alpha, dt, this.track);
+      this.fx.kartTick(v.slot, v.kart, this.world.karts.get(v.slot)!, dt); // smoke, sparks, skid marks, flames...
       cx += v.kart.pose.x;
       cz += v.kart.pose.z;
     }
@@ -308,14 +347,15 @@ export class Game {
     if (sharedShadow) followWithSun(this.sun, cx, cz, spread + 55);
 
     // Countdown numbers on every HUD.
-    if (race.phase === 'countdown') {
+    if (race.phase === 'countdown' && !intro) {
       const n = Math.max(1, Math.ceil(-race.time));
       if (n !== this.lastCountdown) {
         this.lastCountdown = n;
         this.audio?.countdown(n); // AUDIO: 3-2-1 beeps
-        for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed);
+        for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed, 'count');
       }
     }
+    this.fx.update(dt);
 
     // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
     if (this.audio) {
@@ -347,16 +387,25 @@ export class Game {
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
       const ground = (x: number, z: number) => this.track.sample(x, z, kart.trackIndex)?.height ?? null;
-      v.chase.update(v.kart.pose, dt, kart.flight ? 20 : kart.boostTime > 0 ? 10 : 0, ground); // wider view while flying out of a cannon
+      const racer = race.racers.get(v.slot)!;
+      // Tell the camera what the kart is doing: it kicks the FOV, widens in the air, orbits at the finish...
+      const cs = this.camState;
+      cs.boosting = kart.boostTime > 0;
+      cs.grounded = kart.grounded;
+      cs.flightPhase = kart.flight?.phase ?? null;
+      cs.finished = racer.finished;
+      cs.driftDir = kart.driftDir;
+      v.chase.update(v.kart.pose, dt, cs, ground);
+      if (intro) this.flyover.apply(v.chase.camera, this.track, v.slot);
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
         const fwd = v.chase.camera.getWorldDirection(new THREE.Vector3());
         followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, 55);
         this.renderer.shadowMap.needsUpdate = true;
       }
+      this.fx.beginView(v.chase.camera, r.h * this.renderer.getPixelRatio()); // particle sizes depend on camera + viewport
       this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 
-      const racer = race.racers.get(v.slot)!;
       v.hud.update(
         {
           position: racer.place ?? race.positionOf(v.slot),
@@ -367,6 +416,10 @@ export class Game {
           speedKmh: Math.round(Math.abs(v.kart.pose.speed) * 3.6),
           boosting: kart.boostTime > 0,
           item: items.displayFor(v.slot),
+          driftCharge: kart.driftCharge / KART.driftTier2,
+          driftTier: kart.driftTier,
+          drifting: kart.driftDir !== 0 && kart.grounded,
+          speedFx: v.chase.speedFx,
         },
         this.elapsed,
       );
@@ -406,6 +459,28 @@ export class Game {
     }
   }
 
+  /** Start the pre-race flyover: hide the HUD and show the track name. */
+  private beginIntro(): void {
+    this.flyover.start();
+    this.hudLayer.classList.add('intro');
+    const t = document.createElement('div');
+    t.className = 'intro-title';
+    t.textContent = this.track.def.name.toUpperCase(); // textContent: never treat strings as HTML
+    const sub = document.createElement('small');
+    sub.textContent = `${this.track.def.laps} laps · Space to skip`;
+    t.appendChild(sub);
+    this.hudLayer.appendChild(t);
+    this.introTitle = t;
+  }
+
+  /** Stop the flyover (it ended, or was skipped) so the countdown can begin. */
+  private endIntro(): void {
+    this.flyover.skip();
+    this.hudLayer.classList.remove('intro');
+    this.introTitle?.remove();
+    this.introTitle = null;
+  }
+
   private viewOf(slot: number): PlayerView | undefined {
     return this.views.find((v) => v.slot === slot);
   }
@@ -414,13 +489,120 @@ export class Game {
     this.viewOf(slot)?.hud.toast(text, seconds, this.elapsed);
   }
 
+  /** Camera shake for one player's view (0..1). */
+  private shake(slot: number, amount: number): void {
+    this.viewOf(slot)?.chase.addTrauma(amount);
+  }
+
+  /** Visual + camera reactions to a sim event (particles, shake, flashes). Haptics are handled in handleEvents. */
+  private reactFx(e: WorldEvent): void {
+    // Events that carry a player slot get the kart's position for their effects.
+    if (!('slot' in e)) {
+      if (e.kind === 'itemDestroyed') this.fx.itemPop(e.x, (this.track.sample(e.x, e.z)?.height ?? 0) + 0.2, e.z);
+      return;
+    }
+    const v = this.viewOf(e.slot);
+    if (!v) return;
+    const p = v.kart.pose;
+    const st = this.world.karts.get(e.slot);
+    switch (e.kind) {
+      case 'startBoost':
+        this.fx.boostBurst(p.x, p.y, p.z, p.heading);
+        v.hud.flash('boost');
+        this.shake(e.slot, 0.25);
+        break;
+      case 'boostPad':
+        this.fx.boostBurst(p.x, p.y, p.z, p.heading);
+        v.hud.flash('boost');
+        break;
+      case 'miniTurbo':
+        this.fx.miniTurbo(p.x, p.y, p.z, p.heading, e.tier);
+        v.hud.flash('boost');
+        this.shake(e.slot, 0.12 + 0.08 * e.tier);
+        break;
+      case 'trick':
+        this.fx.trickRing(p.x, p.y, p.z);
+        break;
+      case 'trickBoost':
+        this.fx.boostBurst(p.x, p.y, p.z, p.heading);
+        v.hud.flash('boost');
+        break;
+      case 'land':
+        // Little hops land softly; real jumps puff dust and shake the camera.
+        if (e.fallSpeed > 4) {
+          this.fx.landDust(p.x, p.y, p.z, e.fallSpeed, st?.surface === 'offroad');
+          this.shake(e.slot, Math.min(0.55, 0.1 + e.fallSpeed * 0.02));
+        }
+        break;
+      case 'wall':
+        this.fx.wallSparks(p.x, p.y, p.z, p.heading, e.impact);
+        this.shake(e.slot, Math.min(0.6, e.impact / 25));
+        break;
+      case 'kart':
+        if (e.impact > 2) {
+          this.fx.bump(p.x, p.y, p.z);
+          this.shake(e.slot, Math.min(0.35, e.impact / 25));
+        }
+        break;
+      case 'hit':
+        this.fx.hit(p.x, p.y, p.z);
+        v.hud.flash('hit');
+        this.shake(e.slot, 0.8);
+        break;
+      case 'blocked':
+        this.fx.itemPop(p.x, p.y + 0.4, p.z);
+        this.shake(e.slot, 0.2);
+        break;
+      case 'itemBox':
+        this.fx.pickup(p.x, p.y, p.z);
+        break;
+      case 'itemGet':
+        v.hud.flash('item');
+        break;
+      case 'itemUse':
+        if (e.id === 'dash') {
+          this.fx.boostBurst(p.x, p.y, p.z, p.heading);
+          v.hud.flash('boost');
+        } else if (e.id === 'nova') {
+          this.fx.pickup(p.x, p.y, p.z);
+        }
+        break;
+      case 'cannonFire':
+        // The muzzle blast itself is spawned by CannonView.fire(); here only the camera reacts.
+        this.shake(e.slot, 0.6);
+        break;
+      case 'cannonLand':
+        this.fx.landDust(p.x, p.y, p.z, 20, st?.surface === 'offroad');
+        this.shake(e.slot, 0.5);
+        break;
+      case 'respawn': {
+        // The kart already teleported to the carrier; the previous tick's pose is where it fell.
+        const prev = this.world.prevKarts.get(e.slot);
+        const open = this.track.def.scenery.openSky === true; // sky-island tracks have a void, not water
+        if (prev && !open) {
+          const road = this.track.project(prev.pos.x, prev.pos.z, prev.trackIndex);
+          this.fx.splash(prev.pos.x, road.y - 1.5, prev.pos.z);
+        }
+        break;
+      }
+      case 'finish':
+        this.fx.finishConfetti(p.x, p.y, p.z);
+        v.hud.flash('item');
+        break;
+    }
+  }
+
   private handleEvents(events: WorldEvent[]): void {
     // AUDIO: one call turns every event into sounds (mapping lives in src/audio/mapping.ts).
     this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.track.def.laps });
     for (const e of events) {
+      this.reactFx(e);
       switch (e.kind) {
         case 'go':
-          for (const v of this.views) v.hud.toast('GO!', 1, this.elapsed);
+          for (const v of this.views) {
+            v.hud.toast('GO!', 1, this.elapsed, 'go');
+            v.hud.flash('boost');
+          }
           this.callbacks.onGo();
           break;
         case 'startBoost':
@@ -442,14 +624,14 @@ export class Game {
           this.haptic(e.slot, HAPTICS.lap);
           // Only the final lap gets a banner; the lap counter covers the rest.
           if (e.lap + 1 === this.track.def.laps) {
-            this.toast(e.slot, 'FINAL LAP!', 1.5);
+            this.viewOf(e.slot)?.hud.showBanner('FINAL LAP!', 1.9, this.elapsed);
             if (!this.players.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
           }
           break;
         }
         case 'finish':
           this.haptic(e.slot, HAPTICS.finish);
-          this.toast(e.slot, `FINISH! ${e.place}${ordinalSuffix(e.place)}`, 30);
+          this.viewOf(e.slot)?.hud.toast(`FINISH! ${e.place}${ordinalSuffix(e.place)}`, 30, this.elapsed, 'finish');
           break;
         case 'done':
           this.doneAt = this.elapsed;
@@ -541,29 +723,30 @@ export class Game {
     const rows = race.standings().map((slot) => {
       const r = race.racers.get(slot)!;
       const p = this.players.slots.slots[slot];
-      const best = r.lapTimes.length ? Math.min(...r.lapTimes) : null;
-      return {
+      const best = r.lapTimes.length ? Math.min(...r.lapTimes) : Infinity;
+      const loadout = sanitizeLoadout(p?.loadout);
+      const row: ResultRow = {
         place: r.place ?? 0,
         name: p?.name ?? `P${slot + 1}`,
         color: colorHex(p?.color ?? slot),
+        loadoutText: `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`,
         time: r.finished ? formatTime(r.finishTime!) : 'DNF',
-        best: best === null ? '–' : formatTime(best),
+        best: Number.isFinite(best) ? formatTime(best) : '–',
+        fastest: false,
+        finished: r.finished,
       };
+      return { row, best };
     });
-    rows.sort((a, b) => a.place - b.place);
-    const box = document.createElement('div');
-    box.className = 'results-box';
-    box.innerHTML = `<h2>Results</h2><table><thead><tr><th></th><th>Racer</th><th>Time</th><th>Best lap</th></tr></thead><tbody></tbody></table>
-      <p class="results-help">Tap <b>RACE AGAIN</b> on your phones (or press <kbd>Enter</kbd>) · <kbd>Esc</kbd> back to lobby</p>`;
-    const tbody = box.querySelector('tbody')!;
-    for (const row of rows) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="place">${row.place}${ordinalSuffix(row.place)}</td><td class="name"><span class="dot"></span><span class="n"></span></td><td>${row.time}</td><td>${row.best}</td>`;
-      (tr.querySelector('.dot') as HTMLElement).style.background = row.color;
-      tr.querySelector('.n')!.textContent = row.name; // names come from phones: textContent only
-      tbody.appendChild(tr);
-    }
-    this.results.replaceChildren(box);
+    rows.sort((a, b) => a.row.place - b.row.place);
+    // Mark the single fastest lap of the race.
+    const fastest = Math.min(...rows.map((r) => r.best));
+    if (Number.isFinite(fastest)) rows.find((r) => r.best === fastest)!.row.fastest = true;
+    buildResults(
+      this.results,
+      rows.map((r) => r.row),
+      this.track.def.name,
+      { raceAgain: () => this.callbacks.onRaceAgain?.(), changeTrack: () => this.callbacks.onChangeTrack?.() },
+    );
     this.results.classList.remove('hidden');
   }
 

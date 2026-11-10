@@ -1,0 +1,290 @@
+/**
+ * Per-player HUD (see viewHud.ts). Every size uses cqh/cqw (percent of THIS
+ * viewport's height/width) so the same CSS works full-screen and in a
+ * quarter-screen split. Animations are keyframes started by adding a class.
+ */
+.view-hud {
+  position: absolute;
+  container-type: size; /* children size their fonts with cqh = % of this view's height */
+  color: #fff;
+  font-weight: 900;
+  font-style: italic;
+  font-family: 'Arial Black', 'Segoe UI Black', Impact, system-ui, sans-serif;
+  text-shadow: 0 0.4cqh 0.8cqh rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.6);
+  --ink: #1a1030;
+}
+/* Soft screen-edge glow while boosting. */
+.view-hud.boosting { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.6), inset 0 0 7cqh rgba(255, 150, 0, 0.5); }
+
+/* ---- Position: big outlined numeral that pops when it changes ---- */
+.hud-pos { position: absolute; left: 3cqw; top: 2cqh; line-height: 1; transform-origin: 20% 60%; }
+.pos-num {
+  font-size: 19cqh;
+  color: #fff;
+  -webkit-text-stroke: 1.3cqh var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 1cqh 0 var(--slot-color, #888), 0 1.6cqh 1.6cqh rgba(0, 0, 0, 0.5);
+}
+.pos-suffix {
+  font-size: 7cqh;
+  vertical-align: top;
+  margin-left: 0.4cqh;
+  -webkit-text-stroke: 0.7cqh var(--ink);
+  paint-order: stroke fill;
+}
+.hud-pos.pop-up { animation: pos-up 0.7s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.hud-pos.pop-down { animation: pos-down 0.6s ease-out; }
+.hud-pos.pop-up .pos-num { color: #9dffb8; }
+.hud-pos.pop-down .pos-num { color: #ff9a9a; }
+@keyframes pos-up { 0% { transform: scale(2) translateY(-6cqh); filter: brightness(2); } 100% { transform: none; filter: none; } }
+@keyframes pos-down { 0% { transform: scale(0.6); } 40% { transform: scale(1.25) translateX(-1cqw); } 70% { transform: translateX(1cqw); } 100% { transform: none; } }
+
+/* ---- Player tag (only shown when the screen is shared) ---- */
+.hud-tag {
+  position: absolute;
+  left: 50%;
+  top: 2cqh;
+  transform: translateX(-50%);
+  font-size: 4.2cqh;
+  font-style: normal;
+  padding: 0.3cqh 1.6cqh;
+  border-radius: 99cqh;
+  background: var(--slot-color, #444);
+  border: 0.45cqh solid rgba(255, 255, 255, 0.9);
+  text-shadow: 0 0.2cqh 0.4cqh rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  max-width: 40cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.view-hud.solo .hud-tag { display: none; }
+
+/* ---- Item slot ---- */
+.hud-item {
+  position: absolute;
+  left: 50%;
+  top: 10cqh;
+  transform: translateX(-50%);
+  width: 13cqh;
+  height: 13cqh;
+  border-radius: 3cqh;
+  border: 0.7cqh solid rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle at 50% 35%, rgba(70, 80, 140, 0.75), rgba(10, 12, 40, 0.8));
+  box-shadow: 0 0.6cqh 1.4cqh rgba(0, 0, 0, 0.5), inset 0 0 2cqh rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.view-hud.solo .hud-item { top: 3cqh; }
+.hud-item canvas { width: 100%; height: 100%; display: block; }
+.hud-item.rolling { animation: slot-roll 0.28s linear infinite; border-color: #ffd23f; box-shadow: 0 0 2.2cqh #ffd23f, 0 0.6cqh 1.4cqh rgba(0, 0, 0, 0.5); }
+.hud-item.filled { border-color: var(--slot-color, #fff); box-shadow: 0 0 2.4cqh var(--slot-color, #fff), 0 0.6cqh 1.4cqh rgba(0, 0, 0, 0.5); }
+.hud-item.got { animation: slot-got 0.55s cubic-bezier(0.2, 1.8, 0.4, 1); }
+@keyframes slot-roll { 0%, 100% { transform: translateX(-50%) rotate(-2deg); } 50% { transform: translateX(-50%) rotate(2deg) scale(1.04); } }
+@keyframes slot-got { 0% { transform: translateX(-50%) scale(1.7); filter: brightness(2.5); } 100% { transform: translateX(-50%) scale(1); filter: none; } }
+
+/* ---- Lap pill + time ---- */
+.hud-topright { position: absolute; right: 3cqw; top: 3cqh; text-align: right; }
+.hud-lap {
+  display: inline-block;
+  font-size: 5.6cqh;
+  padding: 0.5cqh 2cqh;
+  border-radius: 99cqh;
+  background: rgba(10, 12, 40, 0.72);
+  border: 0.5cqh solid var(--slot-color, #fff);
+  box-shadow: 0 0.5cqh 1.2cqh rgba(0, 0, 0, 0.4);
+  transform-origin: right center;
+}
+.hud-lap b { color: #fff; font-size: 1.25em; }
+.hud-lap.pop { animation: lap-pop 0.6s cubic-bezier(0.2, 1.8, 0.4, 1); }
+@keyframes lap-pop { 0% { transform: scale(1.6); background: var(--slot-color, #fff); } 100% { transform: none; } }
+.hud-time { margin-top: 0.8cqh; font-size: 4.4cqh; font-style: normal; font-variant-numeric: tabular-nums; -webkit-text-stroke: 0.5cqh var(--ink); paint-order: stroke fill; }
+
+/* ---- Subtle speedometer ring (bottom left) ---- */
+.hud-speed {
+  position: absolute;
+  left: 3cqw;
+  bottom: 3cqh;
+  width: 17cqh;
+  height: 17cqh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  --spd: 0;
+  opacity: 0.92;
+}
+.hud-speed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 225deg, var(--slot-color, #fff) 0deg calc(var(--spd) * 270deg), rgba(255, 255, 255, 0.22) calc(var(--spd) * 270deg) 270deg, transparent 270deg);
+  -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%);
+  mask: radial-gradient(circle, transparent 62%, #000 64%);
+  filter: drop-shadow(0 0.3cqh 0.5cqh rgba(0, 0, 0, 0.6));
+}
+.hud-speed b { font-size: 6.4cqh; -webkit-text-stroke: 0.6cqh var(--ink); paint-order: stroke fill; }
+.hud-speed span { font-size: 2.4cqh; font-style: normal; opacity: 0.85; }
+
+/* ---- Drift charge meter (appears only while drifting) ---- */
+.hud-drift {
+  position: absolute;
+  left: 50%;
+  bottom: 9cqh;
+  width: 28cqw;
+  height: 2.6cqh;
+  transform: translateX(-50%);
+  border-radius: 99cqh;
+  background: rgba(10, 12, 40, 0.7);
+  border: 0.4cqh solid rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.hud-drift.on { opacity: 1; }
+.drift-fill { height: 100%; width: 0; background: #dfe6f5; border-radius: 99cqh; transition: background 0.1s; }
+.hud-drift[data-tier='1'] .drift-fill { background: linear-gradient(90deg, #2aa8ff, #7fdcff); box-shadow: 0 0 1.5cqh #45c8ff; }
+.hud-drift[data-tier='2'] .drift-fill { background: linear-gradient(90deg, #ff6a00, #ffd23a); box-shadow: 0 0 2cqh #ff8a1a; animation: drift-pulse 0.25s linear infinite alternate; }
+.drift-mark { position: absolute; top: 0; bottom: 0; width: 0.35cqh; background: rgba(255, 255, 255, 0.8); }
+@keyframes drift-pulse { to { filter: brightness(1.5); } }
+
+/* ---- Big center messages ---- */
+.hud-center {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%) scale(0.6);
+  font-size: 18cqh;
+  opacity: 0;
+  white-space: nowrap;
+  color: #ffd23f;
+  -webkit-text-stroke: 1.2cqh #7a2b00;
+  paint-order: stroke fill;
+  text-shadow: 0 1.2cqh 0 #7a2b00, 0 2cqh 3cqh rgba(0, 0, 0, 0.5);
+  transition: opacity 0.25s;
+}
+.hud-center.show { opacity: 1; animation: toast-in 0.4s cubic-bezier(0.2, 1.7, 0.4, 1) both; }
+@keyframes toast-in { 0% { transform: translate(-50%, -50%) scale(0.3); } 100% { transform: translate(-50%, -50%) scale(1); } }
+/* Countdown digits: slam in big, then shrink and fade over one second. */
+.hud-center[data-kind='count'] { font-size: 34cqh; -webkit-text-stroke: 1.8cqh var(--ink); text-shadow: 0 1.5cqh 0 rgba(0, 0, 0, 0.4); }
+.hud-center[data-kind='count'].show { animation: count-pop 1s ease-out both; }
+.hud-center[data-n='3'] { color: #ff5468; }
+.hud-center[data-n='2'] { color: #ffc21f; }
+.hud-center[data-n='1'] { color: #4cf08a; }
+@keyframes count-pop {
+  0% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; filter: blur(1cqh); }
+  18% { transform: translate(-50%, -50%) scale(0.92); opacity: 1; filter: none; }
+  30% { transform: translate(-50%, -50%) scale(1.05); }
+  75% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+}
+/* GO!: explodes outward. */
+.hud-center[data-kind='go'] { font-size: 40cqh; color: #7dff7a; -webkit-text-stroke: 1.8cqh #05431f; text-shadow: 0 1.5cqh 0 #05431f, 0 0 6cqh #7dff7a; }
+.hud-center[data-kind='go'].show { animation: go-pop 0.95s ease-out both; }
+@keyframes go-pop {
+  0% { transform: translate(-50%, -50%) scale(0.4) rotate(-6deg); opacity: 0; }
+  15% { transform: translate(-50%, -50%) scale(1.15) rotate(2deg); opacity: 1; }
+  60% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+}
+.hud-center[data-kind='finish'] { font-size: 15cqh; color: #fff; -webkit-text-stroke: 1.2cqh #5b1a8c; text-shadow: 0 1.2cqh 0 #5b1a8c, 0 0 5cqh #ffd23f; }
+.hud-center[data-kind='finish'].show { animation: finish-in 0.7s cubic-bezier(0.2, 1.7, 0.4, 1) both, finish-bob 1.6s ease-in-out 0.7s infinite; }
+@keyframes finish-in { 0% { transform: translate(-50%, -50%) scale(0.2) rotate(-12deg); } 100% { transform: translate(-50%, -50%) scale(1); } }
+@keyframes finish-bob { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -52%) scale(1.05) rotate(-1deg); } }
+
+/* ---- FINAL LAP banner: a stripe that sweeps across ---- */
+.hud-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26%;
+  height: 17cqh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11cqh;
+  letter-spacing: 0.04em;
+  color: #fff;
+  -webkit-text-stroke: 0.9cqh #6b0020;
+  paint-order: stroke fill;
+  background: linear-gradient(90deg, transparent, rgba(255, 40, 80, 0.92) 12%, rgba(255, 40, 80, 0.92) 88%, transparent);
+  transform: translateX(110%) skewX(-10deg);
+  opacity: 0;
+  pointer-events: none;
+}
+.hud-banner.show { animation: banner-sweep 1.9s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+@keyframes banner-sweep {
+  0% { transform: translateX(110%) skewX(-10deg); opacity: 1; }
+  16% { transform: translateX(0) skewX(-10deg); opacity: 1; }
+  80% { transform: translateX(0) skewX(-10deg); opacity: 1; }
+  100% { transform: translateX(-110%) skewX(-10deg); opacity: 1; }
+}
+
+/* ---- Hit / boost / pickup flashes ---- */
+.hud-flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.hud-flash[data-kind='hit'] { background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, rgba(255, 40, 40, 0.6) 100%); }
+.hud-flash[data-kind='boost'] { background: radial-gradient(circle, transparent 40%, rgba(255, 150, 20, 0.6) 100%); }
+.hud-flash[data-kind='item'] { background: radial-gradient(circle, transparent 50%, rgba(255, 230, 90, 0.45) 100%); }
+.hud-flash.go { animation: flash-go 0.5s ease-out; }
+@keyframes flash-go { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---- Speed lines: two layers of thin radial streaks that flicker around a clear centre ---- */
+.hud-speedlines {
+  position: absolute;
+  inset: -50%;
+  pointer-events: none;
+  opacity: calc(var(--fx, 0) * 0.75);
+  -webkit-mask: radial-gradient(circle, transparent 28%, #000 52%);
+  mask: radial-gradient(circle, transparent 28%, #000 52%);
+}
+.hud-speedlines i { position: absolute; inset: 0; }
+.hud-speedlines i:nth-child(1) {
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0) 0deg 6.4deg, rgba(255, 255, 255, 0.75) 6.5deg 6.85deg, rgba(255, 255, 255, 0) 6.95deg 7.4deg);
+  animation: sl-spin 0.5s steps(5) infinite;
+}
+.hud-speedlines i:nth-child(2) {
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0) 0deg 10.4deg, rgba(255, 255, 255, 0.6) 10.5deg 10.8deg, rgba(255, 255, 255, 0) 10.9deg 11.3deg);
+  animation: sl-spin 0.7s steps(7) infinite reverse;
+}
+@keyframes sl-spin { to { transform: rotate(360deg); } }
+
+/* Ink splat shown over a viewport while steering is flipped (Jumble). */
+.ink-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+
+/* ---- Race intro title ---- */
+.intro-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14%;
+  text-align: center;
+  pointer-events: none;
+  color: #fff;
+  font: italic 900 clamp(32px, 9vh, 110px) 'Arial Black', Impact, system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  -webkit-text-stroke: 0.14em #1a1030;
+  paint-order: stroke fill;
+  text-shadow: 0 0.12em 0 #ff4fa3, 0 0.3em 0.5em rgba(0, 0, 0, 0.5);
+  animation: intro-title 3.2s ease-out both;
+}
+.intro-title small {
+  display: block;
+  font-size: 0.32em;
+  letter-spacing: 0.3em;
+  -webkit-text-stroke: 0.2em #1a1030;
+  text-shadow: none;
+  margin-top: 0.3em;
+}
+@keyframes intro-title {
+  0% { opacity: 0; transform: translateY(40px) scale(0.9); }
+  15% { opacity: 1; transform: none; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px) scale(1.05); }
+}
+.intro-skip { position: absolute; right: 2vw; bottom: 2vh; font: 700 13px system-ui, sans-serif; color: #fff; opacity: 0.7; text-shadow: 0 1px 3px #000; }
+
+/* While the intro flyover plays, hide the per-player HUDs (they fade in afterwards). */
+.view-hud { transition: opacity 0.5s; }
+.hud-layer.intro .view-hud { opacity: 0; }

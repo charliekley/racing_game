@@ -74,6 +74,16 @@ function getQuestionTexture(): THREE.CanvasTexture | null {
   return (questionTex = tex);
 }
 
+// A bright core inside the crate: the "glowing mark". Additive, so it blooms once post-processing is on.
+const boxCoreGeo = new THREE.IcosahedronGeometry(0.3, 1);
+const boxCoreMat = new THREE.MeshBasicMaterial({
+  color: new THREE.Color('#fff6c8').multiplyScalar(3), // above 1.0 so it blooms
+  transparent: true,
+  opacity: 0.85,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+
 let boxCubeMat: THREE.MeshBasicMaterial | undefined;
 const boxShellMat = new THREE.MeshBasicMaterial({
   vertexColors: true,
@@ -94,7 +104,7 @@ export function buildItemBox(): THREE.Object3D {
     vertexColors: true,
     map: getQuestionTexture(),
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.72, // a see-through crate: you can spot the glowing core inside
   });
   const root = new THREE.Group();
   const pivot = new THREE.Group(); // spins and bobs
@@ -102,7 +112,9 @@ export function buildItemBox(): THREE.Object3D {
   const cube = new THREE.Mesh(boxCubeGeo, boxCubeMat);
   const shell = new THREE.Mesh(boxShellGeo, boxShellMat);
   shell.name = 'shell';
-  pivot.add(cube, shell);
+  const core = new THREE.Mesh(boxCoreGeo, boxCoreMat);
+  core.name = 'core';
+  pivot.add(cube, shell, core);
   pivot.name = 'pivot';
   root.add(pivot);
   return root;
@@ -117,6 +129,8 @@ export function animateItemBox(obj: THREE.Object3D, timeSeconds: number, phase =
   pivot.position.y = BOX_HOVER + Math.sin(timeSeconds * 2.2 + phase) * 0.16;
   const shell = pivot.getObjectByName('shell');
   if (shell) shell.scale.setScalar(1 + Math.sin(timeSeconds * 4 + phase) * 0.05); // gentle glow pulse
+  const core = pivot.getObjectByName('core');
+  if (core) core.scale.setScalar(1 + Math.sin(timeSeconds * 6 + phase) * 0.25); // the core throbs
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +193,8 @@ const ricoBallGeo = new THREE.SphereGeometry(0.35, 16, 12);
 const ricoRingGeo = new THREE.TorusGeometry(0.42, 0.06, 6, 20);
 // Streak is a cone behind the ball (toward -Z), tip pointing away from the direction of travel.
 const ricoTrailGeo = new THREE.ConeGeometry(0.3, 1.3, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.95);
-const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#ff8a00', emissiveIntensity: 0.7 });
-const ricoRingMat = new THREE.MeshBasicMaterial({ color: '#35e0ff' });
+const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#ff8a00', emissiveIntensity: 3 });
+const ricoRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#35e0ff').multiplyScalar(3) });
 const ricoTrailMat = new THREE.MeshBasicMaterial({
   color: '#ffb84a',
   transparent: true,
@@ -223,7 +237,7 @@ const seekBodyMat = new THREE.MeshLambertMaterial({ color: '#d7dce6', emissive: 
 const seekNoseMat = new THREE.MeshLambertMaterial({ color: '#ff3d6e', emissive: '#6a0a28' });
 const seekFinMat = new THREE.MeshLambertMaterial({ color: '#ff3d6e', side: THREE.DoubleSide });
 const seekFlameMat = new THREE.MeshBasicMaterial({
-  color: '#ffb347',
+  color: new THREE.Color('#ffb347').multiplyScalar(3),
   transparent: true,
   opacity: 0.85,
   blending: THREE.AdditiveBlending,
@@ -276,6 +290,9 @@ export function updateEntityMesh(obj: THREE.Object3D, entity: ItemEntity, timeSe
   const t = timeSeconds + entity.uid * 0.7; // offset so neighbours don't pulse together
   switch (entity.kind) {
     case 'slick': {
+      // Oil sheen: the shine layer slowly cycles through purple/teal/pink and pulses (shared material).
+      slickShineMat.color.setHSL(0.72 + Math.sin(timeSeconds * 0.9) * 0.14, 0.7, 0.68);
+      slickShineMat.opacity = 0.45 + Math.sin(timeSeconds * 2.6) * 0.12;
       // Gentle breathing wobble of the puddle's outline.
       body.scale.set(1 + Math.sin(t * 2.3) * 0.03, 1, 1 + Math.cos(t * 1.9) * 0.03);
       // While dragged, it hops slightly above the road as if scraping along.
@@ -302,7 +319,7 @@ export function updateEntityMesh(obj: THREE.Object3D, entity: ItemEntity, timeSe
 // ---------------------------------------------------------------------------
 
 const auraGeo = new THREE.SphereGeometry(1, 20, 14);
-const SPARKLES = 6;
+const SPARKLES = 12;
 
 export interface NovaAura {
   /** Add as a child of the kart's root group. Hidden while inactive. */
@@ -347,6 +364,9 @@ export function buildNovaAura(): NovaAura {
       sparkMat.color.copy(color.setHSL((t * 0.6 + 0.66) % 1, 0.9, 0.75));
       const s = 1 + Math.sin(t * 7) * 0.04;
       inner.scale.set(0.9 * s, 0.7 * s, 1.25 * s);
+      const so = 1 + Math.sin(t * 5 + 1) * 0.07;
+      outer.scale.set(1.1 * so, 0.9 * so, 1.5 * so);
+      outerMat.opacity = 0.2 + Math.sin(t * 9) * 0.06; // flickering corona
       const pos = sparkGeo.getAttribute('position') as THREE.BufferAttribute;
       for (let i = 0; i < SPARKLES; i++) {
         const a = t * 3 + (i / SPARKLES) * Math.PI * 2;
@@ -406,11 +426,13 @@ export function buildHeldItemMesh(id: ItemId): THREE.Object3D | null {
  */
 export class ItemMeshPool {
   private meshes = new Map<number, THREE.Object3D>();
+  private readonly seen = new Set<number>(); // reused every frame (no allocation in the hot path)
 
   constructor(private readonly parent: THREE.Object3D) {}
 
   update(entities: readonly ItemEntity[], timeSeconds: number): void {
-    const seen = new Set<number>();
+    const seen = this.seen;
+    seen.clear();
     for (const e of entities) {
       seen.add(e.uid);
       let mesh = this.meshes.get(e.uid);
