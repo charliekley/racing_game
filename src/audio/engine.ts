@@ -318,6 +318,8 @@ export class AudioEngine {
     writeStore(MUTE_KEY, this.muted ? '1' : '0');
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, this.ctx.currentTime, 0.03);
     this.updateMuteIcon();
+    // Let the page (the lobby's sound chip) know.
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('tiltkart:mute', { detail: this.muted }));
   }
 
   setMusicVolume(v: number): void {

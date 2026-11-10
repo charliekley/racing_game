@@ -174,30 +174,15 @@ function cycleTrack(step = 1) {
 $('track-prev').addEventListener('click', () => cycleTrack(-1));
 $('track-next').addEventListener('click', () => cycleTrack(1));
 
-// --- Mute indicator (M in the lobby) -----------------------------------------
-// Remembers the choice in localStorage and announces it with a `tiltkart:mute`
-// event (detail = true when muted) so a sound system can listen for it.
-const MUTE_KEY = 'tiltkart.muted';
-let muted = false;
-try {
-  muted = localStorage.getItem(MUTE_KEY) === '1';
-} catch {
-  /* storage can be blocked */
-}
+// --- Mute indicator ----------------------------------------------------------
+// The audio engine owns mute (M key, works in the lobby and during a race, saved
+// in localStorage). It announces changes with a `tiltkart:mute` event; the lobby
+// chip just mirrors it.
 function showMute() {
-  $('chip-mute').textContent = muted ? 'OFF' : 'ON';
-  $('chip-mute-wrap').classList.toggle('off', muted);
+  $('chip-mute').textContent = audio.muted ? 'OFF' : 'ON';
+  $('chip-mute-wrap').classList.toggle('off', audio.muted);
 }
-function toggleMute() {
-  muted = !muted;
-  try {
-    localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
-  showMute();
-  window.dispatchEvent(new CustomEvent('tiltkart:mute', { detail: muted }));
-}
+window.addEventListener('tiltkart:mute', showMute);
 showMute();
 
 // --- Lobby <-> driving ------------------------------------------------------
@@ -281,7 +266,6 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
     if (e.code === 'KeyT') cycleTrack();
-    if (e.code === 'KeyM') toggleMute();
   }
 });
 
