@@ -17,6 +17,7 @@
  *    color, so two karts with the same color share them.
  */
 import * as THREE from 'three';
+import { DEFAULT_LOADOUT } from '../shared/characters';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
@@ -515,7 +516,8 @@ function getColorMaterials(colorHex: string) {
  * Build one kart. `style` is an index into KART_STYLES (wraps around, so any
  * integer is safe). Cheap to call repeatedly: geometry is shared per style.
  */
-export function buildKartModel(colorHex: string, style = 0): KartModel {
+export function buildKartModel(colorHex: string, style = 0, character: number = DEFAULT_LOADOUT.character): KartModel {
+  void character; // index into CHARACTERS (the driver's look); every driver looks the same until the kart-models work lands
   const n = STYLE_BUILDERS.length;
   style = ((Math.trunc(style) % n) + n) % n;
   const assets = getStyleAssets(style);

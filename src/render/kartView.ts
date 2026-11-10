@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { KartState } from '../sim/kart';
 import type { Ground } from '../sim/ground';
 import { KART } from '../sim/config';
+import { DEFAULT_LOADOUT, type Loadout } from '../shared/characters';
 import { WHEEL_RADIUS, buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
@@ -50,8 +51,8 @@ export class KartView {
   /** Interpolated pose from the last `update` (the camera reads this). */
   readonly pose: InterpolatedKart = { x: 0, y: 0, z: 0, heading: 0, speed: 0, yawRate: 0 };
 
-  constructor(scene: THREE.Scene, colorHex: string) {
-    this.model = buildKartModel(colorHex);
+  constructor(scene: THREE.Scene, colorHex: string, loadout: Loadout = DEFAULT_LOADOUT) {
+    this.model = buildKartModel(colorHex, loadout.kart, loadout.character);
     this.model.root.rotation.order = 'YXZ'; // yaw first, then pitch/roll in the kart's own frame
     scene.add(this.model.root);
     this.sparks = new SparkEmitter(scene);
