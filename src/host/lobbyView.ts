@@ -6,7 +6,7 @@
  * cards once per lobby change (`render`) and then only poke a few text/style
  * values every frame (`updateDebug`), which is cheap.
  */
-import { colorHex } from '../shared/colors';
+import { KART_COLORS, colorHex } from '../shared/colors';
 import { BUTTON_NAMES, Buttons } from '../shared/protocol';
 import { MAX_PLAYERS, type PlayerManager } from './playerManager';
 import { KEY_SCHEMES } from './input/localInput';
@@ -73,6 +73,7 @@ export class LobbyView {
         <span class="slot-name"></span>
         <span class="slot-device">${device}</span>
       </div>
+      <div class="slot-kart"><span class="kart-swatch"></span><span class="kart-name">${KART_COLORS[slot.color % KART_COLORS.length].name} kart</span></div>
       <div class="slot-state ${stateClass}">${stateText}</div>
       <div class="debug">
         <div class="steer-bar"><div class="steer-fill"></div></div>

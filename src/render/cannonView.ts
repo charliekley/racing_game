@@ -23,6 +23,7 @@ import { CANNON, type ResolvedCannon } from '../sim/cannon';
 import { forwardOf, rightOf } from '../sim/kart';
 import type { Track } from '../sim/track';
 import { SparkEmitter } from './effects';
+import { fxHub } from './fx/hub';
 
 const TILT = THREE.MathUtils.degToRad(30);
 /** Unit vector along the barrel axis (pointing up and forward). */
@@ -277,6 +278,10 @@ interface CannonParts {
   group: THREE.Group;
   flash: THREE.Mesh;
   flashTime: number;
+  /** The barrel/body mesh and its recoil state (distance pushed back along the barrel, m, and its speed). */
+  body: THREE.Mesh;
+  recoil: number;
+  recoilVel: number;
   ownGeometry: THREE.BufferGeometry[];
 }
 
@@ -334,7 +339,7 @@ export class CannonView {
       group.add(pad, beam);
 
       this.group.add(group);
-      this.parts.push({ group, flash, flashTime: 0, ownGeometry });
+      this.parts.push({ group, flash, flashTime: 0, body, recoil: 0, recoilVel: 0, ownGeometry });
     }
   }
 
@@ -365,6 +370,7 @@ export class CannonView {
     const part = this.parts[index];
     if (!c || !part) return;
     part.flashTime = 0.22;
+    part.recoilVel = -9; // kick the barrel back; the spring in update() returns it
     part.flash.visible = true;
 
     // Direction of the barrel in world space.
@@ -383,6 +389,7 @@ export class CannonView {
       this.smoke.emit(back, v, 0.8 + Math.random() * 0.5, 0.8);
     }
     this.sparks.emit(at, new THREE.Vector3(d.x * 3, 0, d.z * 3), 40);
+    fxHub.current?.muzzleBlast(at.x, at.y, at.z, d.x, d.y, d.z); // pooled glow + smoke blast
   }
 
   /** Animate glows, flashes and particles. `time` = seconds since start, `dt` = frame time. */
@@ -392,6 +399,14 @@ export class CannonView {
     sh.funnelMat.opacity = 0.45 + 0.25 * Math.sin(time * 5);
     sh.beamMat.opacity = 0.11 + 0.05 * Math.sin(time * 2.5);
     for (const part of this.parts) {
+      // Recoil: a damped spring pulls the body back to rest along the barrel axis (local -Z/-Y direction).
+      if (part.recoil !== 0 || part.recoilVel !== 0) {
+        part.recoilVel += (-90 * part.recoil - 11 * part.recoilVel) * dt;
+        part.recoil += part.recoilVel * dt;
+        if (Math.abs(part.recoil) < 0.002 && Math.abs(part.recoilVel) < 0.02) part.recoil = part.recoilVel = 0;
+        // recoil < 0 = pushed backwards, against the firing direction.
+        part.body.position.set(0, part.recoil * AXIS.y, part.recoil * AXIS.z);
+      }
       if (part.flashTime > 0) {
         part.flashTime -= dt;
         const k = Math.max(0, part.flashTime / 0.22);
