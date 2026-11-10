@@ -1,216 +1,92 @@
 /**
- * Everything around the track that you can't drive into: trees, bushes,
- * rocks, flowers and grass tufts, fences and hay bales, houses, grandstands
- * full of spectators, "TILT KART" banners and flags, rolling hills, a ring of
- * distant mountains, clouds, and the start/finish gantry.
+ * Everything around the track that you can't drive into: trees, bushes, rocks, flowers
+ * and grass, fences and hay bales, houses, grandstands full of spectators, banners and
+ * flags, containers and warehouses, the distant mountains and clouds, and the
+ * start/finish gantry.
  *
- * All of it is procedural (no model or image files) and placed with a seeded
- * random generator, so a track looks the same on every load.
+ * All of it is procedural (no model or image files) and placed from the scenery PLAN
+ * (`planScenery`), so what you see is exactly what the colliders describe. The shapes
+ * themselves live in `render/env/` (props, structures, backdrop, extras); this file
+ * decides WHICH shape goes WHERE and merges everything into a handful of meshes.
  *
- * Performance: the hundreds of objects are baked into a handful of merged,
- * vertex-colored meshes (see MeshBatch), so the whole landscape costs about
- * six draw calls per viewport, fewer than the old version.
+ * Performance: the world is cut into square cells (see env/batch.ts). Every cell holds a
+ * detailed and a cheap version of its contents and only visible cells are drawn, so the
+ * draw-call count follows what is on screen, not how big the track is.
  *
- *   batch      material                      draws  shadows  quality
- *   solid      Lambert, flat-shaded           1      cast     always
- *   detail     Lambert (tufts/flowers)        1      -        Medium 70%, Low 35%
- *   far        Lambert, no fog (mountains)    1      -        always
- *   banners    Lambert + banner texture       1      -        always
- *   clouds     Lambert, no fog                1      -        hidden on Low
- *
- * The look adapts to the track's theme colors: a "biome" (meadow, autumn,
- * desert, snow) is guessed from the grass color and picks tree types,
- * foliage, rock and mountain colors.
+ *   batch          material            shadows  notes
+ *   nature (LOD)   standard, wind sway cast     trees, bushes, rocks
+ *   man-made (LOD) standard            cast     crowd, containers
+ *   solid          standard            cast     grandstands, warehouses, fences...
+ *   detail (LOD)   standard, wind sway -        grass tufts / flowers; thinned on lower quality
+ *   cloth          standard, waving    -        flags and pennants
+ *   glow           basic (self-lit)    -        window lights, warning lamps
+ *   banners        standard + texture  -        TILT KART banners
+ *   backdrop       basic, baked light  -        mountains, hills, skyline (per angular sector)
+ *   clouds         basic, baked light  -        hidden on Low
  */
 import * as THREE from 'three';
 import type { Track, TrackSample } from '../sim/track';
 import type { TrackDef } from '../track/types';
-import { biomeFor as planBiomeFor, planScenery, Site, type Biome, type SceneryPlan } from '../track/sceneryPlan';
-import { MeshBatch } from './meshBatch';
-import { BANNER_LOGO, BANNER_SLOGAN, bannerTexture, checkerTexture, seededRandom } from './textures';
-
-// ---------------------------------------------------------------------------
-// Biomes: theme colors → what grows here
-// ---------------------------------------------------------------------------
-
-// Biome is decided in the plan (it also drives which trees/rocks get placed).
-export type { Biome };
-
-const SRGB = THREE.SRGBColorSpace;
+import { biomeFor as planBiomeFor, hexToHsl, planScenery, Site, type Biome, type SceneryPlan } from '../track/sceneryPlan';
+import { BANNER_LOGO, bannerTexture, checkerTexture, seededRandom } from './textures';
+import { ChunkBatch, LodBatch } from './env/batch';
+import { ENV_TIME, bannerMaterial, clothMaterial, glowMaterial, propMaterial, watchQuality } from './env/materials';
+import { buildPropSet, disposePropSet, type Style, VARIANTS } from './env/props';
+import { addBlock, addGrandstand, addHouse, frameM, makeTrackside, type Batches, type StructureLook } from './env/structures';
+import { backdropMaterial, cloudGeo, hillGeo, mountainGeo, skylineGeo, type BackdropKind } from './env/backdrop';
+import { matrix, merge, paint, scratch } from './env/geo';
+import { boxPart, flagGeo, polePart } from './env/parts';
+import { addExtras } from './env/extras';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 /** Guess the biome from the theme's grass color (shared with the plan). */
 export const biomeFor = planBiomeFor;
 
-/** Color from hue/saturation/lightness in 0..1, as you'd pick them in a paint program. */
-function hsl(h: number, s: number, l: number): THREE.Color {
-  return new THREE.Color().setHSL(((h % 1) + 1) % 1, THREE.MathUtils.clamp(s, 0, 1), THREE.MathUtils.clamp(l, 0, 1), SRGB);
+export { ENV_TIME };
+
+/** Which visual style a track gets (the plan's biome plus the track's own features). */
+export function styleFor(def: TrackDef, biome: Biome): Style {
+  if (def.scenery.openSky) return 'sky';
+  if ((def.scenery.blocks?.length ?? 0) > 0) return 'harbour';
+  if (biome === 'snow' || hexToHsl(def.theme.grass).l > 0.85) return 'alpine';
+  if (biome === 'autumn' && hexToHsl(def.theme.grass).l < 0.3) return 'volcanic';
+  if (biome === 'desert') return 'desert';
+  if (biome === 'autumn') return 'autumn';
+  return 'meadow';
 }
 
-/** Per-biome look. Functions take a random() so each object gets its own variation. */
-interface BiomeLook {
-  foliage: (r: () => number) => THREE.Color;
-  trunk: THREE.Color;
-  snowyPines: boolean;
-  bush: (r: () => number) => THREE.Color;
-  rock: (r: () => number) => THREE.Color;
-  tuft: (r: () => number) => THREE.Color;
-  flowers: string[];
-  fence: THREE.Color;
-  walls: string[];
-  roof: (r: () => number) => THREE.Color;
-  flatRoofs: boolean;
-  mountain: (r: () => number) => THREE.Color;
-  mesas: boolean;
-  snowCaps: boolean;
-  hill: (r: () => number) => THREE.Color;
-  cloudCount: number;
+/** Is it evening or dusk (windows glow)? Dark sky, or a strongly orange horizon. */
+export function isDusk(theme: TrackDef['theme']): boolean {
+  const sky = hexToHsl(theme.sky);
+  const hor = hexToHsl(theme.horizon);
+  return sky.l < 0.4 || (hor.s > 0.7 && (hor.h < 0.12 || hor.h > 0.95));
 }
 
-function biomeLook(biome: Biome, theme: TrackDef['theme']): BiomeLook {
-  const g = new THREE.Color(theme.grass).getHSL({ h: 0, s: 0, l: 0 }, SRGB);
-  const greenRock = (r: () => number) => hsl(0.1, 0.05 + r() * 0.05, 0.45 + r() * 0.15);
-  const pastelWalls = ['#f2e3c6', '#e9c9a4', '#d7e4ef', '#f6d6d6', '#e4efd2'];
-  switch (biome) {
-    case 'autumn':
-      return {
-        foliage: (r) => {
-          const hues = [0.01, 0.05, 0.08, 0.12, 0.3];
-          const h = hues[Math.floor(r() * hues.length)];
-          return h > 0.2 ? hsl(h, 0.4, 0.28) : hsl(h + r() * 0.02, 0.7, 0.38 + r() * 0.12);
-        },
-        trunk: hsl(0.07, 0.35, 0.25),
-        snowyPines: false,
-        bush: (r) => hsl(0.04 + r() * 0.08, 0.6, 0.32 + r() * 0.1),
-        rock: greenRock,
-        tuft: (r) => hsl(0.1 + r() * 0.04, 0.5, 0.45 + r() * 0.1),
-        flowers: ['#ffb02e', '#ffe14d', '#e2572b'],
-        fence: hsl(0.07, 0.35, 0.32),
-        walls: pastelWalls,
-        roof: (r) => hsl(0.02 + r() * 0.05, 0.5, 0.33),
-        flatRoofs: false,
-        mountain: (r) => hsl(0.85 + r() * 0.08, 0.12, 0.42 + r() * 0.08),
-        mesas: false,
-        snowCaps: true,
-        hill: (r) => hsl(g.h + (r() - 0.5) * 0.05, g.s * 0.8, g.l * (0.75 + r() * 0.2)),
-        cloudCount: 22,
-      };
+const hsl = (h: number, s: number, l: number): THREE.Color => new THREE.Color().setHSL(((h % 1) + 1) % 1, THREE.MathUtils.clamp(s, 0, 1), THREE.MathUtils.clamp(l, 0, 1), THREE.SRGBColorSpace);
+
+function structureLook(style: Style, theme: TrackDef['theme']): StructureLook {
+  const pastel = ['#f2e3c6', '#e9c9a4', '#d7e4ef', '#f6d6d6', '#e4efd2'];
+  const dusk = isDusk(theme);
+  switch (style) {
+    case 'alpine':
+      return { walls: ['#a8683a', '#8e5a32', '#b07a48'], roof: () => hsl(0.6, 0.1, 0.95), fence: hsl(0.07, 0.35, 0.3), fencePost: hsl(0.07, 0.3, 0.22), snowy: true, dusk, flatRoofs: false };
+    case 'volcanic':
+      return { walls: ['#6a5a52', '#7a4a3a'], roof: () => hsl(0.02, 0.3, 0.2), fence: hsl(0.03, 0.3, 0.22), fencePost: hsl(0.03, 0.2, 0.15), snowy: false, dusk, flatRoofs: false };
+    case 'harbour':
+      return { walls: ['#c9ccd2', '#d8cdb8', '#b8c4d0'], roof: () => hsl(0.6, 0.08, 0.4), fence: new THREE.Color('#d8dde4'), fencePost: new THREE.Color('#9aa3b0'), snowy: false, dusk, flatRoofs: true };
     case 'desert':
-      return {
-        foliage: (r) => hsl(0.2 + r() * 0.06, 0.3, 0.3 + r() * 0.08), // dusty olive
-        trunk: hsl(0.08, 0.3, 0.3),
-        snowyPines: false,
-        bush: (r) => hsl(0.17 + r() * 0.08, 0.22, 0.42 + r() * 0.1), // sage scrub
-        rock: (r) => hsl(0.04 + r() * 0.04, 0.45, 0.42 + r() * 0.15), // sandstone
-        tuft: (r) => hsl(0.12, 0.4, 0.6 + r() * 0.12),
-        flowers: ['#ff6fa8', '#ffd84a'],
-        fence: hsl(0.07, 0.35, 0.36),
-        walls: ['#e6c49a', '#d9ab7a', '#efd8b8', '#c98d62'],
-        roof: (r) => hsl(0.07, 0.35, 0.55 + r() * 0.1),
-        flatRoofs: true,
-        mountain: (r) => hsl(0.03 + r() * 0.04, 0.5, 0.42 + r() * 0.1),
-        mesas: true,
-        snowCaps: false,
-        hill: (r) => hsl(g.h + (r() - 0.5) * 0.02, g.s, g.l * (0.85 + r() * 0.15)),
-        cloudCount: 10,
-      };
-    case 'snow':
-      return {
-        foliage: (r) => hsl(0.38 + r() * 0.04, 0.35, 0.18 + r() * 0.06),
-        trunk: hsl(0.07, 0.3, 0.25),
-        snowyPines: true,
-        bush: (r) => hsl(0.4, 0.15, 0.55 + r() * 0.2),
-        rock: (r) => hsl(0.6, 0.05, 0.4 + r() * 0.15),
-        tuft: (r) => hsl(0.3, 0.15, 0.6 + r() * 0.15),
-        flowers: [],
-        fence: hsl(0.07, 0.35, 0.3),
-        walls: ['#c94b3b', '#3b6fc9', '#e0b03b', '#f0eadf'],
-        roof: () => hsl(0.6, 0.1, 0.95),
-        flatRoofs: false,
-        mountain: (r) => hsl(0.6, 0.1, 0.55 + r() * 0.1),
-        mesas: false,
-        snowCaps: true,
-        hill: (r) => hsl(0.6, 0.08, 0.85 + r() * 0.08),
-        cloudCount: 30,
-      };
+      return { walls: ['#e6c49a', '#d9ab7a', '#efd8b8', '#c98d62'], roof: (r) => hsl(0.07, 0.35, 0.55 + r() * 0.1), fence: hsl(0.07, 0.35, 0.36), fencePost: hsl(0.07, 0.3, 0.28), snowy: false, dusk, flatRoofs: true };
+    case 'autumn':
+      return { walls: pastel, roof: (r) => hsl(0.02 + r() * 0.05, 0.5, 0.33), fence: hsl(0.07, 0.35, 0.32), fencePost: hsl(0.07, 0.3, 0.25), snowy: false, dusk, flatRoofs: false };
     default:
-      return {
-        foliage: (r) => hsl(g.h - 0.02 + r() * 0.07, 0.5 + r() * 0.1, 0.22 + r() * 0.12),
-        trunk: hsl(0.08, 0.4, 0.28),
-        snowyPines: false,
-        bush: (r) => hsl(g.h + r() * 0.05, 0.5, 0.25 + r() * 0.1),
-        rock: greenRock,
-        tuft: (r) => hsl(g.h - 0.03 + r() * 0.05, g.s * 0.9, g.l * (0.7 + r() * 0.25)),
-        flowers: ['#ffffff', '#ffe14d', '#ff7eb6', '#b48cff', '#ff5a4d'],
-        fence: hsl(0, 0, 0.92),
-        walls: pastelWalls,
-        roof: (r) => hsl(0.02 + r() * 0.05, 0.55, 0.38),
-        flatRoofs: false,
-        mountain: (r) => hsl(0.45 + r() * 0.1, 0.18, 0.4 + r() * 0.08),
-        mesas: false,
-        snowCaps: true,
-        hill: (r) => hsl(0.28 + r() * 0.05, 0.4, 0.3 + r() * 0.08),
-        cloudCount: 26,
-      };
+      return { walls: pastel, roof: (r) => hsl(0.02 + r() * 0.05, 0.55, 0.38), fence: new THREE.Color('#f2f2ee'), fencePost: new THREE.Color('#e4e4de'), snowy: false, dusk, flatRoofs: false };
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared building blocks (unit-sized, standing on y = 0 unless noted)
-// ---------------------------------------------------------------------------
-
-function makeShapes() {
-  const flag = new THREE.BufferGeometry();
-  // A triangle pennant in the x/y plane, both windings so it's visible from both sides.
-  flag.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, -0.3, 0, 0, -0.6, 0, 0, 0, 0, 0, -0.6, 0, 1, -0.3, 0], 3));
-  flag.computeVertexNormals();
-  return {
-    box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
-    trunk: new THREE.CylinderGeometry(0.22, 0.32, 2.2, 5).translate(0, 1.1, 0),
-    cone: new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0),
-    roof: new THREE.ConeGeometry(0.75, 0.6, 4).rotateY(Math.PI / 4).translate(0, 0.3, 0),
-    cyl: new THREE.CylinderGeometry(1, 1, 1, 7).translate(0, 0.5, 0),
-    mesa: new THREE.CylinderGeometry(0.72, 1, 1, 7).translate(0, 0.5, 0),
-    bale: new THREE.CylinderGeometry(1, 1, 1, 10).rotateZ(Math.PI / 2), // axis along x, centered
-    blob: new THREE.IcosahedronGeometry(1, 0), // centered
-    puff: new THREE.IcosahedronGeometry(1, 1), // rounder, for clouds
-    rock: new THREE.DodecahedronGeometry(1, 0), // centered
-    flower: new THREE.OctahedronGeometry(1, 0), // centered
-    blade: new THREE.ConeGeometry(1, 1, 3).translate(0, 0.5, 0),
-    hill: new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-    plane: new THREE.PlaneGeometry(1, 1), // centered, facing +z
-    flag,
-  };
-}
-type Shapes = ReturnType<typeof makeShapes>;
-
-const _pos = new THREE.Vector3();
-const _quat = new THREE.Quaternion();
-const _euler = new THREE.Euler();
-const _scale = new THREE.Vector3();
-
-/**
- * Matrix for a shape at (x, y, z), rotated (rx, ry, rz) radians and scaled
- * (sx, sy, sz). Rotation order: tilt (x, z) first, then turn (y), so a tilted
- * grass blade can lean in any compass direction. With `parent`, the
- * coordinates are in the parent's frame.
- */
-function mat(parent: THREE.Matrix4 | null, x: number, y: number, z: number, sx = 1, sy = sx, sz = sx, ry = 0, rx = 0, rz = 0): THREE.Matrix4 {
-  const m = new THREE.Matrix4().compose(_pos.set(x, y, z), _quat.setFromEuler(_euler.set(rx, ry, rz, 'YXZ')), _scale.set(sx, sy, sz));
-  return parent ? m.premultiply(parent) : m;
-}
-
-/** A local frame at (x, z) on the ground, turned by `ry` (local +z = (sin ry, cos ry)). */
-function frame(x: number, z: number, ry: number): THREE.Matrix4 {
-  return mat(null, x, 0, z, 1, 1, 1, ry);
-}
-
-const WHITE = new THREE.Color('#ffffff');
-
-let bannerMat: THREE.MeshLambertMaterial | null = null;
-/** One shared banner material (texture is drawn once). */
-function bannerMaterial(): THREE.MeshLambertMaterial {
-  bannerMat ??= new THREE.MeshLambertMaterial({ map: bannerTexture() });
-  return bannerMat;
+/** Tint variation so look-alike props are never identical. */
+function jitter(rnd: () => number, amount = 0.14): THREE.Color {
+  const k = 1 - amount + rnd() * amount * 2;
+  return new THREE.Color(k * (0.96 + rnd() * 0.08), k, k * (0.96 + rnd() * 0.08));
 }
 
 // ---------------------------------------------------------------------------
@@ -223,418 +99,268 @@ function bannerMaterial(): THREE.MeshLambertMaterial {
  */
 export function buildScenery(track: Track, plan: SceneryPlan = planScenery(track)): THREE.Group {
   const def = track.def;
+  const style = styleFor(def, plan.biome);
   // Cosmetics and far-away decoration use their own random stream, so they can
   // never disturb where things stand (that is the plan's job).
   const rnd = seededRandom((def.scenery.seed ^ 0x5bd1e995) >>> 0);
-  const look = biomeLook(plan.biome, def.theme);
-  // Ground detail must keep clear of the plan's big buildings.
   const site = new Site(track, plan.reserved.slice());
-  const shapes = makeShapes();
+  const look = structureLook(style, def.theme);
 
-  const solid = new MeshBatch();
-  const far = new MeshBatch();
-  const banners = new MeshBatch(true);
-  const detail: DetailItem[] = [];
+  const nature = new LodBatch(80);
+  const batches: Batches = {
+    solid: new ChunkBatch(90),
+    lod: new LodBatch(80),
+    glow: new ChunkBatch(90),
+    cloth: new ChunkBatch(90),
+    banners: new ChunkBatch(90, true),
+  };
 
-  buildGrandstands(plan, shapes, solid, banners);
-  buildHouses(plan, shapes, solid, look);
-  buildBlocks(plan, shapes, solid);
-  buildTrackside(plan, shapes, solid, banners, look);
-  buildTrees(plan, shapes, solid, look);
-  buildBushesAndRocks(plan, shapes, solid, look);
-  addGroundDetail(site, shapes, detail, look, rnd, def.scenery.trees);
-  // Opt-in `openSky` tracks (sky islands) float in empty sky: no ring of hills and mountains.
-  if (!def.scenery.openSky) {
-    addHills(site, shapes, solid, look, rnd);
-    addMountains(site, shapes, far, look, rnd, new THREE.Color(def.theme.horizon));
+  // ---- nature props -------------------------------------------------------
+  const near = buildPropSet(style, 1);
+  const far = buildPropSet(style, 0);
+  for (const t of plan.trees) {
+    const r = seededRandom(t.seed);
+    const v = t.seed % VARIANTS;
+    const s = t.scale;
+    nature.add(near.trees[t.variant][v], far.trees[t.variant][v], matrix(t.x, t.y, t.z, s, s, s, t.rotationY), jitter(r, 0.13));
   }
+  for (const b of plan.bushes) {
+    const r = seededRandom(b.seed);
+    const v = b.seed % VARIANTS;
+    nature.add(near.bushes[v], far.bushes[v], matrix(b.x, b.y, b.z, b.scale, b.scale, b.scale, b.rotationY), jitter(r, 0.16));
+  }
+  for (const rk of plan.rocks) {
+    const r = seededRandom(rk.seed);
+    const v = rk.seed % VARIANTS;
+    const tint = jitter(r, 0.12);
+    nature.add(near.rocks[v], far.rocks[v], matrix(rk.x, rk.y + rk.sy * 0.32, rk.z, rk.sx, rk.sy, rk.sz, rk.rotationY, rk.tilt * 0.6), tint);
+    if (rk.twin) {
+      const s = rk.scale;
+      nature.add(near.rocks[(v + 1) % VARIANTS], far.rocks[(v + 1) % VARIANTS], matrix(rk.x + s * 1.1, plan.heightAt(rk.x + s * 1.1, rk.z + s * 0.3) + s * 0.16, rk.z + s * 0.3, s * 0.5, s * 0.4, s * 0.5, r() * 6.28), tint);
+    }
+  }
+
+  // ---- ground detail (grass, flowers), thinned on lower quality -------------
+  const detail = new LodBatch(80);
+  addGroundDetail(site, plan, near, detail, style, rnd, def.scenery.trees);
+
+  // ---- structures ---------------------------------------------------------
+  const trackside = makeTrackside(look);
+  for (const gs of plan.grandstands) addGrandstand(gs, batches, look);
+  for (const hs of plan.houses) addHouse(hs, batches, look);
+  for (const bl of plan.blocks) addBlock(bl, batches);
+  for (const fe of plan.fences) trackside.fence(fe, batches);
+  for (const hb of plan.hayBales) trackside.hay(hb, batches);
+  for (const bb of plan.bannerBoards) trackside.banner(bb, batches);
 
   const group = new THREE.Group();
   group.name = 'scenery';
 
-  const solidMesh = solid.build(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
-  solidMesh.castShadow = true;
-  solidMesh.receiveShadow = true;
-  group.add(solidMesh);
+  // Style-specific extras (cranes, vents, cabins, pylons, balloons...) join the same batches.
+  const extraObjects = addExtras({ style, track, plan, site, rnd, batches, theme: def.theme });
+  for (const o of extraObjects) group.add(o);
 
-  // Ground detail: shuffled so that drawing only the first N% thins it evenly.
-  if (detail.length) {
-    shuffle(detail, rnd);
-    const batch = new MeshBatch();
-    for (const d of detail) batch.add(d.geo, d.matrix, d.color);
-    const mesh = batch.build(new THREE.MeshLambertMaterial({ vertexColors: true }));
-    mesh.receiveShadow = true;
-    mesh.userData.detailIndexCount = mesh.geometry.getIndex()!.count;
-    group.add(mesh);
+  const natureMat = propMaterial();
+  const natureGroup = nature.build(natureMat, 95, true);
+  group.add(natureGroup);
+  const manGroup = batches.lod.build(natureMat, 85, true);
+  group.add(manGroup);
+  group.add(batches.solid.build(natureMat, true));
+
+  if (!detail.isEmpty) {
+    const dg = detail.build(natureMat, 80, false, 80);
+    // Quality hook (scene.ts applySceneQuality): each chunk's near mesh may draw only a fraction of its triangles.
+    dg.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) {
+        const geo = (o as THREE.Mesh).geometry;
+        if (geo.getIndex()) o.userData.detailIndexCount = geo.getIndex()!.count;
+      }
+    });
+    group.add(dg);
   }
+  if (!batches.cloth.isEmpty) group.add(batches.cloth.build(clothMaterial(), false));
+  if (!batches.glow.isEmpty) group.add(batches.glow.build(glowMaterial(), false, false));
+  if (!batches.banners.isEmpty) group.add(batches.banners.build(bannerMaterial(bannerTexture()), false));
 
-  // Distant mountains: no fog (they'd vanish), their color is pre-mixed with the horizon instead.
-  const farMesh = far.build(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, fog: false }));
-  fadeBaseToHorizon(farMesh.geometry, new THREE.Color(def.theme.horizon), 90);
-  group.add(farMesh);
+  group.add(buildBackdrop(site, style, def, rnd));
+  // The sky dome now draws its own clouds; only sky-island tracks add low cloud banks under the islands.
+  if (style === 'sky') group.add(buildClouds(site, style, def.theme, rnd));
 
-  if (!banners.isEmpty) {
-    const mesh = banners.build(bannerMaterial());
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
-
-  group.add(buildClouds(site, shapes, look, rnd, new THREE.Color(def.theme.horizon)));
-
-  for (const g of Object.values(shapes)) g.dispose();
+  watchQuality(natureGroup.children[0] ?? group);
+  disposePropSet(near);
+  disposePropSet(far);
   return group;
 }
 
-/**
- * Start/finish gantry across the road at sample `s`: two posts, a checkered
- * beam with "TILT KART" logos on both faces, and a flag on each post.
- */
-export function buildGantry(s: TrackSample, halfSpan: number): THREE.Group {
-  const shapes = makeShapes();
-  const g = new THREE.Group();
-  const f = frame(s.x, s.z, s.heading); // local x = across the road, z = along it
-
-  const posts = new MeshBatch();
-  const postColor = new THREE.Color('#dfe3ea');
-  for (const side of [-1, 1]) {
-    const x = side * halfSpan;
-    posts.add(shapes.box, mat(f, x, 0, 0, 0.5, 6.8, 0.5), postColor);
-    posts.add(shapes.box, mat(f, x, 0, 0, 1.2, 0.3, 1.2), new THREE.Color('#9aa3b0')); // foot
-    posts.add(shapes.cyl, mat(f, x, 6.8, 0, 0.05, 2.2, 0.05), postColor); // flag pole
-    posts.add(shapes.flag, mat(f, x, 9, 0, 1.6, 1.6, 1.6, side < 0 ? Math.PI : 0), new THREE.Color(side < 0 ? '#ffd23a' : '#2f7be0'));
-  }
-  const postMesh = posts.build(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
-  postMesh.castShadow = true;
-  g.add(postMesh);
-
-  const beamTex = checkerTexture();
-  beamTex.repeat.set(halfSpan, 1);
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(halfSpan * 2 + 0.5, 1.4, 0.4), new THREE.MeshLambertMaterial({ map: beamTex }));
-  beam.applyMatrix4(mat(f, 0, 6.2, 0));
-  beam.castShadow = true;
-  g.add(beam);
-
-  // Logo panels on both faces of the beam (karts approach from -z).
-  const logos = new MeshBatch(true);
-  // Panel shape matches the texture row (4:1) and fits inside the 1.4 m beam.
-  logos.add(shapes.plane, mat(f, 0, 6.2, -0.21, 5.2, 1.3, 1, Math.PI), WHITE, BANNER_LOGO);
-  logos.add(shapes.plane, mat(f, 0, 6.2, 0.21, 5.2, 1.3, 1, 0), WHITE, BANNER_LOGO);
-  g.add(logos.build(bannerMaterial()));
-
-  for (const geo of Object.values(shapes)) geo.dispose();
-  return g;
-}
-
 // ---------------------------------------------------------------------------
-// Meshes from the plan: every placed object is drawn from its plan entry, so
-// the shapes you see are the shapes the colliders describe.
+// Ground detail
 // ---------------------------------------------------------------------------
 
-/** Frame at an item's ground position, turned by its rotationY. */
-function itemFrame(it: { x: number; y: number; z: number; rotationY: number }): THREE.Matrix4 {
-  return mat(null, it.x, it.y, it.z, 1, 1, 1, it.rotationY);
-}
-
-function buildGrandstands(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, banners: MeshBatch): void {
-  const concrete = new THREE.Color('#b9bcc4');
-  const roofColors = ['#d23b3b', '#2f6fd6'];
-  const flagColors = ['#ffd23a', '#2f7be0', '#e03a3a', '#ffffff', '#33b54a'];
-  for (const gs of plan.grandstands) {
-    const rnd = seededRandom(gs.seed);
-    const LENGTH = gs.length;
-    const ROWS = gs.rows;
-    const ROW_DEPTH = gs.rowDepth;
-    // Local frame: origin at the front-center on the ground, +x pointing away
-    // from the road, +z along the road.
-    const f = itemFrame(gs);
-
-    // Front wall with banners facing the road.
-    solid.add(shapes.box, mat(f, -0.1, 0, 0, 0.3, 1.7, LENGTH), new THREE.Color('#2b2f3a'));
-    for (let z = -LENGTH / 2 + 3.5; z <= LENGTH / 2 - 3; z += 6.5) {
-      const rect = Math.round(z / 6.5) % 2 === 0 ? BANNER_LOGO : BANNER_SLOGAN;
-      banners.add(shapes.plane, mat(f, -0.27, 0.85, z, 6, 1.5, 1, -Math.PI / 2), WHITE, rect);
-    }
-    // Stepped seating rows, each with a line of spectators.
-    for (let r = 0; r < ROWS; r++) {
-      const top = 1.0 + (r + 1) * 0.7;
-      solid.add(shapes.box, mat(f, r * ROW_DEPTH + ROW_DEPTH / 2, 0, 0, ROW_DEPTH, top, LENGTH), concrete.clone().multiplyScalar(r % 2 ? 0.92 : 1));
-      for (let z = -LENGTH / 2 + 0.6; z < LENGTH / 2 - 0.4; z += 0.75) {
-        if (rnd() < 0.18) continue; // a few empty seats
-        const x = r * ROW_DEPTH + 0.75 + (rnd() - 0.5) * 0.1;
-        const shirt = hsl(rnd(), 0.65 + rnd() * 0.3, 0.45 + rnd() * 0.2);
-        const skin = hsl(0.06 + rnd() * 0.03, 0.45, 0.3 + rnd() * 0.45);
-        const tall = 0.9 + rnd() * 0.25;
-        solid.add(shapes.box, mat(f, x, top, z, 0.36, 0.62 * tall, 0.46), shirt);
-        solid.add(shapes.box, mat(f, x, top + 0.62 * tall, z, 0.28, 0.28, 0.28), skin);
-        if (rnd() < 0.12) solid.add(shapes.box, mat(f, x - 0.05, top + 0.62 * tall + 0.18, z + 0.2, 0.06, 0.55, 0.06, 0, 0, -0.5), skin); // waving arm
-      }
-    }
-    // Back wall, roof posts and a colored roof.
-    const backX = ROWS * ROW_DEPTH;
-    const roofY = 1.0 + ROWS * 0.7 + 3.2;
-    solid.add(shapes.box, mat(f, backX + 0.15, 0, 0, 0.3, roofY, LENGTH), concrete.clone().multiplyScalar(0.8));
-    for (let z = -LENGTH / 2; z <= LENGTH / 2; z += 9) solid.add(shapes.box, mat(f, 0.4, 0, z, 0.25, roofY, 0.25), new THREE.Color('#dfe3ea'));
-    solid.add(shapes.box, mat(f, backX / 2 + 0.1, roofY, 0, backX + 1.6, 0.3, LENGTH + 1, 0, 0, -0.08), new THREE.Color(roofColors[gs.index % roofColors.length]));
-    // Flags along the roof edge.
-    for (let z = -LENGTH / 2; z <= LENGTH / 2; z += 6) {
-      solid.add(shapes.cyl, mat(f, 0.1, roofY, z, 0.05, 2.6, 0.05), WHITE);
-      solid.add(shapes.flag, mat(f, 0.1, roofY + 2.6, z, 1.3, 1.3, 1.3, rnd() * 0.6 + Math.PI / 2), new THREE.Color(flagColors[Math.floor(rnd() * flagColors.length)]));
-    }
-  }
-}
-
-function buildHouses(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, look: BiomeLook): void {
-  const dark = new THREE.Color('#3a3f4a');
-  const glass = new THREE.Color('#9cc3e0');
-  for (const hs of plan.houses) {
-    const rnd = seededRandom(hs.seed);
-    const { w, h, d: depth } = hs;
-    const f = itemFrame(hs);
-    solid.add(shapes.box, mat(f, 0, 0, 0, w, h, depth), new THREE.Color(look.walls[Math.floor(rnd() * look.walls.length)]));
-    solid.add(shapes.box, mat(f, 0, 0, depth / 2, 1.1, 2.1, 0.12), dark); // door
-    for (const wx of [-w / 4 - 0.3, w / 4 + 0.3]) solid.add(shapes.box, mat(f, wx, h * 0.55, depth / 2, 1.1, 1.0, 0.12), glass);
-    if (look.flatRoofs) {
-      solid.add(shapes.box, mat(f, 0, h, 0, w + 0.3, 0.35, depth + 0.3), look.roof(rnd));
-    } else {
-      solid.add(shapes.roof, mat(f, 0, h, 0, w * 1.05, Math.max(w, depth) * 0.6, depth * 1.05), look.roof(rnd));
-      solid.add(shapes.box, mat(f, w * 0.25, h, -depth * 0.15, 0.7, Math.max(w, depth) * 0.45, 0.7), dark); // chimney
-    }
-  }
-}
-
-/** Container stacks and warehouses: coloured boxes with a little detail so they read as what they are. */
-function buildBlocks(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch): void {
-  for (const b of plan.blocks) {
-    const f = itemFrame(b);
-    const base = new THREE.Color(b.color);
-    solid.add(shapes.box, mat(f, 0, 0, 0, b.w, b.h, b.d), base);
-    if (b.kind === 'warehouse') {
-      // Darker flat roof slab, a big roller door and a strip of windows on the +z face.
-      solid.add(shapes.box, mat(f, 0, b.h, 0, b.w + 0.6, 0.5, b.d + 0.6), base.clone().multiplyScalar(0.55));
-      solid.add(shapes.box, mat(f, 0, 0, b.d / 2, Math.min(5, b.w * 0.4), Math.min(4.2, b.h * 0.7), 0.15), new THREE.Color('#3a3f4a'));
-      solid.add(shapes.box, mat(f, 0, b.h * 0.78, b.d / 2, b.w * 0.8, 0.9, 0.15), new THREE.Color('#9cc3e0'));
-    } else {
-      // Containers are 2.6 m tall each: darker ribs on the long sides and a lighter top edge per layer.
-      const layers = Math.max(1, Math.round(b.h / 2.6));
-      for (let k = 0; k < layers; k++) {
-        const y = k * (b.h / layers);
-        solid.add(shapes.box, mat(f, 0, y + b.h / layers - 0.12, 0, b.w + 0.1, 0.12, b.d + 0.1), base.clone().multiplyScalar(0.7));
-        for (let z = -b.d / 2 + 1.5; z < b.d / 2; z += 1.5) solid.add(shapes.box, mat(f, 0, y, z, b.w + 0.12, b.h / layers - 0.2, 0.1), base.clone().multiplyScalar(0.82));
-      }
-    }
-  }
-}
-
-function buildTrackside(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, banners: MeshBatch, look: BiomeLook): void {
-  const bale = new THREE.Color('#d9b45a');
-  const baleEnd = new THREE.Color('#c79a3e');
-  const post = new THREE.Color('#e6e6e6');
-  const flagColors = ['#ffd23a', '#2f7be0', '#e03a3a', '#33b54a'];
-
-  // Fences: a post at the start of each panel and two rails along it.
-  for (const fe of plan.fences) {
-    solid.add(shapes.box, mat(null, fe.x, fe.y, fe.z, 0.16, 1.2, 0.16, fe.rotationY), look.fence);
-    const f = itemFrame(fe);
-    for (const y of [0.45, 0.9]) solid.add(shapes.box, mat(f, 0, y, fe.len / 2, 0.08, 0.12, fe.len), look.fence);
-  }
-  // Hay bale piles: two on the ground and one on top.
-  for (const hb of plan.hayBales) {
-    const f = itemFrame(hb);
-    for (const [ox, oy] of [[-0.8, 0], [0.8, 0], [0, 1.2]]) {
-      solid.add(shapes.bale, mat(f, ox, 0.6 + oy, 0, 1.2, 0.6, 0.6), bale);
-      solid.add(shapes.bale, mat(f, ox, 0.6 + oy, 0, 1.22, 0.45, 0.45), baleEnd);
-    }
-  }
-  // Banner boards on posts, facing the road, with a flag on each end.
-  for (const bb of plan.bannerBoards) {
-    const rnd = seededRandom(bb.seed);
-    const f = itemFrame(bb); // local +z points at the road, x along it
-    for (const bx of [-3.2, 3.2]) {
-      solid.add(shapes.box, mat(f, bx, 0, -0.1, 0.18, 2.9, 0.18), post);
-      solid.add(shapes.cyl, mat(f, bx, 2.9, -0.1, 0.04, 1.6, 0.04), post);
-      solid.add(shapes.flag, mat(f, bx, 4.5, -0.1, 1.1, 1.1, 1.1, rnd() * Math.PI), new THREE.Color(flagColors[Math.floor(rnd() * flagColors.length)]));
-    }
-    solid.add(shapes.box, mat(f, 0, 1.1, -0.1, 6.8, 1.8, 0.12), new THREE.Color('#2b2f3a'));
-    banners.add(shapes.plane, mat(f, 0, 2.0, -0.03, 6.4, 1.6), WHITE, rnd() < 0.5 ? BANNER_LOGO : BANNER_SLOGAN);
-    banners.add(shapes.plane, mat(f, 0, 2.0, -0.17, 6.4, 1.6, 1, Math.PI), WHITE, rnd() < 0.5 ? BANNER_LOGO : BANNER_SLOGAN);
-  }
-}
-
-function buildTrees(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, look: BiomeLook): void {
-  const snow = new THREE.Color('#f4f8ff');
-  for (const t of plan.trees) {
-    const rnd = seededRandom(t.seed);
-    const s = t.scale;
-    const f = mat(null, t.x, t.y, t.z, s, s, s, t.rotationY);
-    const leaf = look.foliage(rnd);
-    switch (t.variant) {
-      case 'pine':
-        solid.add(shapes.trunk, mat(f, 0, 0, 0, 1, 0.7, 1), look.trunk);
-        solid.add(shapes.cone, mat(f, 0, 1.2, 0, 1.8, 2.6, 1.8), leaf);
-        solid.add(shapes.cone, mat(f, 0, 2.6, 0, 1.4, 2.3, 1.4, 0.5), leaf.clone().multiplyScalar(1.08));
-        solid.add(shapes.cone, mat(f, 0, 3.9, 0, 0.9, 2.0, 0.9, 1.0), look.snowyPines ? snow : leaf.clone().multiplyScalar(1.16));
-        break;
-      case 'poplar':
-        solid.add(shapes.trunk, f, look.trunk);
-        solid.add(shapes.blob, mat(f, 0, 4.4, 0, 1.1, 2.9, 1.1), leaf);
-        break;
-      case 'cactus': {
-        const green = hsl(0.28 + rnd() * 0.05, 0.38, 0.36 + rnd() * 0.08);
-        solid.add(shapes.cyl, mat(f, 0, 0, 0, 0.38, 3.4, 0.38), green);
-        solid.add(shapes.cyl, mat(f, 0, 1.4, 0, 0.22, 0.75, 0.22, 0, 0, -Math.PI / 2), green); // arm out
-        solid.add(shapes.cyl, mat(f, 0.75, 1.4, 0, 0.24, 1.3, 0.24), green); // arm up
-        solid.add(shapes.cyl, mat(f, 0, 2.0, 0, 0.2, 0.6, 0.2, 0, 0, Math.PI / 2), green);
-        solid.add(shapes.cyl, mat(f, -0.6, 2.0, 0, 0.2, 0.9, 0.2), green);
-        break;
-      }
-      default: // round, leafy tree with a lumpy crown
-        solid.add(shapes.trunk, f, look.trunk);
-        solid.add(shapes.blob, mat(f, 0, 3.5, 0, 2.0, 1.7, 2.0), leaf);
-        solid.add(shapes.blob, mat(f, 0.9, 4.3, 0.4, 1.3, 1.1, 1.3, 1), leaf.clone().multiplyScalar(1.15));
-        solid.add(shapes.blob, mat(f, -0.8, 3.9, -0.6, 1.2, 1.0, 1.2, 2), leaf.clone().multiplyScalar(0.9));
-    }
-  }
-}
-
-function buildBushesAndRocks(plan: SceneryPlan, shapes: Shapes, solid: MeshBatch, look: BiomeLook): void {
-  for (const b of plan.bushes) {
-    const rnd = seededRandom(b.seed);
-    const f = mat(null, b.x, b.y, b.z, b.scale, b.scale, b.scale, b.rotationY);
-    const c = look.bush(rnd);
-    solid.add(shapes.blob, mat(f, 0, 0.45, 0, 1.2, 0.85, 1.2), c);
-    solid.add(shapes.blob, mat(f, 0.9, 0.35, 0.3, 0.8, 0.65, 0.8, 1), c.clone().multiplyScalar(1.12));
-  }
-  for (const r of plan.rocks) {
-    const rnd = seededRandom(r.seed);
-    const c = look.rock(rnd);
-    const s = r.scale;
-    solid.add(shapes.rock, mat(null, r.x, r.y + s * 0.25, r.z, r.sx, r.sy, r.sz, r.rotationY, r.tilt), c);
-    if (r.twin) solid.add(shapes.rock, mat(null, r.x + s * 1.1, r.y + s * 0.1, r.z + s * 0.3, s * 0.5, s * 0.4, s * 0.5, rnd() * 6.28), c.clone().multiplyScalar(0.9));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Ground detail: grass tufts and flowers (thinned on lower quality)
-// ---------------------------------------------------------------------------
-
-interface DetailItem {
-  geo: THREE.BufferGeometry;
-  matrix: THREE.Matrix4;
-  color: THREE.Color;
-}
-
-function addGroundDetail(site: Site, shapes: Shapes, out: DetailItem[], look: BiomeLook, rnd: () => number, treeCount: number): void {
-  const clusters = Math.round(treeCount * 0.35);
+function addGroundDetail(site: Site, plan: SceneryPlan, set: ReturnType<typeof buildPropSet>, out: LodBatch, style: Style, rnd: () => number, treeCount: number): void {
+  const flowerColors: Record<Style, string[]> = {
+    meadow: ['#ffffff', '#ffe14d', '#ff7eb6', '#b48cff', '#ff5a4d'],
+    sky: ['#ffffff', '#ffe14d', '#ff7eb6', '#b48cff'],
+    harbour: ['#ffe14d', '#ffffff'],
+    autumn: ['#ffb02e', '#ffe14d', '#e2572b'],
+    desert: ['#ff6fa8', '#ffd84a'],
+    alpine: [],
+    volcanic: [],
+  };
+  const flowers = flowerColors[style];
+  const clusters = Math.round(treeCount * 0.35) + (style === 'sky' ? 30 : 0);
+  const items: { geo: THREE.BufferGeometry; m: THREE.Matrix4; c: THREE.Color }[] = [];
   for (let c = 0; c < clusters; c++) {
     const p = site.S[Math.floor(rnd() * site.S.length)];
     const side = rnd() < 0.5 ? -1 : 1;
     const [cx, cz] = site.beside(p, side * (site.outer + 2 + rnd() * 30));
     const radius = 2.5 + rnd() * 4;
-    const flowery = look.flowers.length > 0 && rnd() < 0.5;
-    const flowerColor = flowery ? new THREE.Color(look.flowers[Math.floor(rnd() * look.flowers.length)]) : WHITE;
-    const items = 10 + Math.floor(rnd() * 16);
-    for (let k = 0; k < items; k++) {
+    const flowery = flowers.length > 0 && rnd() < 0.5;
+    const flowerColor = flowery ? new THREE.Color(flowers[Math.floor(rnd() * flowers.length)]) : new THREE.Color('#ffffff');
+    const n = 10 + Math.floor(rnd() * 16);
+    for (let k = 0; k < n; k++) {
       const a = rnd() * Math.PI * 2;
       const r = Math.sqrt(rnd()) * radius;
       const x = cx + Math.cos(a) * r;
       const z = cz + Math.sin(a) * r;
       if (site.distToTrack(x, z) < site.outer + 1 || !site.isFree(x, z)) continue;
+      const y = plan.heightAt(x, z);
       if (flowery && rnd() < 0.55) {
-        const h = 0.25 + rnd() * 0.25;
-        out.push({ geo: shapes.blade, matrix: mat(null, x, 0, z, 0.03, h, 0.03), color: look.tuft(rnd) });
-        out.push({ geo: shapes.flower, matrix: mat(null, x, h, z, 0.13, 0.1, 0.13, rnd() * 3), color: flowerColor });
+        const s = 0.9 + rnd() * 0.5;
+        items.push({ geo: set.flower, m: matrix(x, y, z, s, s, s, rnd() * 6.28), c: flowerColor });
       } else {
-        // A tuft: three thin blades leaning outwards.
-        const c = look.tuft(rnd);
-        const h = 0.5 + rnd() * 0.6;
-        const ry = rnd() * Math.PI * 2;
-        for (let b = 0; b < 3; b++) out.push({ geo: shapes.blade, matrix: mat(null, x, 0, z, 0.07, h * (0.8 + b * 0.15), 0.07, ry + b * 2.1, 0.35), color: c });
+        const s = 0.7 + rnd() * 0.7;
+        items.push({ geo: set.tuft, m: matrix(x, y, z, s, s, s, rnd() * 6.28), c: jitter(rnd, 0.18) });
       }
     }
   }
-}
-
-function shuffle<T>(a: T[], rnd: () => number): void {
-  for (let i = a.length - 1; i > 0; i--) {
+  // Shuffled so that drawing only the first N% of a chunk thins it evenly.
+  for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [items[i], items[j]] = [items[j], items[i]];
   }
+  for (const it of items) out.add(it.geo, null, it.m, it.c);
 }
 
 // ---------------------------------------------------------------------------
-// Far away: hills, mountains, clouds
+// Backdrop and clouds
 // ---------------------------------------------------------------------------
 
-function addHills(site: Site, shapes: Shapes, solid: MeshBatch, look: BiomeLook, rnd: () => number): void {
-  const R = site.radius + 160;
-  const N = 28;
+function buildBackdrop(site: Site, style: Style, def: TrackDef, rnd: () => number): THREE.Object3D {
+  const out = new THREE.Group();
+  out.name = 'backdrop';
+  if (def.scenery.openSky) return out;
+  const horizon = new THREE.Color(def.theme.horizon);
+  const kind: BackdropKind = style === 'alpine' ? 'alpine' : style === 'volcanic' ? 'volcanic' : style === 'desert' ? 'desert' : style === 'autumn' ? 'autumn' : style === 'harbour' ? 'harbour' : 'meadow';
+  const SECTORS = 8;
+  const buckets: THREE.BufferGeometry[][] = Array.from({ length: SECTORS }, () => []);
+  const put = (x: number, z: number, g: THREE.BufferGeometry) => {
+    const a = (Math.atan2(z - site.cz, x - site.cx) + Math.PI * 2) % (Math.PI * 2);
+    buckets[Math.floor((a / (Math.PI * 2)) * SECTORS) % SECTORS].push(g);
+  };
+  const hill = (base: string, top: string) => ({ base: new THREE.Color(base), top: new THREE.Color(top) });
+  const hillCol = {
+    alpine: hill('#cfdbe8', '#f4f8fd'),
+    volcanic: hill('#2c211f', '#4a3a36'),
+    meadow: hill('#3f8a3a', '#7fc050'),
+    harbour: hill('#4a6a7a', '#7e9aa8'),
+    autumn: hill('#8a5a2a', '#c98a3a'),
+    desert: hill('#a8754a', '#d9a672'),
+    none: hill('#444', '#888'),
+  }[kind];
+
+  // Near ring of soft hills.
+  const N = 24;
   for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI * 2 + rnd() * 0.2;
-    const r = R + rnd() * 60;
-    const s = 50 + rnd() * 60;
-    solid.add(shapes.hill, mat(null, site.cx + Math.cos(a) * r, -2, site.cz + Math.sin(a) * r, s * 1.6, s * 0.45, s, rnd() * 6.28), look.hill(rnd));
+    const a = (i / N) * Math.PI * 2 + rnd() * 0.25;
+    const dist = site.radius + 170 + rnd() * 70;
+    const s = 55 + rnd() * 60;
+    const g = hillGeo(s * 1.5, s * 0.5, i * 3 + 1, hillCol.base, hillCol.top, horizon, 0.22);
+    g.applyMatrix4(matrix(site.cx + Math.cos(a) * dist, -1, site.cz + Math.sin(a) * dist, 1, 1, 1, rnd() * 6.28));
+    put(site.cx + Math.cos(a) * dist, site.cz + Math.sin(a) * dist, g);
   }
-}
 
-function addMountains(site: Site, shapes: Shapes, far: MeshBatch, look: BiomeLook, rnd: () => number, horizon: THREE.Color): void {
-  const snow = new THREE.Color('#f4f8ff');
-  // Two rings: the farther one is mixed more with the horizon color (haze).
-  for (const [ring, haze, count] of [[0, 0.35, 18], [1, 0.55, 24]] as const) {
+  const rock = {
+    alpine: ['#8a98ac', '#4d5a6e'],
+    volcanic: ['#6a4a46', '#2a1f20'],
+    meadow: ['#7d8a94', '#4a5a63'],
+    harbour: ['#7a8ea2', '#56687a'],
+    autumn: ['#8a7a78', '#5a4a4a'],
+    desert: ['#c98d62', '#8a5a3a'],
+    none: ['#888', '#444'],
+  }[kind];
+  for (const [ring, haze, count] of [
+    [0, 0.3, 14],
+    [1, 0.5, 18],
+  ] as const) {
     for (let i = 0; i < count; i++) {
       const a = ((i + rnd() * 0.6) / count) * Math.PI * 2;
       const dist = site.radius + 380 + ring * 170 + rnd() * 90;
       const x = site.cx + Math.cos(a) * dist;
       const z = site.cz + Math.sin(a) * dist;
-      const r = 90 + rnd() * 90;
-      const h = (ring ? 110 : 70) + rnd() * 90;
-      const ry = rnd() * 6.28;
-      const c = look.mountain(rnd).lerp(horizon, haze);
-      if (look.mesas) {
-        far.add(shapes.mesa, mat(null, x, -5, z, r, h * 0.45, r * 0.8, ry), c);
-        far.add(shapes.mesa, mat(null, x, h * 0.45 - 5, z, r * 0.7, h * 0.08, r * 0.55, ry), c.clone().lerp(horizon, 0.1)); // cap layer
-      } else {
-        far.add(shapes.cone, mat(null, x, -5, z, r, h, r * 0.85, ry), c);
-        if (look.snowCaps && h > 120) far.add(shapes.cone, mat(null, x, -5 + h * 0.68, z, r * 0.335, h * 0.32, r * 0.85 * 0.335, ry), snow.clone().lerp(horizon, haze * 0.6));
+      const radius = 110 + rnd() * 100;
+      const volcano = kind === 'volcanic' && ring === 0 && i % 4 === 1;
+      const height = (ring ? 130 : 85) * (kind === 'harbour' ? 0.6 : 1) + rnd() * 90 + (volcano ? 70 : 0);
+      const g = mountainGeo(
+        { kind: volcano ? 'volcanic' : kind === 'volcanic' ? 'alpine' : kind, radius, height, seed: i * 7 + ring * 101, haze, horizon, rock: new THREE.Color(rock[0]), rockDark: new THREE.Color(rock[1]) },
+        14,
+        36,
+      );
+      if (kind === 'volcanic' && !volcano) {
+        // dark ridges: no snow
+        const col = g.getAttribute('color') as THREE.BufferAttribute;
+        for (let k = 0; k < col.count; k++) {
+          scratch.fromBufferAttribute(col, k);
+          const l = (scratch.r + scratch.g + scratch.b) / 3;
+          scratch.set(l * 0.5 + 0.02, l * 0.4 + 0.02, l * 0.45 + 0.03).lerp(horizon, haze * 0.7);
+          col.setXYZ(k, scratch.r, scratch.g, scratch.b);
+        }
       }
+      g.applyMatrix4(matrix(x, 0, z, 1, 1, 1, rnd() * 6.28));
+      put(x, z, g);
     }
   }
-}
-
-/**
- * Mountains don't use fog, so their feet would stand out sharply against the
- * fogged-out ground. Blend each vertex toward the horizon color the lower it
- * is, so the mountains rise out of the haze.
- */
-function fadeBaseToHorizon(geo: THREE.BufferGeometry, horizon: THREE.Color, height: number): void {
-  const pos = geo.getAttribute('position');
-  const col = geo.getAttribute('color');
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const t = THREE.MathUtils.clamp(1 - pos.getY(i) / height, 0, 1);
-    c.fromBufferAttribute(col as THREE.BufferAttribute, i).lerp(horizon, t * t * 0.9);
-    col.setXYZ(i, c.r, c.g, c.b);
+  if (kind === 'harbour') {
+    const dusk = isDusk(def.theme);
+    for (let s = 0; s < 2; s++) {
+      const a = (s === 0 ? 0.6 : 3.9) + rnd() * 0.4;
+      const dist = site.radius + 330;
+      const g = skylineGeo(rnd, 26, 360, horizon, dusk);
+      g.applyMatrix4(matrix(site.cx + Math.cos(a) * dist, 0, site.cz + Math.sin(a) * dist, 1, 1, 1, -a + Math.PI / 2));
+      put(site.cx + Math.cos(a) * dist, site.cz + Math.sin(a) * dist, g);
+    }
   }
+  const mat = backdropMaterial(false);
+  for (const list of buckets) {
+    if (!list.length) continue;
+    const mesh = new THREE.Mesh(merge(list), mat);
+    mesh.frustumCulled = true;
+    out.add(mesh);
+  }
+  return out;
 }
 
-function buildClouds(site: Site, shapes: Shapes, look: BiomeLook, rnd: () => number, horizon: THREE.Color): THREE.Mesh {
-  const batch = new MeshBatch();
-  for (let i = 0; i < look.cloudCount; i++) {
+/** Fluffy clouds drifting slowly around the track (hidden on Low). */
+function buildClouds(site: Site, style: Style, theme: TrackDef['theme'], rnd: () => number): THREE.Mesh {
+  const horizon = new THREE.Color(theme.horizon);
+  const sky = new THREE.Color(theme.sky);
+  const belly = sky.clone().lerp(horizon, 0.55).lerp(new THREE.Color('#9aa4b8'), 0.25);
+  const tint = new THREE.Color('#ffffff').lerp(horizon, style === 'volcanic' ? 0.55 : 0.18);
+  const count = 34;
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < count; i++) {
     const a = rnd() * Math.PI * 2;
     const dist = 250 + rnd() * 650;
-    const f = mat(null, site.cx + Math.cos(a) * dist, 80 + rnd() * 110, site.cz + Math.sin(a) * dist, 1, 1, 1, rnd() * 6.28);
-    const size = 12 + rnd() * 14;
-    const puffs = 4 + Math.floor(rnd() * 4);
-    for (let k = 0; k < puffs; k++) {
-      const t = puffs > 1 ? k / (puffs - 1) - 0.5 : 0; // spread along local x
-      const s = size * (1 - Math.abs(t) * 0.9) * (0.75 + rnd() * 0.4);
-      batch.add(shapes.puff, mat(f, t * size * 3.2, rnd() * size * 0.3, (rnd() - 0.5) * size, s * 1.2, s * 0.65, s), WHITE);
-    }
+    const size = 11 + rnd() * 14;
+    const g = cloudGeo(rnd, size, belly, tint);
+    // Sky tracks also get low clouds hugging the islands' undersides.
+    const low = rnd() < 0.75;
+    const y = low ? -40 + rnd() * 25 : 80 + rnd() * 110;
+    g.applyMatrix4(matrix(site.cx + Math.cos(a) * dist, y, site.cz + Math.sin(a) * dist, 1, 1, 1, rnd() * 6.28));
+    parts.push(g);
   }
-  // Emissive horizon tint = soft, bright clouds that blend with the sky.
-  const mesh = batch.build(new THREE.MeshLambertMaterial({ vertexColors: true, fog: false, emissive: horizon.clone().multiplyScalar(0.45) }));
+  const mesh = new THREE.Mesh(merge(parts), backdropMaterial(false));
   mesh.userData.cloudLayer = true;
-  // Drift slowly around the track. onBeforeRender runs right before drawing,
-  // so this needs no hook in the game loop.
+  mesh.frustumCulled = false;
   const pivot = new THREE.Vector3(site.cx, 0, site.cz);
   mesh.position.copy(pivot);
   mesh.geometry.translate(-pivot.x, 0, -pivot.z);
@@ -644,3 +370,60 @@ function buildClouds(site: Site, shapes: Shapes, look: BiomeLook, rnd: () => num
   };
   return mesh;
 }
+
+// ---------------------------------------------------------------------------
+// Start / finish gantry
+// ---------------------------------------------------------------------------
+
+/**
+ * Start/finish gantry across the road at sample `s`: two tapered posts on footings, a
+ * checkered beam with "TILT KART" logos on both faces, a lamp row and a waving flag on each post.
+ */
+export function buildGantry(s: TrackSample, halfSpan: number): THREE.Group {
+  const g = new THREE.Group();
+  const f = frameM({ x: s.x, y: 0, z: s.z, rotationY: s.heading }); // local x = across the road, z = along it
+  const y0 = s.y;
+  f.elements[13] = y0;
+  const posts = new ChunkBatch(1000);
+  const cloth = new ChunkBatch(1000);
+  const glow = new ChunkBatch(1000);
+  const white = new THREE.Color('#ffffff');
+  const metal = new THREE.Color('#dfe3ea');
+  const foot = new THREE.Color('#9aa3b0');
+  for (const side of [-1, 1]) {
+    const x = side * halfSpan;
+    const parts = [
+      polePart(0, 0, 6.8, 0.27, metal, 10),
+      boxPart(0, 0.15, 0, 1.2, 0.3, 1.2, foot),
+      boxPart(0, 0.45, 0, 0.8, 0.3, 0.8, foot),
+      polePart(0, 0, 9.2, 0.04, white, 4), // flag pole
+    ];
+    posts.add(merge(parts), f.clone().multiply(matrix(x, 0, 0)), white);
+    cloth.add(flagGeo(1.7, 1.0, new THREE.Color(side < 0 ? '#ffd23a' : '#2f7be0'), true), f.clone().multiply(matrix(x, 8.6, 0, 1, 1, 1, side < 0 ? Math.PI : 0)), white);
+  }
+  // Lamp row under the beam.
+  for (let x = -halfSpan + 1.5; x <= halfSpan - 1.4; x += 1.5) glow.add(boxPart(0, 0, 0, 0.35, 0.12, 0.18, new THREE.Color(4, 3.7, 3), 0, 1), f.clone().multiply(matrix(x, 5.42, 0)), white);
+
+  const mat = propMaterial();
+  const postMesh = posts.build(mat, true);
+  g.add(postMesh);
+  g.add(cloth.build(clothMaterial(), false));
+  g.add(glow.build(glowMaterial(), false, false));
+
+  const beamTex = checkerTexture();
+  beamTex.repeat.set(halfSpan, 1);
+  const beam = new THREE.Mesh(new RoundedBoxGeometry(halfSpan * 2 + 0.5, 1.4, 0.4, 2, 0.12), new THREE.MeshStandardMaterial({ map: beamTex, roughness: 0.6 }));
+  beam.applyMatrix4(f.clone().multiply(matrix(0, 6.2, 0)));
+  beam.castShadow = true;
+  g.add(beam);
+
+  // Logo panels on both faces of the beam (karts approach from -z).
+  const logos = new ChunkBatch(1000, true);
+  const plane = new THREE.PlaneGeometry(1, 1);
+  logos.add(plane, f.clone().multiply(matrix(0, 6.2, -0.21, 5.2, 1.3, 1, Math.PI)), white, BANNER_LOGO);
+  logos.add(plane, f.clone().multiply(matrix(0, 6.2, 0.21, 5.2, 1.3, 1, 0)), white, BANNER_LOGO);
+  g.add(logos.build(bannerMaterial(bannerTexture()), false));
+  return g;
+}
+
+export { paint };

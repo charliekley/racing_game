@@ -42,13 +42,13 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
 
   // Materials are shared by every branch. polygonOffset pulls the branch road toward the camera where it overlaps the main road.
   const onTop = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
-  const roadMat = new THREE.MeshLambertMaterial({ map: roadTexture(), ...onTop });
-  const dirtMat = new THREE.MeshLambertMaterial({ map: dirtTexture(), ...onTop });
-  const curbMat = new THREE.MeshLambertMaterial({ map: curbTexture(), ...onTop });
+  const roadMat = new THREE.MeshStandardMaterial({ map: roadTexture(), ...onTop });
+  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTexture(), ...onTop });
+  const curbMat = new THREE.MeshStandardMaterial({ map: curbTexture(), ...onTop });
   const offTex = grassTexture(def.theme.offroad, 3);
   offTex.repeat.set(1, 1);
-  const offMat = new THREE.MeshLambertMaterial({ map: offTex });
-  const wallMat = new THREE.MeshLambertMaterial({ map: wallTexture(), side: THREE.DoubleSide });
+  const offMat = new THREE.MeshStandardMaterial({ map: offTex });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), side: THREE.DoubleSide });
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, cast = false) => {
     const m = new THREE.Mesh(geo, mat);
     m.receiveShadow = true;
@@ -146,7 +146,7 @@ function buildGate(b: Branch, clear: (p: TrackSample, d: number) => boolean): TH
   const p = S[Math.min(k, S.length - 8)];
   const half = p.width / 2 + 1.4;
   const postH = 5.2;
-  const postMat = new THREE.MeshLambertMaterial({ color: b.surface === 'dirt' ? '#7a5230' : '#3a3f4a' });
+  const postMat = new THREE.MeshStandardMaterial({ color: b.surface === 'dirt' ? '#7a5230' : '#3a3f4a' });
   for (const side of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.45, postH, 0.45), postMat);
     post.position.set(p.x + p.rx * side * half, p.y + postH / 2, p.z + p.rz * side * half);
@@ -160,7 +160,7 @@ function buildGate(b: Branch, clear: (p: TrackSample, d: number) => boolean): TH
   board.rotation.y = Math.atan2(-p.tx, -p.tz); // face the driver coming along the road
   g.add(board);
   // A plain back so the board is not see-through from behind.
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshLambertMaterial({ color: '#d79a1a' }));
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ color: '#d79a1a' }));
   back.position.copy(board.position).addScaledVector(new THREE.Vector3(p.tx, 0, p.tz), 0.03);
   back.rotation.y = board.rotation.y + Math.PI;
   g.add(back);
