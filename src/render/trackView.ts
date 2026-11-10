@@ -14,7 +14,7 @@ import {
   wallTexture,
   waterTexture,
 } from './textures';
-import { buildGantry, buildScenery } from './scenery';
+import { ENV_TIME, buildGantry, buildScenery } from "./scenery";
 import { buildRamps } from './rampView';
 import { TerrainView } from './terrainView';
 import { buildBranchViews } from './branchView';
@@ -205,6 +205,7 @@ export class TrackView {
 
   /** Animate (boost arrows). */
   update(time: number): void {
+    ENV_TIME.value = time;
     this.boostTex.offset.y = -time * 2;
     if (this.waterTex) this.waterTex.offset.set(Math.sin(time * 0.6) * 0.05, time * 0.08);
   }
