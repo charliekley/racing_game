@@ -110,10 +110,12 @@ const lobbyView = new LobbyView($('slots'), players, {
 
 // --- Graphics quality (Q in the lobby; remembered on this computer) ----------
 const QUALITY_KEY = 'tiltkart.quality'; // a preset the player picked with Q: always wins
-const AUTO_QUALITY_KEY = 'tiltkart.autoQuality'; // the last preset adaptive quality had to drop to
+// The preset adaptive quality had to drop to. Kept in sessionStorage (forgotten when the tab closes),
+// so one slow moment (a busy laptop, a hidden tab) cannot leave the game on Low for good.
+const AUTO_QUALITY_KEY = 'tiltkart.autoQuality';
 /**
  * First-run choice. Priority: ?quality=low|medium|high in the address (testing), the player's saved
- * choice, otherwise a guess from the GPU name, lowered to wherever adaptive quality ended up last time.
+ * choice, otherwise a guess from the GPU name, lowered to wherever adaptive quality ended up earlier in this tab.
  */
 const URL_QUALITY = presetByName(new URLSearchParams(location.search).get('quality'));
 /** True once the player picked a preset with Q (now or on an earlier visit): adaptive quality must not change it. */
@@ -127,7 +129,7 @@ function loadQuality(): QualitySettings {
       return manual;
     }
     const guess = presetByName(presetNameForGpu(gpuName())) ?? DEFAULT_QUALITY;
-    const auto = presetByName(localStorage.getItem(AUTO_QUALITY_KEY));
+    const auto = presetByName(sessionStorage.getItem(AUTO_QUALITY_KEY));
     return auto && QUALITY_PRESETS.indexOf(auto) > QUALITY_PRESETS.indexOf(guess) ? auto : guess;
   } catch {
     return DEFAULT_QUALITY;
@@ -145,7 +147,7 @@ function stepDownQuality() {
   qualityEl.textContent = quality.name;
   qualityChip.textContent = quality.name;
   try {
-    localStorage.setItem(AUTO_QUALITY_KEY, quality.name); // not the manual key: a manual choice is still respected next time
+    sessionStorage.setItem(AUTO_QUALITY_KEY, quality.name); // not the manual key: a manual choice is still respected next time
   } catch {
     /* ignore */
   }
