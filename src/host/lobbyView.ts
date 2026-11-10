@@ -6,10 +6,11 @@
  * cards once per lobby change (`render`) and then only poke a few text/style
  * values every frame (`updateDebug`), which is cheap.
  */
+import { CHARACTERS, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { colorHex } from '../shared/colors';
 import { BUTTON_NAMES, Buttons } from '../shared/protocol';
 import { MAX_PLAYERS, type PlayerManager } from './playerManager';
-import { KEY_SCHEMES } from './input/localInput';
+import { KEY_CHARACTER, KEY_KART, KEY_SCHEMES } from './input/localInput';
 import type { PlayerSlot } from './playerSlots';
 
 interface CardRefs {
@@ -74,6 +75,7 @@ export class LobbyView {
         <span class="slot-device">${device}</span>
       </div>
       <div class="slot-state ${stateClass}">${stateText}</div>
+      <div class="slot-loadout"></div>
       <div class="debug">
         <div class="steer-bar"><div class="steer-fill"></div></div>
         <div class="pills"></div>
@@ -82,6 +84,24 @@ export class LobbyView {
       <div class="slot-actions"></div>`;
     // Names come from phones: set via textContent (never innerHTML) so they can't inject HTML.
     el.querySelector('.slot-name')!.textContent = slot.name;
+
+    // Character and kart names are our own data (never from the network as text), but we still use textContent.
+    const loadout = sanitizeLoadout(slot.loadout);
+    const loadoutEl = el.querySelector('.slot-loadout') as HTMLElement;
+    loadoutEl.textContent = `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`;
+    loadoutEl.style.cssText = 'font-size:0.85em;opacity:0.8;margin:2px 0 6px';
+    if (slot.owner.kind === 'keyboard') {
+      const keys = (code: string) => code.replace('Key', '').replace('Comma', ',').replace('Period', '.');
+      const hint = document.createElement('span');
+      hint.textContent = `  (${keys(KEY_CHARACTER[slot.owner.scheme])}: driver, ${keys(KEY_KART[slot.owner.scheme])}: kart)`;
+      hint.style.opacity = '0.6';
+      loadoutEl.appendChild(hint);
+    } else if (slot.owner.kind === 'gamepad') {
+      const hint = document.createElement('span');
+      hint.textContent = '  (D-pad: driver, kart)';
+      hint.style.opacity = '0.6';
+      loadoutEl.appendChild(hint);
+    }
 
     const pillsEl = el.querySelector('.pills') as HTMLElement;
     const pills: Record<string, HTMLElement> = {};

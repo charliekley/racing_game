@@ -40,6 +40,10 @@ export const KEY_SCHEMES: KeyScheme[] = [
 /** Keys that add a keyboard player in the lobby ("1" -> WASD player, "2" -> arrows player). */
 export const KEY_JOIN = ['Digit1', 'Digit2'];
 
+/** Lobby keys to pick a driver (character) and a kart body: one per keyboard scheme (WASD player, arrows player). */
+export const KEY_CHARACTER = ['KeyC', 'Comma'];
+export const KEY_KART = ['KeyV', 'Period'];
+
 /** How fast keyboard steering ramps toward full lock / back to center (units per second). */
 const KEY_STEER_RATE = 5;
 const KEY_RETURN_RATE = 9;
@@ -116,6 +120,12 @@ export function readGamepad(pad: Gamepad): ControlInput {
   if (pressed(GP.LB) || pressed(GP.Y)) buttons |= Buttons.ITEM;
   if (pressed(GP.DPAD_UP)) buttons |= Buttons.TRICK;
   return { steer: x, buttons };
+}
+
+/** D-pad left / right / down as bits 1 / 2 / 4: the lobby uses them to pick a driver and a kart. */
+export function padLoadoutButtons(pad: Gamepad): number {
+  const down = (i: number) => (pad.buttons[i]?.pressed ? 1 : 0);
+  return down(14) | (down(15) << 1) | (down(13) << 2);
 }
 
 /** True if the pad's Start or A button is down (used to join from the lobby). */

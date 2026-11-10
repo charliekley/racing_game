@@ -19,15 +19,20 @@ import {
   type HostToController,
 } from '../shared/protocol';
 import type { HostTransport, Link } from '../shared/net/transport';
+import { CHARACTERS, KART_BODIES } from '../shared/characters';
+import { botLoadoutFor } from '../sim/classes';
 import { Signal } from '../shared/signal';
 import { MAX_PLAYERS, PlayerSlots, type PlayerSlot } from './playerSlots';
 import {
+  KEY_CHARACTER,
   KEY_JOIN,
+  KEY_KART,
   KEY_SCHEMES,
   KeyboardPlayerInput,
   KeyboardState,
   connectedGamepads,
   gamepadWantsJoin,
+  padLoadoutButtons,
   readGamepad,
 } from './input/localInput';
 
@@ -72,6 +77,8 @@ export class PlayerManager {
   private keyboards: (KeyboardPlayerInput | null)[] = KEY_SCHEMES.map(() => null);
   private prevLocalButtons = new Map<number, number>();
   private padJoinHeld = new Set<number>();
+  /** D-pad buttons held last frame per gamepad slot (bit 1 left, 2 right, 4 down), for edge detection. */
+  private padHeld = new Map<number, number>();
 
   constructor(
     transport: HostTransport,
@@ -154,9 +161,19 @@ export class PlayerManager {
     while (this.slots.find({ kind: 'bot', id })) id++;
     const r = this.slots.join({ kind: 'bot', id }, `Bot ${id}`, id + 3);
     if (!r.ok) return false;
+    r.slot.loadout = botLoadoutFor(r.slot.index); // varied but fixed per slot
     r.slot.ready = true;
     this.lobbyChanged();
     return true;
+  }
+
+  /** Step a local player's character (or kart body) forwards/backwards through the lists. */
+  private cycleLoadout(slotIndex: number, what: 'character' | 'kart', dir = 1): void {
+    const slot = this.slots.slots[slotIndex];
+    if (!slot) return;
+    const n = what === 'character' ? CHARACTERS.length : KART_BODIES.length;
+    const next = { ...slot.loadout, [what]: (slot.loadout[what] + dir + n) % n };
+    if (this.slots.setLoadout(slotIndex, next)) this.lobbyChanged();
   }
 
   private readyBots(): void {
@@ -192,6 +209,14 @@ export class PlayerManager {
       }
     });
 
+    // Keyboard players pick their driver and kart with two keys each (lobby only; the race locks it in).
+    for (const slot of this.slots.players) {
+      if (slot.owner.kind !== 'keyboard' || !inLobby) continue;
+      const { scheme } = slot.owner;
+      if (pressed.has(KEY_CHARACTER[scheme])) this.cycleLoadout(slot.index, 'character');
+      if (pressed.has(KEY_KART[scheme])) this.cycleLoadout(slot.index, 'kart');
+    }
+
     // B adds a bot.
     if (pressed.has('KeyB') && inLobby) this.addBot();
 
@@ -201,6 +226,7 @@ export class PlayerManager {
       if (wants && !this.padJoinHeld.has(pad.index) && inLobby && !this.slots.find({ kind: 'gamepad', index: pad.index })) {
         const r = this.slots.join({ kind: 'gamepad', index: pad.index }, `Pad ${pad.index + 1}`, pad.index + 4);
         if (r.ok) {
+          this.padHeld.set(r.slot.index, 0);
           this.prevLocalButtons.set(r.slot.index, Buttons.GAS); // don't count this press as "ready"
           this.lobbyChanged();
         }
@@ -221,6 +247,15 @@ export class PlayerManager {
         slot.connected = !!pad;
         if (wasConnected !== slot.connected) this.lobbyChanged();
         input = pad ? readGamepad(pad) : null;
+        // D-pad left/right = previous/next driver, D-pad down = next kart (edge-triggered, lobby only).
+        if (pad && inLobby) {
+          const dpad = padLoadoutButtons(pad);
+          const was = this.padHeld.get(slot.index) ?? 0;
+          if (dpad & ~was & 1) this.cycleLoadout(slot.index, 'character', -1);
+          if (dpad & ~was & 2) this.cycleLoadout(slot.index, 'character', 1);
+          if (dpad & ~was & 4) this.cycleLoadout(slot.index, 'kart');
+          this.padHeld.set(slot.index, dpad);
+        }
       }
       if (!input) continue;
       this.localInputs.set(slot.index, input);
@@ -273,7 +308,7 @@ export class PlayerManager {
           return;
         }
         if (typeof msg.clientId !== 'string' || !msg.clientId) return;
-        const result = this.slots.join({ kind: 'phone', clientId: msg.clientId }, msg.name, msg.color);
+        const result = this.slots.join({ kind: 'phone', clientId: msg.clientId }, msg.name, msg.color, msg.loadout);
         if (!result.ok) {
           session.link.sendEvent({ t: 'reject', reason: result.reason });
           setTimeout(() => session.link.close(), 500);
@@ -289,7 +324,7 @@ export class PlayerManager {
         session.clientId = msg.clientId;
         session.slotIndex = slot.index;
         this.sessionBySlot.set(slot.index, session);
-        if (!result.rejoined) this.slots.setProfile(slot.index, msg.name, msg.color);
+        if (!result.rejoined) this.slots.setProfile(slot.index, msg.name, msg.color, msg.loadout);
         session.link.sendEvent(this.welcomeFor(slot));
         if (this.trackMsg && this.slots.phase !== 'lobby') session.link.sendEvent(this.trackMsg);
         this.lobbyChanged();
@@ -297,7 +332,7 @@ export class PlayerManager {
       }
       case 'profile':
         if (session.slotIndex === null) return;
-        this.slots.setProfile(session.slotIndex, msg.name, msg.color);
+        this.slots.setProfile(session.slotIndex, msg.name, msg.color, msg.loadout);
         this.sendTo(session.slotIndex, this.welcomeFor(this.slots.slots[session.slotIndex]!));
         this.lobbyChanged();
         return;
@@ -346,7 +381,7 @@ export class PlayerManager {
   }
 
   private welcomeFor(slot: PlayerSlot): HostToController {
-    return { t: 'welcome', slot: slot.index, name: slot.name, color: slot.color, ready: slot.ready, phase: this.slots.phase };
+    return { t: 'welcome', slot: slot.index, name: slot.name, color: slot.color, ready: slot.ready, phase: this.slots.phase, loadout: { ...slot.loadout } };
   }
 
   private lastSecond = performance.now();

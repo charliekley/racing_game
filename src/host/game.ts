@@ -20,6 +20,7 @@ import { World, type WorldEvent } from '../sim/world';
 import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera } from '../render/chaseCamera';
 import { KartView } from '../render/kartView';
+import { DEFAULT_LOADOUT } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
@@ -177,7 +178,9 @@ export class Game {
       v.hud.dispose();
     }
     this.world = new World(this.track, this.track);
-    this.world.startRace(slots, this.track.def.laps);
+    // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
+    const loadouts = new Map(slots.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? DEFAULT_LOADOUT] as const));
+    this.world.startRace(slots, this.track.def.laps, loadouts);
 
     // Launch cannons for this track (barrel, mouth glow, landing pad).
     this.cannonView?.dispose(this.scene);
@@ -204,7 +207,7 @@ export class Game {
       hud.root.classList.toggle('solo', slots.length === 1);
       const chase = new ChaseCamera();
       chase.snap();
-      return { slot, kart: new KartView(this.scene, color), chase, hud, rect: layout.views[i] };
+      return { slot, kart: new KartView(this.scene, color, loadouts.get(slot)), chase, hud, rect: layout.views[i] };
     });
     this.minimap.place(layout.minimap);
 
@@ -229,7 +232,7 @@ export class Game {
     if (this.players.isBot(slot)) {
       const k = this.world.karts.get(slot);
       if (k) {
-        const base = autopilot(k, this.track, botStyleFor(slot));
+        const base = autopilot(k, this.track, botStyleFor(slot), this.world.configOf(slot));
         return { ...base, buttons: base.buttons | botItemButton(slot, this.world.items?.states.get(slot)) };
       }
     }

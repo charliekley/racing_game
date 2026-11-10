@@ -14,7 +14,7 @@
  * (what happens on use), and a row in `odds.ts`.
  */
 import { Buttons, type ControlInput } from '../../shared/protocol';
-import { ITEMS, KART, SIM_DT } from '../config';
+import { ITEMS, KART, SIM_DT, type KartConfig } from '../config';
 import { applyBoost, spinOut, type KartState } from '../kart';
 import type { Colliders } from '../colliders';
 import type { Track } from '../track';
@@ -75,6 +75,9 @@ export class ItemSystem {
   setColliders(colliders: Colliders | null): void {
     this.colliders = colliders;
   }
+
+  /** Each kart's own physics numbers (set by the World), so a hit's spin-out can depend on the kart's weight. */
+  configOf: (slot: number) => KartConfig = () => KART;
 
   constructor(
     private readonly track: Track,
@@ -200,7 +203,7 @@ export class ItemSystem {
       events.push({ kind: 'blocked', slot, by });
       return false;
     }
-    spinOut(k);
+    spinOut(k, this.configOf(slot));
     // A hit while dragging an item loses it (a dragged Slick is left on the road).
     const st = this.states.get(slot);
     if (st) this.cancelHold(slot, st, true);

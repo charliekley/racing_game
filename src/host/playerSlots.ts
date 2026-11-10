@@ -6,6 +6,7 @@
  * keyboard/gamepad), so when a phone drops and reconnects it gets the same slot
  * back - even mid-race.
  */
+import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
 import { KART_COLORS, clampColorIndex } from '../shared/colors';
 import type { GamePhase, LobbyPlayerInfo } from '../shared/protocol';
 import { sanitizeName } from '../shared/protocol';
@@ -26,6 +27,8 @@ export interface PlayerSlot {
   color: number;
   connected: boolean;
   ready: boolean;
+  /** Character + kart body. Kept with the slot, so it survives a phone reconnecting like name and colour do. */
+  loadout: Loadout;
 }
 
 export type JoinResult =
@@ -63,7 +66,7 @@ export class PlayerSlots {
    * Add a player, or re-attach a returning one to their old slot.
    * New players may only join in the lobby; returning players can rejoin any time.
    */
-  join(owner: SlotOwner, name: string, preferredColor: number): JoinResult {
+  join(owner: SlotOwner, name: string, preferredColor: number, loadout?: unknown): JoinResult {
     const existing = this.find(owner);
     if (existing) {
       existing.connected = true;
@@ -79,6 +82,7 @@ export class PlayerSlots {
       color: this.pickColor(preferredColor, index),
       connected: true,
       ready: false,
+      loadout: loadout === undefined ? { ...DEFAULT_LOADOUT } : sanitizeLoadout(loadout),
     };
     this.slots[index] = slot;
     return { ok: true, slot, rejoined: false };
@@ -100,11 +104,25 @@ export class PlayerSlots {
     if (s) s.ready = ready;
   }
 
-  setProfile(index: number, name: string, preferredColor: number): void {
+  setProfile(index: number, name: string, preferredColor: number, loadout?: unknown): void {
     const s = this.slots[index];
     if (!s) return;
     s.name = sanitizeName(name);
     s.color = this.pickColor(preferredColor, index);
+    if (loadout !== undefined && this.canChangeLoadout()) s.loadout = sanitizeLoadout(loadout);
+  }
+
+  /** Characters and karts can only be changed between races (lobby and results), never during one. */
+  canChangeLoadout(): boolean {
+    return this.phase === 'lobby' || this.phase === 'results';
+  }
+
+  /** Change a slot's loadout (ignored while a race is running). Returns true if it changed. */
+  setLoadout(index: number, loadout: unknown): boolean {
+    const s = this.slots[index];
+    if (!s || !this.canChangeLoadout()) return false;
+    s.loadout = sanitizeLoadout(loadout);
+    return true;
   }
 
   /**
@@ -141,6 +159,7 @@ export class PlayerSlots {
       color: p.color,
       connected: p.connected,
       ready: p.ready,
+      loadout: { ...p.loadout },
     }));
   }
 }
