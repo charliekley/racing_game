@@ -225,6 +225,8 @@ export class RenderPipeline {
   private pxW = 1;
   private pxH = 1;
   private views: ViewRect[] = [];
+  /** How many of `views` were drawn this frame. */
+  private viewCount = 0;
   private supported: boolean;
 
   private readonly brightMat: THREE.ShaderMaterial;
@@ -335,8 +337,9 @@ export class RenderPipeline {
     if (this.useFxaa) {
       this.ldr = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     }
-    // Bloom pyramid: level 0 is half the screen size, each next level half again.
-    for (let i = 0, bw = w >> 1, bh = h >> 1; i < this.q.bloomLevels && bw >= 4 && bh >= 4; i++, bw >>= 1, bh >>= 1) {
+    // Bloom pyramid: level 0 is 1/2 (or 1/4) of the screen size, each next level half again.
+    const shift = this.q.bloomShift;
+    for (let i = 0, bw = w >> shift, bh = h >> shift; i < this.q.bloomLevels && bw >= 4 && bh >= 4; i++, bw >>= 1, bh >>= 1) {
       this.bloomDown.push(
         new THREE.WebGLRenderTarget(bw, bh, {
           type: THREE.HalfFloatType,
@@ -357,9 +360,23 @@ export class RenderPipeline {
     this.bloomDown = [];
   }
 
+  /**
+   * Compile every material in the scene ahead of time. The render target is bound first because
+   * Three.js builds different shader variants for "draw to texture" (no tone mapping) and "draw to
+   * the canvas"; we want the ones the frames will actually use.
+   */
+  compileAsync(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    if (this.active && this.target) r.setRenderTarget(this.target);
+    const done = r.compileAsync(scene, camera); // the shader variants are decided synchronously, the compiling happens in the background
+    r.setRenderTarget(prev);
+    return done.then(() => undefined);
+  }
+
   /** Start a frame: clear the target (or canvas) and forget last frame's viewports. */
   beginFrame(): void {
-    this.views.length = 0;
+    this.viewCount = 0;
     const r = this.renderer;
     r.setScissorTest(false);
     if (this.active && this.target) {
@@ -387,7 +404,14 @@ export class RenderPipeline {
       this.target.scissor.set(px, py, pw, ph);
       this.target.scissorTest = true;
       r.setRenderTarget(this.target); // re-bind so Three.js picks up the new viewport/scissor
-      if (this.views.length < 4) this.views.push({ x: px, y: py, w: pw, h: ph });
+      if (this.viewCount < 4) {
+        const v = this.views[this.viewCount] ?? (this.views[this.viewCount] = { x: 0, y: 0, w: 0, h: 0 }); // rectangles are reused every frame
+        v.x = px;
+        v.y = py;
+        v.w = pw;
+        v.h = ph;
+        this.viewCount++;
+      }
     } else {
       r.setScissorTest(true);
       r.setViewport(x, y, w, h);
@@ -422,8 +446,8 @@ export class RenderPipeline {
     u.tBloom.value = bloomOn ? levels[0].texture : this.target.texture;
     u.bloomStrength.value = bloomOn ? this.look.bloom : 0;
     const vs = u.views.value as THREE.Vector4[];
-    this.views.forEach((v, i) => vs[i].set(v.x, v.y, v.w, v.h));
-    u.viewCount.value = this.views.length;
+    for (let i = 0; i < this.viewCount; i++) vs[i].set(this.views[i].x, this.views[i].y, this.views[i].w, this.views[i].h);
+    u.viewCount.value = this.viewCount;
     r.setRenderTarget(this.ldr);
     r.setScissorTest(false);
     const k = r.getPixelRatio();

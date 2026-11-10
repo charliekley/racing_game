@@ -18,6 +18,7 @@
  *    view (the shadow map); a pixel is in shadow if something is closer to the sun.
  */
 import * as THREE from 'three';
+import { envQuality } from './env/batch';
 
 export interface QualitySettings {
   name: 'High' | 'Medium' | 'Low';
@@ -35,6 +36,8 @@ export interface QualitySettings {
   post: boolean;
   /** Number of blur levels in the bloom (each is half the size of the previous; 0 = no bloom). */
   bloomLevels: number;
+  /** The first (biggest) bloom level is 1/2^bloomShift of the screen size: 1 = half, 2 = quarter (cheaper). */
+  bloomShift: number;
   /** MSAA samples of the HDR render target (hardware anti-aliasing; 0 = none). Costly on integrated GPUs. */
   msaa: number;
   /** FXAA: a cheap edge-smoothing pass on the finished picture. Used instead of MSAA on Medium/Low. */
@@ -43,6 +46,8 @@ export interface QualitySettings {
   shadowPerView: boolean;
   /** Half-width (m) of the shadow box around each view in split-screen (smaller = sharper but shorter shadows). */
   shadowRadius: number;
+  /** Multiplier on the shadow map size when 3 or 4 viewports share the screen (each view is small, so a smaller map is enough). */
+  shadowSplitScale: number;
   /** Multiplies the distances at which scenery switches to its cheap model (and, scaled again, when it is skipped). */
   lodScale: number;
   /** Edge length of the sky cube used for environment lighting. */
@@ -57,9 +62,9 @@ export interface QualitySettings {
  *  Low     fallback: no shadows or clouds, 75% render scale, FXAA, no bloom, little ground detail.
  */
 export const QUALITY_PRESETS: QualitySettings[] = [
-  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, lodScale: 1, envSize: 256 },
-  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 42, lodScale: 0.8, envSize: 128 },
-  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, lodScale: 0.55, envSize: 64 },
+  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, bloomShift: 1, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, shadowSplitScale: 1, lodScale: 1, envSize: 256 },
+  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 38, shadowSplitScale: 0.625, lodScale: 0.7, envSize: 128 },
+  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, shadowSplitScale: 1, lodScale: 0.55, envSize: 64 },
 ];
 export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 
@@ -95,6 +100,16 @@ export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySe
   renderer.shadowMap.needsUpdate = true;
 }
 
+/** Shadow map resolution: smaller when the screen is split in 3-4 (each viewport only shows a quarter of the pixels). */
+export function setShadowMapSize(sun: THREE.DirectionalLight, q: QualitySettings, viewCount: number): void {
+  const size = Math.round((q.shadowMapSize * (viewCount >= 3 ? q.shadowSplitScale : 1)) / 32) * 32;
+  if (sun.shadow.mapSize.x !== size) {
+    sun.shadow.mapSize.set(size, size);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
+  }
+}
+
 /**
  * Apply quality to the scene: sun shadow resolution, and scenery level of
  * detail. Scenery meshes opt in through `userData` (see scenery.ts):
@@ -102,18 +117,20 @@ export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySe
  *   userData.cloudLayer: hidden when the preset has clouds off
  * Materials recompile on shadow on/off.
  */
-export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLight, q: QualitySettings): void {
+export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLight, q: QualitySettings, viewCount = 1): void {
   sun.castShadow = q.shadows;
-  if (sun.shadow.mapSize.x !== q.shadowMapSize) {
-    sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
-    sun.shadow.map?.dispose();
-    sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
-  }
+  envQuality.cheap = q.name !== 'High'; // cheaper ground shaders (materials.ts); the needsUpdate below recompiles them
+  setShadowMapSize(sun, q, viewCount);
   scene.traverse((o) => {
     const full = o.userData.detailIndexCount as number | undefined;
     if (full !== undefined) (o as THREE.Mesh).geometry.setDrawRange(0, Math.floor((full * q.sceneryDetail) / 3) * 3);
     if (o.userData.cloudLayer) o.visible = q.clouds;
     const m = (o as THREE.Mesh).material;
+    // The sky shader has a cheaper cloud variant (fewer noise layers) for Medium and Low.
+    if (m instanceof THREE.ShaderMaterial && m.uniforms.sunBoost) {
+      if (q.name === 'High') delete m.defines.CHEAP_SKY;
+      else m.defines.CHEAP_SKY = '';
+    }
     if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
     else if (m) m.needsUpdate = true;
   });
@@ -400,7 +417,12 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
       // Fractal noise: several noise layers, each twice as fine and half as strong.
       float fbm(vec2 p) {
         float v = 0.0, a = 0.5;
+        #ifdef CHEAP_SKY
+        for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        v *= 1.14; // three layers cover less range than four: stretch back to about 0..1
+        #else
         for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        #endif
         return v;
       }
 
@@ -445,7 +467,11 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
           float dens = smoothstep(1.0 - cloudCover * 0.6 - 0.18, 1.0 - cloudCover * 0.6 + 0.12, n);
           dens *= smoothstep(0.0, 0.14, h); // fade out into the haze at the horizon
           // Light: the side of a puff facing the sun is bright, the rest picks up the sky colour.
-          float lit = fbm(cp + sunDir.xz * 0.15) ;
+          #ifdef CHEAP_SKY
+          float lit = noise(cp * 2.0 + sunDir.xz * 0.3) * 0.9 + 0.05; // one noise layer instead of a whole fbm
+          #else
+          float lit = fbm(cp + sunDir.xz * 0.15);
+          #endif
           float shade = clamp(0.55 + (n - lit) * 3.0, 0.0, 1.0);
           vec3 cloudCol = mix(top * 0.55 + horizon * 0.35, vec3(1.0), shade) * mix(vec3(1.0), sunColor, 0.25 + 0.5 * pow(d, 4.0));
           col = mix(col, cloudCol, dens * 0.9);

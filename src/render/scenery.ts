@@ -29,7 +29,7 @@ import type { Track, TrackSample } from '../sim/track';
 import type { TrackDef } from '../track/types';
 import { biomeFor as planBiomeFor, hexToHsl, planScenery, Site, type Biome, type SceneryPlan } from '../track/sceneryPlan';
 import { BANNER_LOGO, bannerTexture, checkerTexture, seededRandom } from './textures';
-import { ChunkBatch, LodBatch } from './env/batch';
+import { ChunkBatch, LodBatch, envQuality } from './env/batch';
 import { ENV_TIME, bannerMaterial, clothMaterial, glowMaterial, propMaterial, watchQuality } from './env/materials';
 import { buildPropSet, disposePropSet, type Style, VARIANTS } from './env/props';
 import { addBlock, addGrandstand, addHouse, frameM, makeTrackside, type Batches, type StructureLook } from './env/structures';
@@ -302,8 +302,8 @@ function buildBackdrop(site: Site, style: Style, def: TrackDef, rnd: () => numbe
       const height = (ring ? 130 : 85) * (kind === 'harbour' ? 0.6 : 1) + rnd() * 90 + (volcano ? 70 : 0);
       const g = mountainGeo(
         { kind: volcano ? 'volcanic' : kind === 'volcanic' ? 'alpine' : kind, radius, height, seed: i * 7 + ring * 101, haze, horizon, rock: new THREE.Color(rock[0]), rockDark: new THREE.Color(rock[1]) },
-        14,
-        36,
+        envQuality.cheap ? 10 : 14, // fewer rings and segments on Medium/Low: the mountains are far away and fogged
+        envQuality.cheap ? 26 : 36,
       );
       if (kind === 'volcanic' && !volcano) {
         // dark ridges: no snow

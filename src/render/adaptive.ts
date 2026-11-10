@@ -35,7 +35,7 @@ const WARMUP = 1.2;
 /** Length of one measuring window (s). */
 const WINDOW = 0.6;
 /** Seconds of being stuck at the lowest scale before dropping a preset. */
-const STEP_DOWN_AFTER = 3;
+const STEP_DOWN_AFTER = 5;
 /** Seconds of good frames before the scale is raised one step. */
 const RAISE_AFTER = 5;
 
@@ -50,7 +50,7 @@ export class AdaptiveQuality {
   private winTime = 0;
   private stuck = 0;
   private calm = 0;
-  private sinceChange = 0;
+  private sinceRaise = Infinity; // seconds since the scale was last RAISED (Infinity = never / it was lowered since)
   private last = 0;
 
   constructor(private readonly events: AdaptiveEvents) {}
@@ -59,7 +59,7 @@ export class AdaptiveQuality {
   reset(scale = 1): void {
     this.warm = WARMUP;
     this.acc = this.n = this.winTime = this.stuck = this.calm = 0;
-    this.sinceChange = 0;
+    this.sinceRaise = Infinity;
     this.last = 0;
     this.ceiling = MAX_SCALE;
     this.scale = scale;
@@ -87,7 +87,7 @@ export class AdaptiveQuality {
     this.acc += dtMs;
     this.n++;
     this.winTime += dt;
-    this.sinceChange += dt;
+    this.sinceRaise += dt;
     if (this.winTime < WINDOW) return;
 
     const avg = this.acc / this.n;
@@ -97,8 +97,9 @@ export class AdaptiveQuality {
       this.calm = 0;
       if (this.scale > MIN_SCALE + 1e-6) {
         // The scale we just tried was too much if it came right after a raise: remember that.
-        if (this.sinceChange < RAISE_AFTER * 2) this.ceiling = Math.min(this.ceiling, this.scale - SCALE_STEP);
+        if (this.sinceRaise < RAISE_AFTER * 2) this.ceiling = Math.min(this.ceiling, this.scale - SCALE_STEP);
         this.setScale(this.scale - SCALE_STEP * (avg > TARGET_MS * 1.6 ? 2 : 1));
+        this.sinceRaise = Infinity;
         this.stuck = 0;
       } else {
         this.stuck += WINDOW;
@@ -114,6 +115,7 @@ export class AdaptiveQuality {
         if (this.calm >= RAISE_AFTER) {
           this.calm = 0;
           this.setScale(this.scale + SCALE_STEP);
+          this.sinceRaise = 0;
         }
       } else this.calm = 0;
     }
@@ -121,7 +123,6 @@ export class AdaptiveQuality {
 
   private setScale(s: number): void {
     this.scale = Math.min(this.ceiling, Math.max(MIN_SCALE, Math.round(s * 100) / 100));
-    this.sinceChange = 0;
     this.events.onScale(this.scale);
   }
 }

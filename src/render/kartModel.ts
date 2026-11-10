@@ -96,6 +96,8 @@ const LOD_CHAIN: Record<KartDetail, [KartDetail, KartDetail, KartDetail]> = {
   far: ['far', 'far', 'far'],
 };
 const EMPTY_GEOMETRY = new THREE.BufferGeometry();
+/** Parts that still cast a shadow on the reduced LOD tiers. */
+const SHADOW_PARTS = new Set(['kart-paint', 'kart-detail', 'driver-torso']);
 
 /** Meshes of a model in a stable order, keyed by name + occurrence (the same builder makes the same names at every detail). */
 function meshesByKey(model: KartModel): Map<string, THREE.Mesh> {
@@ -234,6 +236,9 @@ export function buildKartModel(
     for (const s of slots) {
       s.mesh.geometry = s.geometry[t];
       s.mesh.material = s.material[t];
+      // Shadow passes are drawn once per viewport, so every draw call counts: a reduced kart only casts
+      // its body and torso (a blob of shadow looks the same), a full-detail kart casts all its parts.
+      s.mesh.castShadow = t === 0 || SHADOW_PARTS.has(s.mesh.name);
     }
   };
   return model;

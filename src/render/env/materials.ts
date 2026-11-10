@@ -39,6 +39,10 @@ float envFbm(vec2 p) {
   }
   return s;
 }
+// Two layers instead of four, rescaled to the same 0..1 range: used by the cheaper presets.
+float envFbm2(vec2 p) {
+  return (0.5 * envNoise(p) + 0.25 * envNoise(p * 2.03 + 11.7)) * 1.333;
+}
 `;
 
 /** Marks a mesh so it reports the active quality preset to the LOD code (shadows off = Low). */
@@ -140,6 +144,7 @@ export function groundMaterial(o: GroundOpts = {}): THREE.MeshStandardMaterial {
     shader.uniforms.uMottle = { value: o.mottle ?? 0.35 };
     shader.uniforms.uSpeckle = { value: o.speckle ?? 0.12 };
     shader.uniforms.uStrata = { value: o.strata ?? 0 };
+    const cheap = envQuality.cheap; // fixed at compile time (applySceneQuality recompiles when the preset changes)
     shader.vertexShader = 'varying vec3 vEnvWorld;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vEnvWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader =
       'varying vec3 vEnvWorld;\nuniform float uMottle;\nuniform float uSpeckle;\nuniform float uStrata;\n' +
@@ -148,8 +153,8 @@ export function groundMaterial(o: GroundOpts = {}): THREE.MeshStandardMaterial {
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
         {
-          float big = envFbm(vEnvWorld.xz * 0.045);
-          float mid = envFbm(vEnvWorld.xz * 0.35 + 3.0);
+          float big = ${cheap ? 'envFbm2' : 'envFbm'}(vEnvWorld.xz * 0.045);
+          float mid = ${cheap ? 'envNoise' : 'envFbm'}(vEnvWorld.xz * 0.35 + 3.0);
           float fine = envNoise(vEnvWorld.xz * 3.2 + vEnvWorld.y * 0.7);
           float k = 1.0 + uMottle * (big - 0.5) * 1.4 + uMottle * 0.5 * (mid - 0.5) + uSpeckle * (fine - 0.5);
           if (uStrata > 0.0) {
@@ -160,6 +165,6 @@ export function groundMaterial(o: GroundOpts = {}): THREE.MeshStandardMaterial {
         }`,
       );
   };
-  mat.customProgramCacheKey = () => `env-ground-${o.strata ?? 0}-${o.mottle ?? 0.35}`;
+  mat.customProgramCacheKey = () => `env-ground-${o.strata ?? 0}-${o.mottle ?? 0.35}-${envQuality.cheap ? 'cheap' : 'full'}`;
   return mat;
 }

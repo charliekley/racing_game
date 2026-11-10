@@ -25,7 +25,7 @@ import { buildResults, type ResultRow } from './resultsView';
 import { setKartDetail, type KartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
-import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
+import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
 import { Minimap } from '../render/minimap';
@@ -33,6 +33,7 @@ import {
   applyRendererQuality,
   applyTheme,
   applySceneQuality,
+  setShadowMapSize,
   createRenderer,
   createScene,
   followWithSun,
@@ -123,6 +124,8 @@ export class Game {
   private results: HTMLElement;
   private minimap: Minimap;
   private boxMeshes: THREE.Object3D[] = [];
+  /** The glow shell of each item box (hidden when the box is not close). */
+  private boxShells: (THREE.Object3D | undefined)[] = [];
   /**
    * Practice/testing aid (URL `?give=nova`): everyone gets an endless supply of
    * this item (or "random" = random item each time). Null = normal item boxes only.
@@ -140,6 +143,9 @@ export class Game {
   private introTitle: HTMLElement | null = null;
   /** Was each item box active last frame? (to spot the moment one is smashed) */
   private boxWasActive: boolean[] = [];
+  /** Scratch vectors reused every frame (creating objects in the render loop makes the garbage collector hitch). */
+  private readonly sizeScratch = new THREE.Vector2();
+  private readonly dirScratch = new THREE.Vector3();
   /** Launch cannons of the current track (rebuilt for every race). */
   private cannonView: CannonView | null = null;
 
@@ -152,6 +158,7 @@ export class Game {
     setKartDetail(kartDetailFor(quality)); // cheaper kart meshes on Medium/Low (applies to karts built from now on)
     this.renderer = createRenderer(container, quality);
     this.quality = quality;
+    envQuality.cheap = quality.name !== 'High'; // before the terrain is built: Medium/Low use a coarser grid
     this.track = new Track(TRACKS[0]);
     const parts = createScene(this.track.def.theme);
     this.scene = parts.scene;
@@ -197,6 +204,7 @@ export class Game {
    */
   setTrack(def: TrackDef): void {
     if (def === this.track.def) return;
+    envQuality.cheap = this.quality.name !== 'High';
     applyTheme(this.scene, def.theme, this.renderer, this.quality.envSize); // sky, fog, lights and reflections follow the track
     this.fx.setTheme(def.theme.offroad); // dust takes the off-road colour
     this.pipeline.setTheme(def.theme); // bloom / colour grade follow the track too
@@ -221,7 +229,7 @@ export class Game {
     this.applyViewScaling();
     this.pipeline.setQuality(q);
     if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
-    applySceneQuality(this.scene, this.sun, q);
+    applySceneQuality(this.scene, this.sun, q, this.views.length);
     this.fx.setQuality(q);
     this.resize();
   }
@@ -239,6 +247,46 @@ export class Game {
   private applyViewScaling(): void {
     const n = this.views.length;
     envQuality.lod = this.quality.lodScale * (n >= 3 ? 0.75 : n === 2 ? 0.9 : 1);
+    setShadowMapSize(this.sun, this.quality, n); // shadow map size depends on the viewport count
+  }
+
+  /**
+   * Item boxes are three see-through draws each: skip the ones too far away to read from this camera
+   * (the range shrinks with the viewport count), and the glow shell of those that are not close.
+   */
+  private applyBoxRange(view: PlayerView): void {
+    const n = this.views.length;
+    const range = n >= 3 ? 70 : n === 2 ? 100 : 150;
+    const cam = view.chase.camera.position;
+    this.boxMeshes.forEach((m, i) => {
+      const dx = m.position.x - cam.x;
+      const dy = m.position.y - cam.y;
+      const dz = m.position.z - cam.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      m.visible = this.boxWasActive[i] && d2 < range * range;
+      const shell = this.boxShells[i];
+      if (shell) shell.visible = d2 < 40 * 40;
+    });
+  }
+
+  /**
+   * Compile the shaders of everything that can show up during the race (the three item objects in the
+   * world and in a kart's hand) while the countdown runs, so the first item use or drift does not stall
+   * the frame while the browser compiles them. Three.js compiles in parallel in the background when
+   * the GPU driver allows it.
+   */
+  private warmUp(): void {
+    const camera = this.views[0]?.chase.camera;
+    if (!camera) return;
+    const temp = new THREE.Group();
+    for (const kind of ['slick', 'ricochet', 'seeker'] as const) {
+      temp.add(buildEntityMesh(kind));
+      const held = buildHeldItemMesh(kind);
+      if (held) temp.add(held);
+    }
+    this.scene.add(temp);
+    const done = () => this.scene.remove(temp);
+    this.pipeline.compileAsync(this.scene, camera).then(done, done);
   }
 
   /**
@@ -289,6 +337,7 @@ export class Game {
       this.scene.add(m);
       return m;
     });
+    this.boxShells = this.boxMeshes.map((m) => m.getObjectByName('shell'));
 
     const layout = splitLayout(slots.length);
     this.views = slots.map((slot, i) => {
@@ -317,6 +366,7 @@ export class Game {
     this.boxWasActive = this.world.items!.boxes.map((b) => b.active);
     this.endIntro();
     if (introWanted(location.search)) this.beginIntro();
+    this.warmUp();
 
     this.loop.reset();
     this.adaptive.reset(this.adaptive.scale); // shader compiles and texture uploads at race start must not count as slowness
@@ -397,7 +447,7 @@ export class Game {
     // Shadows: when the karts are close together one shadow map covers all of them; when they are
     // spread out (split-screen on a big track) the map is re-aimed and redrawn for each view below.
     const sharedShadow = this.views.length <= 1 || spread < 50 || !this.quality.shadowPerView;
-    if (sharedShadow) followWithSun(this.sun, cx, cz, spread + 55);
+    if (sharedShadow) followWithSun(this.sun, cx, cz, spread + this.quality.shadowRadius + 12);
 
     // Countdown numbers on every HUD.
     if (race.phase === 'countdown' && !intro) {
@@ -432,7 +482,7 @@ export class Game {
     }
 
     // Render: shadow map once, then the scene once per viewport.
-    const size = this.renderer.getSize(new THREE.Vector2());
+    const size = this.renderer.getSize(this.sizeScratch); // reused vector: no allocation in the frame loop
     if (sharedShadow) this.renderer.shadowMap.needsUpdate = true;
     this.pipeline.beginFrame();
     for (const v of this.views) {
@@ -452,11 +502,12 @@ export class Game {
       if (intro) this.flyover.apply(v.chase.camera, this.track, v.slot);
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
-        const fwd = v.chase.camera.getWorldDirection(new THREE.Vector3());
+        const fwd = v.chase.camera.getWorldDirection(this.dirScratch);
         followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, this.quality.shadowRadius);
         this.renderer.shadowMap.needsUpdate = true;
       }
       this.applyKartLods(v);
+      this.applyBoxRange(v);
       this.fx.beginView(v.chase.camera, r.h * this.renderer.getPixelRatio()); // particle sizes depend on camera + viewport
       this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 

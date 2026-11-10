@@ -18,10 +18,11 @@ import * as THREE from 'three';
 /**
  * Shared quality hints.
  *  low: set by env meshes from the renderer (shadows off = the Low preset).
+ *  cheap: use cheaper ground shaders (fewer noise layers); set by applySceneQuality (every preset but High).
  *  lod: multiplier on every scenery level-of-detail distance. The game sets it from the preset
  *       and the number of split-screen viewports (a quarter-size view needs less detail).
  */
-export const envQuality = { low: false, lod: 1 };
+export const envQuality = { low: false, cheap: false, lod: 1 };
 
 interface Chunk {
   ix: number;
@@ -136,21 +137,46 @@ export class ChunkBatch {
 }
 
 /**
+ * Draws nothing visible (no colour, no depth) but still counts as a shadow caster: Three.js draws it into
+ * the shadow map with its own depth material. See ChunkLod's `shadowProxy`.
+ */
+const proxyMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+/** Shadow proxies are only switched on for chunks this close to the camera (m). */
+const PROXY_RANGE = 110;
+
+/**
  * A level-of-detail switch for one chunk: `near` is drawn within `distance` of the camera,
  * `far` (may be empty) beyond it. Works per camera, so each split-screen viewport picks
  * its own level.
  */
 export class ChunkLod extends THREE.LOD {
+  /** Invisible copy of the cheap model that casts the chunk's shadow, so the shadow pass never draws the detailed model. */
+  private shadowProxy: THREE.Mesh | null = null;
+
   constructor(
     near: THREE.Object3D,
     far: THREE.Object3D | null,
     private readonly switchDistance: number,
     private readonly cullDistance = Infinity,
+    castShadow = false,
   ) {
     super();
     this.addLevel(near, 0);
     this.addLevel(far ?? new THREE.Object3D(), switchDistance);
     this.autoUpdate = true;
+    const farMesh = far as THREE.Mesh | null;
+    if (castShadow && farMesh?.isMesh) {
+      // The detailed model would cost 5-10x more triangles in every shadow pass than the cheap one, and a
+      // tree's shadow looks the same either way. So neither level casts; the proxy does.
+      (near as THREE.Mesh).castShadow = false;
+      farMesh.castShadow = false;
+      const proxy = new THREE.Mesh(farMesh.geometry, proxyMaterial);
+      proxy.castShadow = true;
+      proxy.matrixAutoUpdate = false;
+      proxy.visible = false;
+      this.shadowProxy = proxy;
+      this.add(proxy);
+    }
   }
 
   override update(camera: THREE.Camera): void {
@@ -160,6 +186,7 @@ export class ChunkLod extends THREE.LOD {
     const [near, far] = [this.levels[0].object, this.levels[1].object];
     near.visible = useNear;
     far.visible = !useNear && d < this.cullDistance;
+    if (this.shadowProxy) this.shadowProxy.visible = d < PROXY_RANGE;
   }
 }
 
@@ -200,7 +227,7 @@ export class LodBatch {
         farMesh.receiveShadow = true;
       }
       // The LOD object sits at the chunk centre; its children are positioned relative to the parent, so zero them.
-      const lod = new ChunkLod(nearMesh, farMesh, switchDistance, cullDistance);
+      const lod = new ChunkLod(nearMesh, farMesh, switchDistance, cullDistance, castShadow);
       lod.position.copy(nearMesh.position);
       nearMesh.position.set(0, 0, 0);
       nearMesh.updateMatrix();

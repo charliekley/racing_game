@@ -28,6 +28,7 @@ import { groundMaterial } from './env/materials';
 import { latheGeo, merge, paint, scratch, tubeGeo, matrix } from './env/geo';
 import { boxPart } from './env/parts';
 import { tiledGroup } from './env/tiles';
+import { envQuality } from './env/batch';
 import { styleFor } from './scenery';
 import { biomeFor } from '../track/sceneryPlan';
 
@@ -222,7 +223,9 @@ export class TerrainView {
     if (!walls.isEmpty) {
       const mesh = walls.build(groundMaterial({ maps: rockMaps(), strata: 0.9, mottle: 0.4, side: THREE.DoubleSide }));
       this.stats.faceTriangles = (mesh.geometry.getIndex()!.count / 3) | 0;
-      const tiles = tiledGroup(mesh.geometry, mesh.material as THREE.Material, WALL_TILE, true, true);
+      // The rock walls hang DOWN from the ground edge into the void, so they shade nothing worth a shadow draw
+      // (they used to cast, which cost 50-120k triangles in every shadow pass): receive only.
+      const tiles = tiledGroup(mesh.geometry, mesh.material as THREE.Material, WALL_TILE, false, true);
       this.group.add(tiles);
       this.stats.meshes += tiles.children.length;
     }
@@ -258,7 +261,9 @@ export class TerrainView {
     }
     const margin = outer + terrain.influence + 30;
     minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
-    const step = Math.max(MIN_CELL, Math.max(maxX - minX, maxZ - minZ) / MAX_INNER_CELLS);
+    // Medium/Low (envQuality.cheap) use a coarser grid: about half the terrain triangles, still smooth-shaded.
+    const cheap = envQuality.cheap;
+    const step = Math.max(cheap ? MIN_CELL * 1.35 : MIN_CELL, Math.max(maxX - minX, maxZ - minZ) / (cheap ? MAX_INNER_CELLS * 0.72 : MAX_INNER_CELLS));
     const xs = axis(minX, maxX, step);
     const zs = axis(minZ, maxZ, step);
     const nx = xs.length;
