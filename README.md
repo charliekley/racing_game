@@ -200,6 +200,7 @@ quality (High / Medium / Low – see Performance below). **T** picks the track
 (Ember Peaks / Dockside Loop / Cloud Garden / Switchback Summit; remembered, and `?track=2` in the
 URL overrides it). The **`** key toggles
 the debug readouts on the TV.
+In the lobby, **C** / **V** (or **,** / **.** for the arrows player) pick driver / kart (see Characters and karts).
 
 While racing, **Esc** returns to the lobby. On the results screen: **Enter**
 (or everyone tapping RACE AGAIN on their phones) starts another race.
@@ -207,6 +208,37 @@ While racing, **Esc** returns to the lobby. On the results screen: **Enter**
 Shortcuts for testing: **`/host/?drive`** skips the lobby and races immediately
 with WASD; **`/host/?drive=4`** does the same with 3 computer drivers, for
 instant 4-way split-screen (`=2`, `=3` work too).
+
+### Characters and karts
+
+Everyone picks a **driver** (8 characters in three weight classes) and a **kart body** (4 bodies).
+On the phone the picker is in the lobby: tap the arrows (or swipe) to change driver and kart, and
+watch the six stat bars update. The choice is remembered on the phone, sent to the TV, and locked
+once the race starts. On the TV keyboard: **C** / **V** (WASD player) or **,** / **.** (arrows
+player) change driver / kart in the lobby; on a gamepad use the D-pad (left/right = driver, down = kart).
+
+Each driver has stat points from 1 to 5, the kart body adds or subtracts a few, and
+`src/sim/classes.ts` turns the points into real physics numbers. **3 points = the original kart exactly.**
+
+| Stat | What it changes | 1 point | 3 points | 5 points |
+|---|---|---|---|---|
+| Speed | top speed | 27.3 m/s (-2.5%) | 28 m/s | 28.7 m/s (+2.5%) |
+| Accel | acceleration | -25% | 18 m/s² | +25% |
+| Handling | turn rate and grip | -15% | 1x | +15% |
+| Weight | mass in bumps; light karts also lose more speed when hit by an item | 0.6 | 1.0 | 1.4 |
+| Drift | mini-turbo charge time | +20% | 1x | -20% |
+| Off-road | speed kept on grass and dirt | 62% | 72% | 85% |
+
+| Class | Drivers | Style |
+|---|---|---|
+| Light | Pip, Mochi, Fizz | quick to accelerate, nimble, easily shoved |
+| Medium | Juno, Bolt, Sable | all-rounders |
+| Heavy | Bruno, Rex | highest top speed, slow to pick up, shove others aside |
+
+Kart bodies: **Sprinter** (balanced), **Mudlark** (off-road, heavy, slower), **Comet** (fast, wide turns),
+**Splash** (quick and slidey, light). Balance check: a lone bot's lap time for light, medium and heavy
+drivers is within about 3.5% on every track (`src/sim/classes.test.ts`), so no class simply wins;
+the real differences show up in corners, drifts, grass and bumps.
 
 ### Performance
 

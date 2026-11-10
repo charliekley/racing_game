@@ -33,6 +33,7 @@ import {
   vibrate,
 } from './device';
 import { ItemView } from './itemView';
+import { Picker } from './picker';
 import { PhoneMap } from './phoneMap';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
@@ -257,6 +258,25 @@ function startPlaying() {
   void connectLoop();
 }
 
+// --- Driver + kart picker: replaces the race HUD while in the lobby / results; locked during a race ---
+const picker = new Picker(prefs.loadout, (l) => {
+  prefs.loadout = l;
+  savePrefs(prefs);
+  // Tell the TV (same message as a name/colour change). The host ignores it if a race is running.
+  link?.sendEvent({ t: 'profile', name: prefs.name, color: myColor, loadout: l });
+});
+document.querySelector('.center')!.insertBefore(picker.root, document.querySelector('.bottom'));
+
+function updatePickerVisibility() {
+  const choosing = phase === 'lobby' || phase === 'results';
+  picker.root.classList.toggle('hidden', !choosing);
+  picker.setLocked(!choosing);
+  document.querySelector('.hud')!.classList.toggle('hidden', choosing);
+  if (choosing) picker.drawPortrait(); // size is only known once it is visible
+}
+updatePickerVisibility();
+window.addEventListener('resize', () => picker.drawPortrait());
+
 $('ready-btn').addEventListener('click', () => {
   const next = !ready;
   // Pressing Ready is also "this is how I hold the wheel straight".
@@ -323,18 +343,26 @@ function attachLink(l: Link) {
       void connectLoop();
     }
   });
-  l.sendEvent({ t: 'hello', v: PROTOCOL_VERSION, clientId, name: prefs.name, color: prefs.color });
+  l.sendEvent({ t: 'hello', v: PROTOCOL_VERSION, clientId, name: prefs.name, color: prefs.color, loadout: prefs.loadout });
 }
 
 function handleHostMessage(msg: HostToController) {
   switch (msg.t) {
     case 'welcome':
+      // The first welcome on a new link: the host's record of our driver wins (matters when we
+      // rejoin a game that already knows us); later welcomes are just echoes of our own changes.
+      if (!welcomed && msg.loadout) {
+        picker.setValue(msg.loadout);
+        prefs.loadout = picker.value;
+        savePrefs(prefs);
+      }
       welcomed = true;
       mySlot = msg.slot;
       myColor = msg.color;
       ready = msg.ready;
       phase = msg.phase;
       recentering = phase === 'countdown';
+      updatePickerVisibility();
       $('player-name').textContent = `P${msg.slot + 1} · ${msg.name}`;
       applyPlayerColor();
       updateReadyButton();
@@ -372,6 +400,7 @@ function handleHostMessage(msg: HostToController) {
       if (phase === 'lobby') phoneMap.clear();
       if (phase === 'lobby' || phase === 'results') ready = false;
       updateReadyButton();
+      updatePickerVisibility();
       break;
     case 'track':
       phoneMap.setTrack(msg.pts, msg.w, msg.map);

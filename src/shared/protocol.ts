@@ -10,6 +10,7 @@
  *    packet with the highest sequence number.
  */
 
+import type { Loadout } from './characters';
 import type { MapData } from './mapDraw';
 
 /** Bump when the message format changes incompatibly. */
@@ -90,17 +91,20 @@ export interface LobbyPlayerInfo {
   color: number;
   connected: boolean;
   ready: boolean;
+  /** Character + kart body (indices, see shared/characters.ts). Optional so older hosts still work; always run it through sanitizeLoadout. */
+  loadout?: Loadout;
 }
 
 export type ControllerToHost =
-  | { t: 'hello'; v: number; clientId: string; name: string; color: number }
-  | { t: 'profile'; name: string; color: number }
+  // `loadout` is optional so phones from before the class system still work (the host then picks the default).
+  | { t: 'hello'; v: number; clientId: string; name: string; color: number; loadout?: Loadout }
+  | { t: 'profile'; name: string; color: number; loadout?: Loadout }
   | { t: 'ready'; ready: boolean }
   | { t: 'ping'; id: number; sentAt: number }
   | { t: 'pong'; id: number; sentAt: number };
 
 export type HostToController =
-  | { t: 'welcome'; slot: number; name: string; color: number; ready: boolean; phase: GamePhase }
+  | { t: 'welcome'; slot: number; name: string; color: number; ready: boolean; phase: GamePhase; loadout?: Loadout }
   | { t: 'reject'; reason: 'full' | 'in-progress' | 'version' }
   | { t: 'lobby'; players: LobbyPlayerInfo[] }
   | { t: 'phase'; phase: GamePhase }

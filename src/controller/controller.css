@@ -292,3 +292,70 @@ body.playing.need-rotate .rotate { display: flex; }
 .btn.item.has-item .btn-icon { display: block; }
 .btn.item.has-item .item-label { display: none; }
 .chips { display: flex; gap: 8px; }
+
+/* ---------- Driver + kart picker (lobby only; built in picker.ts) ---------- */
+/*
+ * The picker sits in the centre column where the minimap is during a race. It is its own
+ * size container, so cqh / cqw below are % of the picker, and it shrinks to fit any phone.
+ */
+.picker {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  container-type: size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5cqh;
+  overflow: hidden;
+  text-align: center;
+  touch-action: none;
+}
+.pk-char { display: flex; align-items: center; justify-content: center; gap: 2cqw; width: 100%; }
+.pk-portrait { width: min(38cqh, 46cqw); height: min(38cqh, 46cqw); flex: none; }
+.pk-arrow {
+  flex: none;
+  width: max(44px, 13cqh);
+  height: max(44px, 13cqh);
+  border: none;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--text);
+  font-size: clamp(22px, 8cqh, 34px);
+  font-weight: 900;
+  line-height: 1;
+  padding: 0 0 3px;
+}
+.pk-arrow.small { width: 40px; height: 40px; font-size: 24px; }
+.pk-arrow:active { background: var(--player); color: #111; }
+.pk-name { font-weight: 900; font-size: clamp(14px, 7cqh, 22px); line-height: 1.1; display: flex; align-items: baseline; gap: 6px; justify-content: center; }
+.pk-name-text { color: var(--player); }
+.pk-class {
+  font-size: 0.55em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.pk-class[data-cls='light'] { color: #7fd8ff; }
+.pk-class[data-cls='medium'] { color: #ffd23a; }
+.pk-class[data-cls='heavy'] { color: #ff8a6a; }
+.pk-blurb { font-size: clamp(10px, 4.6cqh, 14px); color: var(--muted); line-height: 1.15; max-width: 100%; }
+.pk-kart { display: flex; align-items: center; justify-content: center; gap: 2cqw; width: 100%; }
+.pk-kart-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.1; }
+.pk-kart-text b { font-size: clamp(12px, 5.6cqh, 17px); }
+.pk-kart-text span { font-size: clamp(9px, 3.8cqh, 12px); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8cqh 3cqw; width: 100%; padding: 0 2cqw; }
+.pk-stat { display: flex; flex-direction: column; align-items: stretch; font-size: clamp(9px, 3.6cqh, 12px); color: var(--muted); text-align: left; line-height: 1.1; }
+.pk-bar { display: flex; gap: 2px; margin-top: 2px; }
+.pk-bar i { flex: 1; height: clamp(4px, 1.8cqh, 7px); border-radius: 3px; background: #2a3166; }
+.pk-bar i.on { background: var(--player); }
+.picker.locked { opacity: 0.5; }
+/* Very narrow column (phone upright, before the rotate prompt): one column of bars. */
+@container (max-width: 190px) {
+  .pk-stats { grid-template-columns: 1fr; }
+}

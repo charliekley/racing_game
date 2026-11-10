@@ -1,4 +1,5 @@
 /** Controller preferences, saved on the phone (localStorage survives reloads). */
+import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
 import { DEFAULT_STEERING, type SteeringSettings } from './steering';
 
 export interface ControllerPrefs {
@@ -6,12 +7,14 @@ export interface ControllerPrefs {
   color: number;
   steering: SteeringSettings;
   showDebug: boolean;
+  /** Chosen driver and kart body (indices into CHARACTERS / KART_BODIES). */
+  loadout: Loadout;
 }
 
 const KEY = 'tiltkart.controllerPrefs';
 
 export function loadPrefs(): ControllerPrefs {
-  const defaults: ControllerPrefs = { name: '', color: 0, steering: { ...DEFAULT_STEERING }, showDebug: false };
+  const defaults: ControllerPrefs = { name: '', color: 0, steering: { ...DEFAULT_STEERING }, showDebug: false, loadout: { ...DEFAULT_LOADOUT } };
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaults;
@@ -21,6 +24,7 @@ export function loadPrefs(): ControllerPrefs {
       color: typeof p.color === 'number' ? p.color : 0,
       steering: { ...DEFAULT_STEERING, ...(p.steering ?? {}) },
       showDebug: !!p.showDebug,
+      loadout: sanitizeLoadout(p.loadout), // missing/garbled -> the default
     };
   } catch {
     return defaults;
