@@ -210,7 +210,7 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 Press the same number again to remove a keyboard player. **B** adds a computer
 driver (always ready; remove it with its Remove button). **G** starts the race
 right away without waiting for everyone to be ready. **Q** cycles the graphics
-quality (High / Medium / Low – see Performance below). **T** picks the track
+quality (High / Medium / Low – see Performance below). **D** cycles the computer drivers' difficulty (Easy / Normal / Hard; remembered, shown on the BOTS chip). **T** picks the track
 (Ember Peaks / Dockside Loop / Cloud Garden / Switchback Summit; remembered, and `?track=2` in the
 URL overrides it). The **`** key toggles
 the debug readouts on the TV.
@@ -222,6 +222,23 @@ While racing, **Esc** returns to the lobby. On the results screen: **Enter**
 Shortcuts for testing: **`/host/?drive`** skips the lobby and races immediately
 with WASD; **`/host/?drive=4`** does the same with 3 computer drivers, for
 instant 4-way split-screen (`=2`, `=3` work too).
+
+### Advanced driving
+
+* **Slipstream.** Tuck in 3 to 14 m behind another kart, roughly in its line, at speed. Pale wind streaks
+  appear and a charge builds; after about 1.5 s you are slingshot forward with a short boost (whoosh). Leave
+  the wake and the charge drains twice as fast. Bots draft you and you can draft them.
+* **Style combo.** Land a ramp trick, release a mini-turbo and fire a slipstream boost within 6 s of each other
+  (any order) and a COMBO! pops up with a bonus second of boost.
+* **Perfect start.** Press gas within 0.3 s of GO for a longer rocket start and a PERFECT START! banner;
+  within 0.8 s still gives a normal rocket start, and holding it from the beginning floods the engine.
+* **Hit protection.** After a spin-out you cannot be hit again for about 1.6 s, so nobody gets chain-hit.
+* **Bot difficulty** (**D** in the lobby). *Easy* bots skip drifts, shortcuts and cannons, make mistakes and
+  use items lazily. *Normal* bots drift long corners, do tricks, use items sensibly and take the shortcuts they
+  like. *Hard* bots are fast and clean: well-timed rocket starts, drift everything, use every shortcut. Each bot
+  drives its character's class (light bots drift eagerly, heavy bots bully), and bots gently rubber-band against
+  the best human: up to 6% slower when far ahead, up to 4% quicker when far behind. All numbers are in
+  `src/sim/config.ts` (`SLIPSTREAM`, `COMBO`, `START`, `BOTS`) and `src/sim/bots.ts`.
 
 ### Characters and karts
 

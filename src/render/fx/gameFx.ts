@@ -270,6 +270,31 @@ export class GameFx {
     this.glow.emit(x + bx, y + 0.5, z + bz, bx * 2, 0.2, bz * 2, 0.35, 0.8, 2.2, TIER_HEX[tier], 0.7, 2);
   }
 
+  /**
+   * Slipstream charging: thin pale streaks racing past the kart's sides (the air being pulled along by the
+   * kart in front). Call every sim tick while charging; `progress` 0..1 makes it denser as the boost nears.
+   */
+  windStreaks(x: number, y: number, z: number, heading: number, progress: number): void {
+    const fx = Math.sin(heading);
+    const fz = Math.cos(heading);
+    const rx = -fz; // unit vector to the kart's side (perpendicular to its heading)
+    const rz = fx;
+    for (let i = this.n(0.25 + progress * 0.9); i > 0; i--) {
+      const side = (Math.random() < 0.5 ? -1 : 1) * rand(1.1, 2.2);
+      const ahead = rand(0.5, 3.5);
+      this.glow.emit(x + rx * side + fx * ahead, y + rand(0.2, 0.9), z + rz * side + fz * ahead, -fx * rand(10, 18), 0, -fz * rand(10, 18), rand(0.18, 0.3), 0.09, 0.02, 0xd8f0ff, 0.5 + progress * 0.4, 0.5);
+    }
+  }
+
+  /** Slipstream slingshot: a cool-white burst behind the kart (unlike the orange boost pad). */
+  slipBoost(x: number, y: number, z: number, heading: number): void {
+    const bx = -Math.sin(heading);
+    const bz = -Math.cos(heading);
+    for (let i = this.n(18); i > 0; i--) {
+      this.glow.emit(x + bx, y + rand(0.2, 0.8), z + bz, bx * rand(5, 12) + rand(-2, 2), rand(-0.3, 1), bz * rand(5, 12) + rand(-2, 2), rand(0.25, 0.45), rand(0.15, 0.3), 0.03, Math.random() < 0.5 ? 0xffffff : 0x9fdcff, 0.9, 2);
+    }
+  }
+
   /** Boost pad / dash: orange burst behind the kart. */
   boostBurst(x: number, y: number, z: number, heading: number): void {
     const bx = -Math.sin(heading);

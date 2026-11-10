@@ -23,6 +23,12 @@ export interface BotStyle {
    * (No effect on tracks without shortcuts.)
    */
   shortcutBias?: number;
+  /** Corner speed: fraction of the target speed kept before sharp corners (default 0.75). Higher = brave. */
+  cornerSpeed?: number;
+  /** Curvature (1/m) above which the next stretch counts as a sharp corner (default 0.03). */
+  cornerCurvature?: number;
+  /** Steering gain: how hard the bot turns per radian of heading error (default 3). */
+  steerGain?: number;
 }
 
 /** A bot starts steering for a shortcut this far (m) before the junction. */
@@ -42,6 +48,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   // Which road we steer along: (route, position on it). Normally where the kart is projected.
   let route = p.route;
   let at = p.i;
+  let atFork = false; // steering for a shortcut junction: take it at corner speed
   if (track.branches.length > 0) {
     const wants = (style.shortcutBias ?? 0) > 0.5;
     if (route > 0 && !wants && at <= 30) {
@@ -56,6 +63,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
         if (dist > -30 && dist < SHORTCUT_APPROACH) {
           route = b.route;
           at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
+          atFork = true;
           break;
         }
       }
@@ -77,7 +85,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   const tz = ahead.z + ahead.rz * lane - k.pos.z;
   const want = Math.atan2(tx, tz);
   const err = Math.atan2(Math.sin(want - k.heading), Math.cos(want - k.heading));
-  let steer = Math.max(-1, Math.min(1, -err * 3));
+  let steer = Math.max(-1, Math.min(1, -err * (style.steerGain ?? 3)));
 
   // Stuck against a wall or tree beside the road (almost stopped, off the asphalt, nose pointing
   // away from where we want to go): a kart that slow can barely turn, so back up while swinging the
@@ -98,7 +106,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
     const past = r.s1 - r.s0 + r.gap + 6; // stay on the gas through the ramp, the gap and the landing
     return d > -past && d < lookAhead;
   });
-  const target = jumpAhead ? Infinity : c.maxSpeed * style.pace * (sharp > 0.03 ? 0.75 : 1);
+  const target = jumpAhead ? Infinity : c.maxSpeed * style.pace * (sharp > (style.cornerCurvature ?? 0.03) || atFork ? (style.cornerSpeed ?? 0.75) : 1);
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

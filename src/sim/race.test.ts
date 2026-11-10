@@ -139,3 +139,42 @@ describe('grantProgress (cannons, shortcuts)', () => {
     expect(r.standings()[0]).toBe(0);
   });
 });
+
+describe('perfect start and photo finish', () => {
+  const gas = new Map<number, ControlInput>([[0, { steer: 0, buttons: Buttons.GAS }]]);
+  const pos = new Map([[0, L - 5]]);
+  const startEvents = (pressAt: number) => {
+    const r = new Race(track, 3, [0]);
+    const events: { kind: string; perfect?: boolean }[] = [];
+    while (r.phase === 'countdown') events.push(...r.tick(DT, pos, r.time >= pressAt ? gas : none));
+    return events;
+  };
+
+  it('gas within 0.3 s of GO is a PERFECT start; earlier (but inside the window) is a normal rocket start', () => {
+    const perfect = startEvents(-0.2);
+    expect(perfect.map((e) => e.kind)).toContain('perfectStart');
+    expect(perfect.find((e) => e.kind === 'startBoost')!.perfect).toBe(true);
+    const normal = startEvents(-0.6);
+    expect(normal.map((e) => e.kind)).not.toContain('perfectStart');
+    expect(normal.find((e) => e.kind === 'startBoost')!.perfect).toBe(false);
+  });
+
+  it('two karts finishing within 0.15 s raise photoFinish; further apart does not', () => {
+    const finishBoth = (gapSeconds: number) => {
+      const r = racing([0, 1], 1);
+      const events: { kind: string }[] = [];
+      const step = (s0: number, s1: number) => events.push(...r.tick(DT, new Map([[0, s0 % L], [1, s1 % L]]), none));
+      // Both karts drive the whole race side by side, then kart 0 crosses the final line and kart 1 follows later.
+      for (let s = L - 5; s <= 2 * L - 15; s += 10) step(s, s);
+      step(5, 2 * L - 15);
+      expect(r.racers.get(0)!.finished).toBe(true);
+      for (let i = 0; i < Math.round(gapSeconds / DT); i++) step(5, 2 * L - 15);
+      step(5, 5);
+      expect(r.racers.get(1)!.finished).toBe(true);
+      return events;
+    };
+    expect(finishBoth(0.05).map((e) => e.kind)).toContain('photoFinish');
+    expect(finishBoth(1).map((e) => e.kind)).not.toContain('photoFinish');
+  });
+});
+

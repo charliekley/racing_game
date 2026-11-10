@@ -9,6 +9,7 @@ import type { WorldEvent } from '../sim/world';
 export const SOUND_IDS = [
   'countdown', 'go', 'rocket', 'stall',
   'driftBlue', 'driftOrange', 'miniTurbo', 'boostPad', 'hop', 'land', 'trick',
+  'slipStart', 'slipBoost', 'combo', 'perfect',
   'wall', 'bump',
   'itemBox', 'rouletteTick', 'itemGet',
   'useDash', 'useSlick', 'useRicochet', 'useSeeker', 'useNova', 'useJumble',
@@ -52,8 +53,17 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [{ id: 'go', gain: 1, rate: 1 }];
     case 'startBoost':
       return [cue('rocket')];
+    case 'perfectStart':
+      return [cue('perfect')];
     case 'stall':
       return [cue('stall')];
+    case 'slipCharge':
+      // The event comes every tick while drafting: only the first tick (progress just above 0) makes a sound.
+      return Number(ev.progress) > 0 && Number(ev.progress) < 0.015 ? [cue('slipStart', 0.5)] : [];
+    case 'slipBoost':
+      return [cue('slipBoost')];
+    case 'combo':
+      return [cue('combo')];
     case 'hop':
       return [cue('hop', 0.7)];
     case 'driftTier':

@@ -229,6 +229,37 @@ describe('slick (oil trap)', () => {
     expect(sim.items.entityList.length).toBe(0); // used up
   });
 
+  it('a kart that was just hit cannot be hit again until its protection ends (no chain-hits)', () => {
+    const sim = setup([kartAt(100), kartAt(300)]);
+    const victim = sim.karts.get(1)!;
+    // First hit: a Slick.
+    sim.give(0, { id: 'slick', count: 1 });
+    sim.press(0, 0.08);
+    const slick = sim.items.entityList[0];
+    Object.assign(victim.pos, { x: slick.x, y: slick.y, z: slick.z });
+    victim.speed = 20;
+    sim.tick(2);
+    expect(victim.spinTime).toBeGreaterThan(0);
+    expect(victim.invulnTime).toBeGreaterThan(victim.spinTime);
+    // A second Slick put right under the spinning, protected kart does nothing...
+    sim.give(0, { id: 'slick', count: 1 });
+    sim.press(0, 0.08);
+    const second = sim.items.entityList[0];
+    Object.assign(victim.pos, { x: second.x, y: second.y, z: second.z });
+    const hitsBefore = sim.events.filter((e) => e.kind === 'hit').length;
+    sim.tick(Math.round((KART.spinSpeedFactor > 0 ? victim.invulnTime - 0.1 : 0) / SIM_DT));
+    victim.spinTime = 0; // even if the spin were over, the grace period still protects
+    Object.assign(victim.pos, { x: second.x, y: second.y, z: second.z });
+    sim.tick(2);
+    expect(sim.events.filter((e) => e.kind === 'hit').length).toBe(hitsBefore);
+    expect(sim.items.entityList.some((e) => e.uid === second.uid)).toBe(true); // the item was not wasted
+    // ...but once protection is over it can be hit again.
+    victim.invulnTime = 0;
+    Object.assign(victim.pos, { x: second.x, y: second.y, z: second.z });
+    sim.tick(2);
+    expect(sim.events.filter((e) => e.kind === 'hit').length).toBe(hitsBefore + 1);
+  });
+
   it('cannot hurt its owner right away, and jumping over it is safe', () => {
     const sim = setup([kartAt(100), kartAt(300)]);
     sim.give(0, { id: 'slick', count: 1 });

@@ -38,13 +38,13 @@ export const KART = {
   /** Lateral grip: how quickly sideways sliding dies out (1/s). Higher = more "on rails". */
   grip: 9,
   /** Fraction of steering available while airborne. */
-  airSteer: 0.25,
+  airSteer: 0.4,
 
   // --- Surfaces ----------------------------------------------------------------
   /** Top speed multiplier on grass/sand. */
   offroadSpeedFactor: 0.72,
   /** Acceleration multiplier on grass/sand. */
-  offroadAccelFactor: 0.8,
+  offroadAccelFactor: 0.85,
 
   // --- Boosts -------------------------------------------------------------------
   /** Top speed multiplier while boosting (boost pads, start boost, later mini-turbos/items). */
@@ -64,14 +64,14 @@ export const KART = {
   /** Minimum speed to start/keep a drift (m/s). */
   driftMinSpeed: 9,
   /** How hard you must be steering when the hop lands to start a drift (0..1). */
-  driftSteerThreshold: 0.25,
+  driftSteerThreshold: 0.18,
   /** Drift turn rate as a multiple of normal steering: steering OUT of the drift (wide) … INTO it (tight). */
   driftTurnWide: 0.45,
   driftTurnTight: 1.35,
   /** Grip while drifting (1/s): low = the kart slides, velocity lags behind where it points. */
   driftGrip: 3.2,
   /** Drift charge per second, plus a bonus for steering into the drift. */
-  driftChargeRate: 0.9,
+  driftChargeRate: 1.0,
   driftChargeSteerBonus: 1.3,
   /** Charge needed for blue (tier 1) and orange (tier 2) sparks. */
   driftTier1: 1.0,
@@ -96,6 +96,11 @@ export const KART = {
   /** Spin-out after being hit (s) with no control, and the fraction of speed kept. */
   spinTime: 1.3,
   spinSpeedFactor: 0.3,
+  /**
+   * After a hit, the kart cannot be hit again for this long once the spin-out is over (s), so nobody gets
+   * chain-hit (a Slick right after a Seeker). Shots and slicks simply pass through while it lasts.
+   */
+  hitInvulnTime: 1.6,
   /** Nova (invincibility) duration (s), top-speed and acceleration multipliers. Nova ignores grass. */
   novaTime: 7,
   novaSpeedFactor: 1.18,
@@ -105,7 +110,7 @@ export const KART = {
   /** Fraction of the impact velocity bounced back off walls (0 = dead stop on the wall, 1 = superball). */
   wallBounce: 0.35,
   /** Extra speed lost per wall hit, scaled by how head-on it was (0..1). */
-  wallSpeedLoss: 0.45,
+  wallSpeedLoss: 0.35,
   /** Kart-vs-kart bounce (0..1). */
   kartBounce: 0.6,
   /**
@@ -176,6 +181,54 @@ export const ITEMS = {
   jumbleTime: 7,
   /** Shots spawn this far in front of / behind the kart (m). */
   muzzleDistance: 2.4,
+} as const;
+
+/**
+ * Slipstream (drafting): sit close behind another kart, inside a narrow cone, for `chargeTime` seconds and you
+ * get a short boost. Think of the low-pressure wake behind a car: the follower pushes through less air.
+ */
+export const SLIPSTREAM = {
+  /** Distance behind the kart in front (m) that counts as "in its wake": too close is a bump, too far has no wake. */
+  minDist: 3,
+  maxDist: 14,
+  /** Cone: allowed sideways offset (m) = coneBase + coneSlope * distance behind. */
+  coneBase: 1.0,
+  coneSlope: 0.15,
+  /** Both karts must point roughly the same way (rad). */
+  maxHeadingDiff: 0.5,
+  /** The follower must be at least this fast (m/s), and the leader too (a stopped kart casts no wake). */
+  minSpeed: 14,
+  /** Seconds in the wake to charge fully, and how many times faster the charge drains when you leave it. */
+  chargeTime: 1.5,
+  drainFactor: 2,
+  /** The reward: boost length (s), and a breather before the next one can start charging (s). */
+  boostTime: 1.1,
+  cooldown: 1.0,
+} as const;
+
+/**
+ * Style combo: a trick landing, a mini-turbo and a slipstream boost, all within `window` seconds (any order),
+ * give an extra boost of `boostTime` seconds on top of the three boosts themselves.
+ */
+export const COMBO = {
+  window: 6,
+  boostTime: 1.0,
+} as const;
+
+/** Rocket start (see race.ts): pressing gas within this long before GO is a PERFECT start (s), with a longer boost. */
+export const START = {
+  perfectWindow: 0.3,
+  perfectBoostFactor: 1.4,
+  /** Two finishes this close together (s) raise the `photoFinish` event (the host may play slow motion). */
+  photoFinishGap: 0.15,
+} as const;
+
+/** Bot difficulty and rubber-banding numbers (see sim/bots.ts). */
+export const BOTS = {
+  /** Fraction of top speed the bots aim for, per difficulty. */
+  pace: { easy: 0.8, normal: 0.9, hard: 1.0 },
+  /** Rubber band: bots further than `deadZone` m ahead of the best human slow down by up to `maxEase`, those further behind speed up by up to `maxBoost` (fractions of pace). */
+  rubber: { deadZone: 30, fullAt: 180, maxEase: 0.06, maxBoost: 0.04 },
 } as const;
 
 /** Camera feel (render-only, doesn't affect the sim). */
