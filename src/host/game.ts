@@ -10,9 +10,8 @@
 import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
 import type { ControlInput, HostToController } from '../shared/protocol';
-import { autopilot, botStyleFor } from '../sim/autopilot';
+import { BotPack, DEFAULT_DIFFICULTY, type Difficulty } from '../sim/bots';
 import { ITEMS, KART, SIM_DT } from '../sim/config';
-import { botItemButton } from '../sim/items/items';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
 import { Track } from '../sim/track';
@@ -122,6 +121,15 @@ export class Game {
    * this item (or "random" = random item each time). Null = normal item boxes only.
    */
   devItem: ItemId | 'random' | null = null;
+  /** How good the computer drivers are (set from the lobby by main.ts before `start`). */
+  botDifficulty: Difficulty = DEFAULT_DIFFICULTY;
+  /** The computer drivers of the current race (see sim/bots.ts). */
+  private bots = new BotPack();
+  /**
+   * Set when the sim reports two karts finishing within a fraction of a second ("photo finish").
+   * Nothing uses it yet: a slow-motion replay could read it (and reset it) later.
+   */
+  photoFinish = false;
   /** AUDIO: set by main.ts; null = silent (every use below is optional-chained). */
   audio: AudioEngine | null = null;
   private itemPool: ItemMeshPool;
@@ -224,6 +232,8 @@ export class Game {
     // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
     const loadouts = new Map(slots.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? DEFAULT_LOADOUT] as const));
     this.world.startRace(slots, this.track.def.laps, loadouts);
+    this.bots = new BotPack(this.botDifficulty, (slot) => !this.players.isBot(slot));
+    this.photoFinish = false;
 
     // Launch cannons for this track (barrel, mouth glow, landing pad).
     this.cannonView?.dispose(this.scene);
@@ -282,11 +292,7 @@ export class Game {
   /** Bots drive themselves; everyone else uses their controller. */
   private inputFor(slot: number): ControlInput {
     if (this.players.isBot(slot)) {
-      const k = this.world.karts.get(slot);
-      if (k) {
-        const base = autopilot(k, this.track, botStyleFor(slot), this.world.configOf(slot));
-        return { ...base, buttons: base.buttons | botItemButton(slot, this.world.items?.states.get(slot)) };
-      }
+      if (this.world.karts.has(slot)) return this.bots.input(this.world, slot);
     }
     return this.players.inputFor(slot);
   }
@@ -523,6 +529,21 @@ export class Game {
       case 'trick':
         this.fx.trickRing(p.x, p.y, p.z);
         break;
+      case 'slipCharge':
+        if (e.progress > 0) this.fx.windStreaks(p.x, p.y, p.z, p.heading, e.progress);
+        break;
+      case 'slipBoost':
+        this.fx.slipBoost(p.x, p.y, p.z, p.heading);
+        v.hud.flash('boost');
+        this.shake(e.slot, 0.15);
+        break;
+      case 'combo':
+        this.fx.trickRing(p.x, p.y, p.z);
+        this.fx.boostBurst(p.x, p.y, p.z, p.heading);
+        break;
+      case 'perfectStart':
+        this.fx.pickup(p.x, p.y, p.z);
+        break;
       case 'trickBoost':
         this.fx.boostBurst(p.x, p.y, p.z, p.heading);
         v.hud.flash('boost');
@@ -607,6 +628,20 @@ export class Game {
           break;
         case 'startBoost':
           this.haptic(e.slot, HAPTICS.startBoost);
+          break;
+        case 'perfectStart':
+          // A short banner (the centre toast is busy saying GO!).
+          this.viewOf(e.slot)?.hud.showBanner('PERFECT START!', 1.4, this.elapsed);
+          break;
+        case 'slipBoost':
+          this.haptic(e.slot, HAPTICS.boost);
+          break;
+        case 'combo':
+          this.toast(e.slot, 'COMBO!', 1.1);
+          this.haptic(e.slot, HAPTICS.miniTurbo);
+          break;
+        case 'photoFinish':
+          this.photoFinish = true; // not used yet: see the field's comment
           break;
         case 'stall':
           this.haptic(e.slot, HAPTICS.stall);

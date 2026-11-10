@@ -15,6 +15,7 @@ import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
 import { controllerUrl } from './controllerUrl';
 import { Game } from './game';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
+import { DEFAULT_DIFFICULTY, nextDifficulty, sanitizeDifficulty, type Difficulty } from '../sim/bots';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
@@ -132,6 +133,28 @@ function cycleQuality() {
   game?.setQuality(quality);
 }
 
+// --- Bot difficulty (D in the lobby; remembered on this computer) -----------------
+const BOTS_KEY = 'tiltkart.botDifficulty';
+function loadDifficulty(): Difficulty {
+  try {
+    return sanitizeDifficulty(localStorage.getItem(BOTS_KEY));
+  } catch {
+    return DEFAULT_DIFFICULTY;
+  }
+}
+let botDifficulty = loadDifficulty();
+const botsChip = $('chip-bots');
+botsChip.textContent = botDifficulty.toUpperCase();
+function cycleDifficulty() {
+  botDifficulty = nextDifficulty(botDifficulty);
+  botsChip.textContent = botDifficulty.toUpperCase();
+  try {
+    localStorage.setItem(BOTS_KEY, botDifficulty);
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- Track picker (T in the lobby; remembered on this computer) -------------
 // localStorage keeps small strings per website, surviving page reloads and
 // browser restarts. We store the track's name (not its index) so adding new
@@ -213,6 +236,7 @@ function startDriving() {
   );
   game.audio = audio; // AUDIO
   game.setTrack(track);
+  game.botDifficulty = botDifficulty;
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
   // Practice aid: /host/?give=nova (or dash, slick, ricochet, seeker, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');
@@ -265,6 +289,7 @@ window.addEventListener('keydown', (e) => {
   if (!driving && !(e.target instanceof HTMLInputElement)) {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
+    if (e.code === 'KeyD') cycleDifficulty();
     if (e.code === 'KeyT') cycleTrack();
   }
 });

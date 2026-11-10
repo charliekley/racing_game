@@ -199,6 +199,7 @@ export class ItemSystem {
     const k = karts.get(slot);
     if (!k) return false;
     if (k.flight) return false; // inside a launch cannon: nothing can touch you
+    if (k.invulnTime > 0) return false; // just been hit: no chain-hits (the item passes through)
     if (k.starTime > 0) {
       events.push({ kind: 'blocked', slot, by });
       return false;
@@ -423,7 +424,7 @@ export class ItemSystem {
       if (dead.has(e) || e.trailing) continue;
       const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
       for (const [slot, k] of karts) {
-        if (k.respawnTime > 0 || k.spinTime > 0 || k.flight) continue;
+        if (k.respawnTime > 0 || k.spinTime > 0 || k.invulnTime > 0 || k.flight) continue; // protected karts: shots and slicks pass through
         if (slot === e.owner && e.grace > 0) continue;
         if (e.kind === 'slick' && !k.grounded) continue; // jumping over a slick is fine
         if (Math.abs(k.pos.y - e.y) > 2.2) continue;
@@ -486,7 +487,7 @@ export class ItemSystem {
     for (const [sa, a] of list) {
       if (a.starTime <= 0 || a.respawnTime > 0 || a.flight) continue;
       for (const [sb, b] of list) {
-        if (sa === sb || b.respawnTime > 0 || b.spinTime > 0 || b.flight) continue;
+        if (sa === sb || b.respawnTime > 0 || b.spinTime > 0 || b.invulnTime > 0 || b.flight) continue;
         if (Math.abs(a.pos.y - b.pos.y) > 1.5) continue;
         if (Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) > reach) continue;
         this.hitKart(sb, karts, 'nova', sa, events);

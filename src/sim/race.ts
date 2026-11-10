@@ -9,6 +9,7 @@
  * Pure logic: give it each kart's distance along the track every tick.
  */
 import { Buttons, type ControlInput } from '../shared/protocol';
+import { START } from './config';
 
 export const COUNTDOWN_SECONDS = 3;
 /** After the first finisher, the others get this long before the race ends. */
@@ -40,10 +41,14 @@ export interface Racer {
 
 export type RaceEvent =
   | { kind: 'go' }
-  | { kind: 'startBoost'; slot: number }
+  | { kind: 'startBoost'; slot: number; perfect: boolean }
+  /** Gas was pressed within START.perfectWindow of GO: a PERFECT rocket start (comes together with `startBoost`). */
+  | { kind: 'perfectStart'; slot: number }
   | { kind: 'stall'; slot: number }
   | { kind: 'lap'; slot: number; lap: number; lapTime: number }
   | { kind: 'finish'; slot: number; place: number; time: number }
+  /** Two karts finished within START.photoFinishGap seconds of each other (the host may show slow motion). */
+  | { kind: 'photoFinish'; slots: [number, number]; gap: number }
   | { kind: 'done' };
 
 export interface TrackInfo {
@@ -103,6 +108,11 @@ export class Race {
       r.place = this.finishOrder.length;
       this.firstFinishAt ??= this.time;
       events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
+      // Photo finish: this racer crossed right behind the previous finisher.
+      const before = this.finishOrder.length >= 2 ? this.racers.get(this.finishOrder[this.finishOrder.length - 2]) : undefined;
+      if (before?.finishTime != null && this.time - before.finishTime <= START.photoFinishGap) {
+        events.push({ kind: 'photoFinish', slots: [before.slot, r.slot], gap: this.time - before.finishTime });
+      }
     }
   }
 
@@ -158,7 +168,11 @@ export class Race {
         for (const r of this.racers.values()) {
           if (r.gasSince === null) continue;
           const held = -r.gasSince;
-          if (held <= START_BOOST_WINDOW) events.push({ kind: 'startBoost', slot: r.slot });
+          if (held <= START_BOOST_WINDOW) {
+            const perfect = held <= START.perfectWindow;
+            events.push({ kind: 'startBoost', slot: r.slot, perfect });
+            if (perfect) events.push({ kind: 'perfectStart', slot: r.slot });
+          }
           else if (held > START_STALL_AFTER) events.push({ kind: 'stall', slot: r.slot });
         }
       }

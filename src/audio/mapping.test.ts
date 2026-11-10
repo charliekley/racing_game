@@ -57,6 +57,15 @@ describe('soundsForEvent', () => {
     expect(ids({ kind: 'driftEnd', slot: 0 })).toEqual([]);
   });
 
+  it('slipstream, combo and perfect start have cues; the per-tick charge event only sounds once', () => {
+    expect(ids({ kind: 'slipBoost', slot: 0 })).toEqual(['slipBoost']);
+    expect(ids({ kind: 'combo', slot: 0 })).toEqual(['combo']);
+    expect(ids({ kind: 'perfectStart', slot: 0 })).toEqual(['perfect']);
+    expect(ids({ kind: 'slipCharge', slot: 0, progress: 0.01 })).toEqual(['slipStart']); // the first tick of a charge
+    expect(ids({ kind: 'slipCharge', slot: 0, progress: 0.5 })).toEqual([]);
+    expect(ids({ kind: 'slipCharge', slot: 0, progress: 0 })).toEqual([]);
+  });
+
   it('every sound id has a synth, and every cue returns a known id', () => {
     for (const id of SOUND_IDS) expect(typeof SYNTHS[id]).toBe('function');
     expect(Object.keys(SYNTHS).sort()).toEqual([...SOUND_IDS].sort());

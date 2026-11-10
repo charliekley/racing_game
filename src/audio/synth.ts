@@ -159,6 +159,28 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     noiseBurst(e, t, { dur: 0.35, gain: 0.25 * g, f0: 800, f1: 4000, q: 1 });
     return 0.4;
   },
+  // Slipstream: a soft rising hush when the wake catches you, a whoosh when the slingshot fires.
+  slipStart: (e, t, g) => {
+    noiseBurst(e, t, { dur: 0.35, gain: 0.18 * g, f0: 900, f1: 2200, q: 0.8, a: 0.15 });
+    return 0.4;
+  },
+  slipBoost: (e, t, g, r) => {
+    noiseBurst(e, t, { dur: 0.5, gain: 0.5 * g, f0: 400 * r, f1: 4200 * r, q: 0.9, a: 0.03 });
+    tone(e, t, { type: 'sine', f0: 300 * r, f1: 900 * r, dur: 0.3, gain: 0.15 * g });
+    return 0.55;
+  },
+  // Style combo: a quick bright arpeggio (clearly different from the trick chime).
+  combo: (e, t, g) => {
+    notes(e, t, [[523, 0, 0.12], [659, 0.07, 0.12], [784, 0.14, 0.12], [1047, 0.21, 0.35]], 'square', 0.12 * g, 4000);
+    notes(e, t, [[1047, 0.21, 0.35], [1319, 0.28, 0.4]], 'triangle', 0.18 * g);
+    return 0.7;
+  },
+  // Perfect rocket start: a punchy two-note "ding-ding" over a burst.
+  perfect: (e, t, g) => {
+    notes(e, t, [[880, 0, 0.14], [1320, 0.1, 0.3]], 'triangle', 0.3 * g);
+    noiseBurst(e, t, { dur: 0.25, gain: 0.2 * g, f0: 1500, f1: 5000 });
+    return 0.5;
+  },
   hop: (e, t, g) => {
     tone(e, t, { type: 'sine', f0: 280, f1: 620, dur: 0.12, gain: 0.35 * g });
     return 0.15;

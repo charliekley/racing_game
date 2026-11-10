@@ -88,6 +88,8 @@ export interface KartState {
   spinTime: number;
   /** Seconds left of Nova invincibility. */
   starTime: number;
+  /** Seconds left of hit protection: counts down from the moment you are hit (spin-out + grace); items pass through you meanwhile. */
+  invulnTime: number;
   /** Seconds left of flipped steering (hit by a Jumble). */
   invertTime: number;
 
@@ -133,6 +135,7 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     offTrackTime: 0,
     spinTime: 0,
     starTime: 0,
+    invulnTime: 0,
     invertTime: 0,
     flight: null,
     cannonCooldown: 0,
@@ -221,6 +224,7 @@ export function applyBoost(k: KartState, seconds: number): void {
 /** Knock a kart into a spin-out (hit by a trap, shot or Nova): loses control, speed and boost. */
 export function spinOut(k: KartState, c: KartConfig = KART): void {
   k.spinTime = c.spinTime;
+  k.invulnTime = c.spinTime + c.hitInvulnTime;
   k.speed *= c.spinSpeedFactor;
   k.vel.x *= c.spinSpeedFactor;
   k.vel.z *= c.spinSpeedFactor;
@@ -256,6 +260,7 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
     k.yawRate = 0;
     k.prevButtons = input.buttons;
     k.starTime = Math.max(0, k.starTime - dt);
+    k.invulnTime = Math.max(0, k.invulnTime - dt);
     k.invertTime = Math.max(0, k.invertTime - dt);
     return events;
   }
@@ -282,6 +287,7 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   k.stallTime = Math.max(0, k.stallTime - dt);
   const nova = k.starTime > 0;
   k.starTime = Math.max(0, k.starTime - dt);
+  k.invulnTime = Math.max(0, k.invulnTime - dt);
   if (spinning) k.prevButtons = realButtons;
 
   // --- Hop (start of a drift) ---------------------------------------------------

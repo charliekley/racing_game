@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, STAT_KEYS, loadoutStats, type Loadout } from '../shared/characters';
 import { TRACKS } from '../track';
 import { autopilot, botStyleFor } from './autopilot';
+import { BotPack } from './bots';
 import { botLoadoutFor, kartConfigFor } from './classes';
 import { KART } from './config';
 import { collideKarts } from './collision';
@@ -107,6 +108,22 @@ function lapTime(track: Track, laps: number, loadout: Loadout): number {
   return r.finished ? r.finishTime! + 0 : Infinity;
 }
 
+/**
+ * Same, but driven by the full bot (normal difficulty: drifts, mini-turbos, tricks, items off the road) on its own,
+ * so the class numbers are also checked against how people actually race.
+ */
+function botLapTime(track: Track, laps: number, loadout: Loadout): number {
+  const world = new World(track, track);
+  world.startRace([0], laps, new Map([[0, loadout]]));
+  const pack = new BotPack('normal');
+  let ticks = 0;
+  while (!world.race!.racers.get(0)!.finished && ticks < 60 * 300) {
+    world.tick((slot) => pack.input(world, slot));
+    ticks++;
+  }
+  return world.race!.racers.get(0)!.finishTime ?? Infinity;
+}
+
 // Light = Pip/Mochi/Fizz, medium = Juno/Bolt/Sable, heavy = Bruno/Rex (default Sprinter body).
 const CLASS_REPS: Record<'light' | 'medium' | 'heavy', number[]> = { light: [0, 1, 2], medium: [3, 4, 5], heavy: [6, 7] };
 
@@ -135,5 +152,18 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('class balance on %s', (_
     const spread = (Math.max(...times) - Math.min(...times)) / Math.min(...times);
     if (process.env.PRINT_LAPS) console.log(def.name, byClass, `spread ${(spread * 100).toFixed(2)}%`);
     expect(spread).toBeLessThan(0.04);
+  }, 120_000);
+
+  it('with normal-difficulty bots (drifting, tricks, items): light, medium and heavy lap times stay within 6%, and none is helpless', () => {
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const byClass = {} as Record<string, number>;
+    for (const [cls, chars] of Object.entries(CLASS_REPS)) byClass[cls] = mean(chars.map((c) => botLapTime(track, 2, { character: c, kart: 0 })));
+    const times = Object.values(byClass);
+    const spread = (Math.max(...times) - Math.min(...times)) / Math.min(...times);
+    if (process.env.PRINT_LAPS) console.log('bots', def.name, byClass, `spread ${(spread * 100).toFixed(2)}%`);
+    expect(Math.max(...times)).toBeLessThan(Infinity);
+    expect(byClass.light).toBeLessThan(byClass.heavy * 1.06); // a light kart is not helpless...
+    expect(byClass.heavy).toBeLessThan(byClass.light * 1.06); // ...and a heavy kart is not dominant either
+    expect(spread).toBeLessThan(0.06);
   }, 120_000);
 });

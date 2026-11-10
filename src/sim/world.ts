@@ -5,7 +5,7 @@
  */
 import type { ControlInput } from '../shared/protocol';
 import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
-import { KART, SIM_DT, type KartConfig } from './config';
+import { KART, SIM_DT, START, type KartConfig } from './config';
 import { kartConfigFor } from './classes';
 import { stepCannons, type CannonEvent } from './cannon';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
@@ -15,6 +15,7 @@ import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartS
 import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
 import { Race, type RaceEvent } from './race';
+import { ComboTracker, SlipstreamSystem, applyComboBonus, type StyleEvent } from './style';
 import type { Track } from './track';
 import { planScenery } from '../track/sceneryPlan';
 
@@ -31,6 +32,7 @@ export type WorldEvent =
   | { kind: 'respawn'; slot: number }
   | ItemEvent
   | CannonEvent
+  | StyleEvent
   | (KartEvent & { slot: number });
 
 /** Wall hits softer than this (m/s) aren't reported. */
@@ -52,6 +54,10 @@ export class World {
   items: ItemSystem | null = null;
   /** Solid scenery (trees, houses, grandstands…). Built from the scenery plan in startRace unless set before. */
   colliders: Colliders | null = null;
+  /** Slipstream charges (null until a race starts). */
+  slip: SlipstreamSystem | null = null;
+  /** Remembers tricks / mini-turbos / slingshots for the style combo. */
+  private readonly combo = new ComboTracker();
   /** What each slot picked (character + kart body). Missing = the default loadout. */
   readonly loadouts = new Map<number, Loadout>();
   /** Per-slot physics numbers made from the loadout (cached in kartConfigFor). */
@@ -106,6 +112,7 @@ export class World {
     this.respawnTargets.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
+    this.slip = new SlipstreamSystem();
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
     this.items.configOf = (slot) => this.configOf(slot);
     // Solid scenery: same plan the renderer draws from, so what you see is what you hit.
@@ -126,7 +133,11 @@ export class World {
         this.lowerByCarrier(slot, kart);
         continue;
       }
-      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT, this.configOf(slot))) events.push({ ...e, slot });
+      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT, this.configOf(slot))) {
+        events.push({ ...e, slot });
+        if (e.kind === 'trickBoost') this.noteStyle(slot, 'trick', kart, events);
+        if (e.kind === 'miniTurbo') this.noteStyle(slot, 'miniTurbo', kart, events);
+      }
       if (kart.grounded && kart.surface === 'boost') {
         if (kart.boostTime < KART.boostPadTime * 0.5) events.push({ kind: 'boostPad', slot });
         applyBoost(kart, KART.boostPadTime);
@@ -158,6 +169,14 @@ export class World {
       events.push(...collideKarts(active, KART, (slot) => this.configOf(slot).mass));
     }
 
+    // Slipstream: karts in each other's wake charge a boost.
+    if (this.slip && this.race?.phase === 'racing') {
+      for (const e of this.slip.tick(this.karts, (slot) => !this.race!.racers.get(slot)?.finished)) {
+        events.push(e);
+        if (e.kind === 'slipBoost') this.noteStyle(e.slot, 'slipstream', this.karts.get(e.slot)!, events);
+      }
+    }
+
     // Items run while the race is on.
     if (this.items && this.race?.phase === 'racing') {
       const finished = new Set([...this.race.racers.values()].filter((r) => r.finished).map((r) => r.slot));
@@ -172,12 +191,19 @@ export class World {
         positions.set(slot, kart.flight ? this.track.cannons[kart.flight.cannon].mouth.s : this.track.project(kart.pos.x, kart.pos.z, kart.trackIndex).s);
       }
       for (const e of this.race.tick(SIM_DT, positions, inputs)) {
-        if (e.kind === 'startBoost') applyBoost(this.karts.get(e.slot)!, KART.startBoostTime);
+        if (e.kind === 'startBoost') applyBoost(this.karts.get(e.slot)!, KART.startBoostTime * (e.perfect ? START.perfectBoostFactor : 1));
         if (e.kind === 'stall') this.karts.get(e.slot)!.stallTime = KART.startStallTime;
         events.push(e);
       }
     }
     return events;
+  }
+
+  /** Record a style move; a completed combo adds a bonus boost and a `combo` event. */
+  private noteStyle(slot: number, move: 'trick' | 'miniTurbo' | 'slipstream', kart: KartState, events: WorldEvent[]): void {
+    if (!this.combo.note(slot, move, this.race?.time ?? 0)) return;
+    applyComboBonus(kart);
+    events.push({ kind: 'combo', slot });
   }
 
   /**
