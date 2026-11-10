@@ -113,7 +113,7 @@ export const docksideLoop: TrackDef = {
   checkpoints: 16,
   scenery: { seed: 22, trees: 60, buildings: 0, blocks },
   // Evening harbour: slate concrete, sandy verge, orange-pink sky.
-  theme: { grass: '#5f6d7a', offroad: '#8d8270', sky: '#e9895d', horizon: '#ffd2a0' },
+  theme: { grass: '#5f6d7a', offroad: '#8d8270', sky: '#e9895d', horizon: '#ffd2a0', mood: 'evening' },
   terrain: { seed: 7, blend: 14 },
   bridges: [{ from: 5.6, to: 14.3 }],
   shortcuts: [
