@@ -118,7 +118,7 @@ export const emberPeaks: TrackDef = {
   checkpoints: 18,
   scenery: { seed: 17, trees: 70, buildings: 0 },
   // Dark ash ground, rust-orange rock, purple dusk sky glowing orange at the horizon.
-  theme: { grass: '#4a2f2a', offroad: '#7a3b22', sky: '#3a2a5c', horizon: '#ff8a4a' },
+  theme: { grass: '#4a2f2a', offroad: '#7a3b22', sky: '#3a2a5c', horizon: '#ff8a4a', mood: 'dusk' },
   terrain: {
     seed: 7,
     hills: { amplitude: 4, wavelength: 70 },

@@ -77,7 +77,7 @@ function getQuestionTexture(): THREE.CanvasTexture | null {
 // A bright core inside the crate: the "glowing mark". Additive, so it blooms once post-processing is on.
 const boxCoreGeo = new THREE.IcosahedronGeometry(0.3, 1);
 const boxCoreMat = new THREE.MeshBasicMaterial({
-  color: '#fff6c8',
+  color: new THREE.Color('#fff6c8').multiplyScalar(3), // above 1.0 so it blooms
   transparent: true,
   opacity: 0.85,
   blending: THREE.AdditiveBlending,
@@ -193,8 +193,8 @@ const ricoBallGeo = new THREE.SphereGeometry(0.35, 16, 12);
 const ricoRingGeo = new THREE.TorusGeometry(0.42, 0.06, 6, 20);
 // Streak is a cone behind the ball (toward -Z), tip pointing away from the direction of travel.
 const ricoTrailGeo = new THREE.ConeGeometry(0.3, 1.3, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.95);
-const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#ff8a00', emissiveIntensity: 0.7 });
-const ricoRingMat = new THREE.MeshBasicMaterial({ color: '#35e0ff' });
+const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#ff8a00', emissiveIntensity: 3 });
+const ricoRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#35e0ff').multiplyScalar(3) });
 const ricoTrailMat = new THREE.MeshBasicMaterial({
   color: '#ffb84a',
   transparent: true,
@@ -237,7 +237,7 @@ const seekBodyMat = new THREE.MeshLambertMaterial({ color: '#d7dce6', emissive: 
 const seekNoseMat = new THREE.MeshLambertMaterial({ color: '#ff3d6e', emissive: '#6a0a28' });
 const seekFinMat = new THREE.MeshLambertMaterial({ color: '#ff3d6e', side: THREE.DoubleSide });
 const seekFlameMat = new THREE.MeshBasicMaterial({
-  color: '#ffb347',
+  color: new THREE.Color('#ffb347').multiplyScalar(3),
   transparent: true,
   opacity: 0.85,
   blending: THREE.AdditiveBlending,

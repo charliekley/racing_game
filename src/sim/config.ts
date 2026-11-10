@@ -108,6 +108,11 @@ export const KART = {
   wallSpeedLoss: 0.45,
   /** Kart-vs-kart bounce (0..1). */
   kartBounce: 0.6,
+  /**
+   * Mass in kart-vs-kart bumps (relative units; 1 = the default kart). When two karts bump,
+   * the lighter one gets pushed around more (momentum is shared out by mass). See sim/classes.ts.
+   */
+  mass: 1,
 
   // --- Vertical ------------------------------------------------------------------
   /** Gravity (m/s^2). Heavier than real (9.81) so jumps feel snappy. */
@@ -128,7 +133,14 @@ export const KART = {
   radius: 0.9,
 } as const;
 
-export type KartConfig = typeof KART;
+/**
+ * The shape of KART, but with plain `number`s instead of the exact literal values
+ * (because `as const` makes `maxSpeed` the type `28`). Every kart gets its own copy of
+ * these numbers: see `kartConfigFor` in sim/classes.ts.
+ */
+export type KartConfig = {
+  -readonly [K in keyof typeof KART]: (typeof KART)[K] extends readonly number[] ? readonly number[] : number;
+};
 
 /** Items: boxes, roulette, the five items. */
 export const ITEMS = {

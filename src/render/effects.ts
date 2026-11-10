@@ -42,8 +42,8 @@ export class SparkEmitter {
 
 // --- Boost flame -----------------------------------------------------------------
 const flameGeo = new THREE.ConeGeometry(0.11, 0.6, 8, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.3);
-const flameOuterMat = new THREE.MeshBasicMaterial({ color: '#ff9a2e', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
-const flameInnerMat = new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+const flameOuterMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff9a2e').multiplyScalar(3), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+const flameInnerMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff3b0').multiplyScalar(4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
 
 /** Two-layer flame pointing out of the back (-Z) of an exhaust. */
 export function buildFlame(): THREE.Group {

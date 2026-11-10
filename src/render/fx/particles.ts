@@ -84,10 +84,11 @@ const VERT = /* glsl */ `
 
 const FRAG = /* glsl */ `
   uniform sampler2D uMap;
+  uniform float uGain; // HDR gain: the bloom pass only picks up brightness above ~1
   varying vec4 vColor;
   void main() {
     vec4 t = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(vColor.rgb, vColor.a * t.a);
+    gl_FragColor = vec4(vColor.rgb * uGain, vColor.a * t.a);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -144,7 +145,7 @@ export class ParticleSystem {
     this.geo.setAttribute('aSize', new THREE.BufferAttribute(this.aSize, 1).setUsage(THREE.DynamicDrawUsage));
     this.tex = makeSprite(shape);
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { uMap: { value: this.tex }, uScale: { value: 600 } },
+      uniforms: { uMap: { value: this.tex }, uScale: { value: 600 }, uGain: { value: additive ? 3 : 1 } },
       vertexShader: VERT,
       fragmentShader: FRAG,
       transparent: true,

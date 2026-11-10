@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { KART_STYLES, buildKartModel } from './kartModel';
+import { CHARACTERS } from '../shared/characters';
+import { KART_STYLES, buildKartModel, kartTriangleCount } from './kartModel';
 
 function countMeshes(o: THREE.Object3D): number {
   let n = 0;
@@ -21,14 +22,36 @@ describe('buildKartModel', () => {
       expect(m.rearWheelContacts).toHaveLength(2);
       expect(m.exhausts.length).toBeGreaterThan(0);
       for (const e of m.exhausts) expect(e.parent).toBe(m.body);
-      // Draw-call budget: at most 10 meshes per kart.
-      expect(countMeshes(m.root)).toBeLessThanOrEqual(10);
+      // Draw-call budget: about 12 meshes per kart (3 body + 4 wheels + steering wheel + torso, head, 2 arms).
+      expect(countMeshes(m.root)).toBeLessThanOrEqual(13);
+      // Triangle budget: 15k to 25k is the target; stay under 40k even for the heaviest.
+      expect(kartTriangleCount(i, 0, 'high')).toBeLessThan(40000);
+      expect(kartTriangleCount(i, 0, 'low')).toBeLessThan(kartTriangleCount(i, 0, 'high'));
       // Rough size check: about 1.9 m long, sits on the ground.
       const box = new THREE.Box3().setFromObject(m.root);
       expect(box.min.y).toBeGreaterThanOrEqual(-0.01);
       expect(box.max.z - box.min.z).toBeGreaterThan(1.7);
       expect(box.max.z - box.min.z).toBeLessThan(2.6);
     });
+  });
+
+  it('builds all eight drivers on every body, with a rig', () => {
+    for (let s = 0; s < KART_STYLES.length; s++) {
+      for (let c = 0; c < CHARACTERS.length; c++) {
+        const m = buildKartModel('#3a86ff', s, c);
+        expect(m.character).toBe(c);
+        expect(m.arms).toHaveLength(2);
+        expect(m.head.parent).toBe(m.torso);
+        expect(m.driver.parent).toBe(m.body);
+        expect(m.driver.scale.x).toBeCloseTo(CHARACTERS[c].look.scale);
+        expect(countMeshes(m.root)).toBeLessThanOrEqual(13);
+        // No NaN in any geometry.
+        m.root.traverse((o) => {
+          const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+          if (g) expect(Number.isFinite(g.boundingSphere?.radius ?? g.computeBoundingSphere() ?? 1)).toBe(true);
+        });
+      }
+    }
   });
 
   it('shares geometry between karts of the same style', () => {

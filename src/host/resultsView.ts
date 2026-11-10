@@ -7,15 +7,14 @@
  * animation delay. Names come from phones, so they are only ever set with
  * `textContent` (never innerHTML) so nobody can inject HTML.
  */
-import { KART_COLORS } from '../shared/colors';
 
 export interface ResultRow {
   place: number;
   name: string;
   /** Player colour (CSS hex). */
   color: string;
-  /** Index into KART_COLORS, shown as the kart's name. */
-  colorIndex: number;
+  /** Character and kart name shown under the player's name, e.g. "Pip · Racer". */
+  loadoutText: string;
   /** Formatted finish time, or 'DNF'. */
   time: string;
   /** Formatted best lap, or '–'. */
@@ -58,7 +57,7 @@ export function buildResults(container: HTMLElement, rows: ResultRow[], trackNam
       <span class="res-best"></span>`;
     li.querySelector('.res-place')!.innerHTML = `${row.place}<sup>${ordinalSuffix(row.place)}</sup>`;
     li.querySelector('.res-name')!.textContent = row.name;
-    li.querySelector('.res-kart')!.textContent = `${KART_COLORS[row.colorIndex % KART_COLORS.length].name} kart`;
+    li.querySelector('.res-kart')!.textContent = row.loadoutText;
     li.querySelector('.res-time')!.textContent = row.time;
     const best = li.querySelector('.res-best') as HTMLElement;
     best.textContent = row.best;

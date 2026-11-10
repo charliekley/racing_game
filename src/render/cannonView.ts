@@ -167,7 +167,7 @@ function getShared(): Shared {
     puff: new THREE.IcosahedronGeometry(1, 1),
     bodyMat: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
     funnelMat: new THREE.MeshBasicMaterial({
-      color: GLOW,
+      color: new THREE.Color(GLOW).multiplyScalar(2.5),
       transparent: true,
       opacity: 0.6,
       blending: THREE.AdditiveBlending,
@@ -175,7 +175,7 @@ function getShared(): Shared {
       side: THREE.DoubleSide,
     }),
     flashMat: new THREE.MeshBasicMaterial({
-      color: '#fff1b0',
+      color: new THREE.Color('#fff1b0').multiplyScalar(4), // HDR: blooms
       transparent: true,
       opacity: 0.95,
       blending: THREE.AdditiveBlending,

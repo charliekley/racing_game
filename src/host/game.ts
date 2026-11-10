@@ -22,7 +22,9 @@ import { ChaseCamera, newCameraState } from '../render/chaseCamera';
 import { GameFx } from '../render/fx/gameFx';
 import { Flyover, introWanted } from '../render/fx/intro';
 import { buildResults, type ResultRow } from './resultsView';
+import { setKartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
+import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
@@ -36,9 +38,12 @@ import {
   followWithSun,
   type QualitySettings,
 } from '../render/scene';
+import { RenderPipeline } from '../render/post/pipeline';
 import { TrackView } from '../render/trackView';
 import type { PlayerManager } from './playerManager';
 import { ViewHud } from './viewHud';
+// AUDIO: sound engine (src/audio). Created in main.ts and handed over via `game.audio`.
+import { musicForTrack, panForRect, type AudioEngine, type KartAudioState } from '../audio';
 
 const ordinalSuffix = (n: number) => (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
 
@@ -91,6 +96,9 @@ interface PlayerView {
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
+  /** Render pipeline (HDR target, bloom, grade); see src/render/post/pipeline.ts. */
+  private pipeline: RenderPipeline;
+  private quality: QualitySettings;
   private scene: THREE.Scene;
   private sun: THREE.DirectionalLight;
   private track: Track;
@@ -114,6 +122,8 @@ export class Game {
    * this item (or "random" = random item each time). Null = normal item boxes only.
    */
   devItem: ItemId | 'random' | null = null;
+  /** AUDIO: set by main.ts; null = silent (every use below is optional-chained). */
+  audio: AudioEngine | null = null;
   private itemPool: ItemMeshPool;
   // --- Game feel (see src/render/fx/*) ---
   /** All particles, skid marks and one-shot bursts. */
@@ -133,11 +143,16 @@ export class Game {
     private readonly callbacks: GameCallbacks,
     quality: QualitySettings,
   ) {
+    setKartDetail(quality.name === 'Low' ? 'low' : 'high'); // kart-models: cheaper kart meshes on Low (applies to karts built from now on)
     this.renderer = createRenderer(container, quality);
+    this.quality = quality;
     this.track = new Track(TRACKS[0]);
     const parts = createScene(this.track.def.theme);
     this.scene = parts.scene;
     this.sun = parts.sun;
+    // Sky environment map for reflections + render pipeline (post-processing).
+    applyTheme(this.scene, this.track.def.theme, this.renderer, quality.envSize);
+    this.pipeline = new RenderPipeline(this.renderer, quality, this.track.def.theme);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
     this.itemPool = new ItemMeshPool(this.scene);
@@ -172,8 +187,9 @@ export class Game {
    */
   setTrack(def: TrackDef): void {
     if (def === this.track.def) return;
-    applyTheme(this.scene, def.theme); // sky, fog and ambient light follow the track
+    applyTheme(this.scene, def.theme, this.renderer, this.quality.envSize); // sky, fog, lights and reflections follow the track
     this.fx.setTheme(def.theme.offroad); // dust takes the off-road colour
+    this.pipeline.setTheme(def.theme); // bloom / colour grade follow the track too
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
     this.minimap.canvas.remove();
@@ -187,7 +203,12 @@ export class Game {
   }
 
   setQuality(q: QualitySettings): void {
+    setKartDetail(q.name === 'Low' ? 'low' : 'high'); // kart-models: used by karts built from now on
+    const envChanged = q.envSize !== this.quality.envSize;
+    this.quality = q;
     applyRendererQuality(this.renderer, q);
+    this.pipeline.setQuality(q);
+    if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
     applySceneQuality(this.scene, this.sun, q);
     this.fx.setQuality(q);
     this.resize();
@@ -200,7 +221,9 @@ export class Game {
       v.hud.dispose();
     }
     this.world = new World(this.track, this.track);
-    this.world.startRace(slots, this.track.def.laps);
+    // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
+    const loadouts = new Map(slots.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? DEFAULT_LOADOUT] as const));
+    this.world.startRace(slots, this.track.def.laps, loadouts);
 
     // Launch cannons for this track (barrel, mouth glow, landing pad).
     this.cannonView?.dispose(this.scene);
@@ -227,7 +250,7 @@ export class Game {
       hud.root.classList.toggle('solo', slots.length === 1);
       const chase = new ChaseCamera();
       chase.snap();
-      return { slot, kart: new KartView(this.scene, color), chase, hud, rect: layout.views[i] };
+      return { slot, kart: new KartView(this.scene, color, loadouts.get(slot)), chase, hud, rect: layout.views[i] };
     });
     this.minimap.place(layout.minimap);
 
@@ -251,6 +274,9 @@ export class Game {
     this.lastStatus.clear();
     this.results.classList.add('hidden');
     this.resize();
+    // AUDIO: this track's tune (normal tempo), engines are created on the first frame.
+    this.audio?.setFinalLap(false);
+    this.audio?.playMusic(musicForTrack(this.track.def.name, TRACKS.indexOf(this.track.def)));
   }
 
   /** Bots drive themselves; everyone else uses their controller. */
@@ -258,7 +284,7 @@ export class Game {
     if (this.players.isBot(slot)) {
       const k = this.world.karts.get(slot);
       if (k) {
-        const base = autopilot(k, this.track, botStyleFor(slot));
+        const base = autopilot(k, this.track, botStyleFor(slot), this.world.configOf(slot));
         return { ...base, buttons: base.buttons | botItemButton(slot, this.world.items?.states.get(slot)) };
       }
     }
@@ -315,22 +341,47 @@ export class Game {
     cz /= Math.max(1, this.views.length);
     let spread = 0;
     for (const v of this.views) spread = Math.max(spread, Math.hypot(v.kart.pose.x - cx, v.kart.pose.z - cz));
-    followWithSun(this.sun, cx, cz, spread + 45);
+    // Shadows: when the karts are close together one shadow map covers all of them; when they are
+    // spread out (split-screen on a big track) the map is re-aimed and redrawn for each view below.
+    const sharedShadow = this.views.length <= 1 || spread < 50 || !this.quality.shadowPerView;
+    if (sharedShadow) followWithSun(this.sun, cx, cz, spread + 55);
 
     // Countdown numbers on every HUD.
     if (race.phase === 'countdown' && !intro) {
       const n = Math.max(1, Math.ceil(-race.time));
       if (n !== this.lastCountdown) {
         this.lastCountdown = n;
+        this.audio?.countdown(n); // AUDIO: 3-2-1 beeps
         for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed, 'count');
       }
     }
     this.fx.update(dt);
 
+    // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
+    if (this.audio) {
+      this.audio.update(
+        dt,
+        this.views.map((v): KartAudioState => {
+          const k = this.world.karts.get(v.slot)!;
+          return {
+            slot: v.slot,
+            human: !this.players.isBot(v.slot),
+            speed: k.speed,
+            boosting: k.boostTime > 0,
+            grounded: k.grounded,
+            drift: k.driftDir !== 0 ? 1 + k.driftTier : 0,
+            silent: !!k.flight || k.respawnTime > 0,
+            rolling: (items.states.get(v.slot)?.roulette ?? 0) > 0,
+            pan: panForRect(v.rect),
+          };
+        }),
+      );
+    }
+
     // Render: shadow map once, then the scene once per viewport.
     const size = this.renderer.getSize(new THREE.Vector2());
-    this.renderer.shadowMap.needsUpdate = true;
-    this.renderer.setScissorTest(true);
+    if (sharedShadow) this.renderer.shadowMap.needsUpdate = true;
+    this.pipeline.beginFrame();
     for (const v of this.views) {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
@@ -346,10 +397,14 @@ export class Game {
       cs.driftDir = kart.driftDir;
       v.chase.update(v.kart.pose, dt, cs, ground);
       if (intro) this.flyover.apply(v.chase.camera, this.track, v.slot);
+      if (!sharedShadow) {
+        // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
+        const fwd = v.chase.camera.getWorldDirection(new THREE.Vector3());
+        followWithSun(this.sun, v.kart.pose.x + fwd.x * 22, v.kart.pose.z + fwd.z * 22, 55);
+        this.renderer.shadowMap.needsUpdate = true;
+      }
       this.fx.beginView(v.chase.camera, r.h * this.renderer.getPixelRatio()); // particle sizes depend on camera + viewport
-      this.renderer.setViewport(r.x, r.y, r.w, r.h);
-      this.renderer.setScissor(r.x, r.y, r.w, r.h);
-      this.renderer.render(this.scene, v.chase.camera);
+      this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 
       v.hud.update(
         {
@@ -369,7 +424,7 @@ export class Game {
         this.elapsed,
       );
     }
-    this.renderer.setScissorTest(false);
+    this.pipeline.endFrame(); // bloom + colour grade + tone mapping, once for all viewports
 
     this.minimap.draw(
       race.standings().map((slot) => {
@@ -399,6 +454,7 @@ export class Game {
     if (this.doneAt !== null && !this.resultsShown && this.elapsed - this.doneAt > 2.5) {
       this.resultsShown = true;
       this.showResults();
+      this.audio?.results(); // AUDIO: fanfare + results loop
       this.callbacks.onResults();
     }
   }
@@ -537,6 +593,8 @@ export class Game {
   }
 
   private handleEvents(events: WorldEvent[]): void {
+    // AUDIO: one call turns every event into sounds (mapping lives in src/audio/mapping.ts).
+    this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.track.def.laps });
     for (const e of events) {
       this.reactFx(e);
       switch (e.kind) {
@@ -565,7 +623,10 @@ export class Game {
         case 'lap': {
           this.haptic(e.slot, HAPTICS.lap);
           // Only the final lap gets a banner; the lap counter covers the rest.
-          if (e.lap + 1 === this.track.def.laps) this.viewOf(e.slot)?.hud.showBanner('FINAL LAP!', 1.9, this.elapsed);
+          if (e.lap + 1 === this.track.def.laps) {
+            this.viewOf(e.slot)?.hud.showBanner('FINAL LAP!', 1.9, this.elapsed);
+            if (!this.players.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
+          }
           break;
         }
         case 'finish':
@@ -663,11 +724,12 @@ export class Game {
       const r = race.racers.get(slot)!;
       const p = this.players.slots.slots[slot];
       const best = r.lapTimes.length ? Math.min(...r.lapTimes) : Infinity;
+      const loadout = sanitizeLoadout(p?.loadout);
       const row: ResultRow = {
         place: r.place ?? 0,
         name: p?.name ?? `P${slot + 1}`,
         color: colorHex(p?.color ?? slot),
-        colorIndex: p?.color ?? slot,
+        loadoutText: `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`,
         time: r.finished ? formatTime(r.finishTime!) : 'DNF',
         best: Number.isFinite(best) ? formatTime(best) : '–',
         fastest: false,
@@ -692,6 +754,7 @@ export class Game {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h);
+    this.pipeline.resize();
   }
 }
 
