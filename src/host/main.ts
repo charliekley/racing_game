@@ -17,6 +17,7 @@ import { Game } from './game';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { DEFAULT_DIFFICULTY, nextDifficulty, sanitizeDifficulty, type Difficulty } from '../sim/bots';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
+import { gpuName, presetByName, presetNameForGpu } from '../render/gpuTier';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { TrackPreview } from './trackPreview';
@@ -108,13 +109,47 @@ const lobbyView = new LobbyView($('slots'), players, {
 });
 
 // --- Graphics quality (Q in the lobby; remembered on this computer) ----------
-const QUALITY_KEY = 'tiltkart.quality';
+const QUALITY_KEY = 'tiltkart.quality'; // a preset the player picked with Q: always wins
+const AUTO_QUALITY_KEY = 'tiltkart.autoQuality'; // the last preset adaptive quality had to drop to
+/**
+ * First-run choice. Priority: ?quality=low|medium|high in the address (testing), the player's saved
+ * choice, otherwise a guess from the GPU name, lowered to wherever adaptive quality ended up last time.
+ */
+const URL_QUALITY = presetByName(new URLSearchParams(location.search).get('quality'));
+/** True once the player picked a preset with Q (now or on an earlier visit): adaptive quality must not change it. */
+let manualQuality = false;
 function loadQuality(): QualitySettings {
+  if (URL_QUALITY) return URL_QUALITY;
   try {
-    return QUALITY_PRESETS.find((q) => q.name === localStorage.getItem(QUALITY_KEY)) ?? DEFAULT_QUALITY;
+    const manual = presetByName(localStorage.getItem(QUALITY_KEY));
+    if (manual) {
+      manualQuality = true;
+      return manual;
+    }
+    const guess = presetByName(presetNameForGpu(gpuName())) ?? DEFAULT_QUALITY;
+    const auto = presetByName(localStorage.getItem(AUTO_QUALITY_KEY));
+    return auto && QUALITY_PRESETS.indexOf(auto) > QUALITY_PRESETS.indexOf(guess) ? auto : guess;
   } catch {
     return DEFAULT_QUALITY;
   }
+}
+/**
+ * Adaptive quality says frames stay too slow even at the lowest render scale: go one preset down (never up
+ * on its own). A preset the player chose with Q is respected (only the render scale adapts then).
+ */
+function stepDownQuality() {
+  if (manualQuality || URL_QUALITY) return;
+  const next = QUALITY_PRESETS[QUALITY_PRESETS.indexOf(quality) + 1];
+  if (!next) return;
+  quality = next;
+  qualityEl.textContent = quality.name;
+  qualityChip.textContent = quality.name;
+  try {
+    localStorage.setItem(AUTO_QUALITY_KEY, quality.name); // not the manual key: a manual choice is still respected next time
+  } catch {
+    /* ignore */
+  }
+  game?.setQuality(quality);
 }
 let quality = loadQuality();
 const qualityEl = $('quality');
@@ -123,6 +158,7 @@ qualityEl.textContent = quality.name;
 qualityChip.textContent = quality.name;
 function cycleQuality() {
   quality = QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length];
+  manualQuality = true;
   qualityEl.textContent = quality.name;
   qualityChip.textContent = quality.name;
   try {
@@ -231,9 +267,12 @@ function startDriving() {
       // Results screen buttons (same as the Enter / Esc keys).
       onRaceAgain: () => raceAgain(),
       onChangeTrack: () => backToLobby(),
+      onQualityStepDown: () => stepDownQuality(),
     },
     quality,
   );
+  // ?quality=... in the address is for testing and measuring: keep that preset exactly as it is (no adaptive scaling).
+  if (URL_QUALITY) game.adaptive.enabled = false;
   game.audio = audio; // AUDIO
   game.setTrack(track);
   game.botDifficulty = botDifficulty;

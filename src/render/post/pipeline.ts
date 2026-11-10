@@ -2,20 +2,22 @@
  * Post-processing pipeline that works with split-screen.
  *
  * Idea ("render to texture"): instead of drawing the 3D scene straight onto the
- * canvas, the game draws every player's viewport into ONE off-screen picture
- * (a render target). Then a few full-screen passes run ONCE on that whole picture:
+ * canvas, the game draws every player's viewport into ONE off-screen picture (a render
+ * target). Then a few full-screen passes run ONCE on that whole picture:
  *
- *   1. scene target   HDR (half-float) colour + depth, with MSAA anti-aliasing.
- *                     HDR means brightness is not capped at 1.0, so a boost flame
- *                     or the sun can be "10x brighter than white".
+ *   1. scene target   HDR (half-float) colour + depth. HDR means brightness is not capped at
+ *                     1.0, so a boost flame or the sun can be "10x brighter than white".
+ *                     Anti-aliasing is either hardware MSAA here (High) or the FXAA pass below.
  *   2. bloom          keep only the very bright pixels, blur them at several
  *                     sizes (a pyramid of ever smaller pictures) and add them back:
  *                     that is the soft glow around lights.
  *   3. composite      scene + bloom -> colour grade -> tone mapping (HDR -> screen
- *                     range) -> vignette -> sRGB output, drawn onto the canvas.
+ *                     range) -> vignette -> sRGB output.
+ *   4. FXAA           (Medium / Low) a cheap edge-smoothing filter on the finished picture.
+ *                     Hardware MSAA of a half-float target is very expensive on integrated
+ *                     GPUs (every view is resolved separately); this costs a fraction of it.
  *
  * Usage per frame:   beginFrame();  renderView(...) once per viewport;  endFrame();
- * With post-processing off (Low quality) the same calls just draw to the canvas.
  */
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -49,7 +51,7 @@ function passMaterial(fragmentShader: string, uniforms: Record<string, THREE.IUn
 // ---- Bloom shaders ---------------------------------------------------------
 
 /**
- * Bright pass: shrink the scene to half size and keep only what is brighter than
+ * Bright pass: shrink the scene to half (Medium: quarter) size and keep only what is brighter than
  * the threshold. A soft "knee" makes the cut-off gradual instead of a hard edge.
  * Every sample is also clamped so one tiny super-bright pixel cannot flicker.
  */
@@ -57,6 +59,7 @@ const BRIGHT_FRAG = /* glsl */ `
   uniform sampler2D tSource;
   uniform vec2 texel;      // size of one SOURCE pixel in uv units
   uniform float threshold;
+  uniform float tap;       // 0.5 when shrinking to 1/2 size, 1.0 for 1/4 (each bilinear tap then averages 2x2 pixels)
   varying vec2 vUv;
   vec3 prefilter(vec3 c) {
     c = min(c, vec3(24.0));
@@ -68,10 +71,11 @@ const BRIGHT_FRAG = /* glsl */ `
     return c * w;
   }
   void main() {
-    vec3 c = prefilter(texture2D(tSource, vUv + texel * vec2(-0.5, -0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2( 0.5, -0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2(-0.5,  0.5)).rgb)
-           + prefilter(texture2D(tSource, vUv + texel * vec2( 0.5,  0.5)).rgb);
+    // Four taps that together cover every source pixel under this bloom pixel (no flicker from skipped pixels).
+    vec3 c = prefilter(texture2D(tSource, vUv + texel * vec2(-tap, -tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2( tap, -tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2(-tap,  tap)).rgb)
+           + prefilter(texture2D(tSource, vUv + texel * vec2( tap,  tap)).rgb);
     gl_FragColor = vec4(c * 0.25, 1.0);
   }`;
 
@@ -108,6 +112,11 @@ const UP_FRAG = /* glsl */ `
 
 // ---- Composite shader ------------------------------------------------------
 
+/**
+ * With `LDR_OUT` defined (FXAA path) the result goes into an ordinary 8-bit picture instead of the
+ * canvas. Three.js does not tone-map or sRGB-encode when drawing into a texture, so we do both by
+ * hand (same ACES curve as Three.js, same exposure uniform).
+ */
 const COMPOSITE_FRAG = /* glsl */ `
   uniform sampler2D tScene;
   uniform sampler2D tBloom;
@@ -116,9 +125,23 @@ const COMPOSITE_FRAG = /* glsl */ `
   uniform float contrast;
   uniform vec3 tint;
   uniform float vignette;
+  uniform float exposure;
   uniform vec4 views[4];   // viewport rectangles in drawing-buffer pixels (x, y, w, h)
   uniform int viewCount;
   varying vec2 vUv;
+
+  #ifdef LDR_OUT
+  vec3 acesFilm(vec3 color) {
+    const mat3 inM = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+    const mat3 outM = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+    color *= exposure / 0.6;
+    color = inM * color;
+    vec3 a = color * (color + 0.0245786) - 0.000090537;
+    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
+    color = outM * (a / b);
+    return clamp(color, 0.0, 1.0);
+  }
+  #endif
 
   void main() {
     vec3 c = texture2D(tScene, vUv).rgb + texture2D(tBloom, vUv).rgb * bloomStrength;
@@ -129,8 +152,12 @@ const COMPOSITE_FRAG = /* glsl */ `
     c *= tint;
     c = max((c - 0.18) * contrast + 0.18, 0.0); // contrast pivots around mid grey
 
+    #ifdef LDR_OUT
+    gl_FragColor = vec4(acesFilm(c), 1.0);
+    #else
     gl_FragColor = vec4(c, 1.0);
     #include <tonemapping_fragment>
+    #endif
 
     // Vignette: darken towards the corners of the viewport this pixel belongs to
     // (each split-screen view gets its own, not one big one over the whole window).
@@ -145,10 +172,48 @@ const COMPOSITE_FRAG = /* glsl */ `
       }
     }
 
+    #ifdef LDR_OUT
+    // Linear -> sRGB by hand.
+    vec3 lo = gl_FragColor.rgb * 12.92;
+    vec3 hi = 1.055 * pow(max(gl_FragColor.rgb, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+    gl_FragColor.rgb = mix(lo, hi, step(vec3(0.0031308), gl_FragColor.rgb));
+    #else
     #include <colorspace_fragment>
+    #endif
     // Tiny noise (about one 8-bit step) hides colour banding in smooth sky gradients.
     float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     gl_FragColor.rgb += (n - 0.5) / 255.0;
+  }`;
+
+// ---- FXAA ------------------------------------------------------------------
+
+/**
+ * FXAA ("fast approximate anti-aliasing", Timothy Lottes' classic 9-tap version): look at the
+ * brightness around each pixel, find the direction of a nearby edge, and blur only along it.
+ * Works on the finished sRGB picture, so there are no HDR surprises.
+ */
+const FXAA_FRAG = /* glsl */ `
+  uniform sampler2D tColor;
+  uniform vec2 texel;
+  varying vec2 vUv;
+  float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+  void main() {
+    vec3 rgbM  = texture2D(tColor, vUv).rgb;
+    vec3 rgbNW = texture2D(tColor, vUv + texel * vec2(-1.0, -1.0)).rgb;
+    vec3 rgbNE = texture2D(tColor, vUv + texel * vec2( 1.0, -1.0)).rgb;
+    vec3 rgbSW = texture2D(tColor, vUv + texel * vec2(-1.0,  1.0)).rgb;
+    vec3 rgbSE = texture2D(tColor, vUv + texel * vec2( 1.0,  1.0)).rgb;
+    float lM = lum(rgbM), lNW = lum(rgbNW), lNE = lum(rgbNE), lSW = lum(rgbSW), lSE = lum(rgbSE);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+    float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
+    float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+    dir = clamp(dir * rcp, vec2(-6.0), vec2(6.0)) * texel;
+    vec3 a = 0.5 * (texture2D(tColor, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tColor, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture2D(tColor, vUv + dir * -0.5).rgb + texture2D(tColor, vUv + dir * 0.5).rgb);
+    float lB = lum(b);
+    gl_FragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
   }`;
 
 export class RenderPipeline {
@@ -156,16 +221,21 @@ export class RenderPipeline {
   private look: Look;
   private readonly quad = new FullScreenQuad();
   private target: THREE.WebGLRenderTarget | null = null;
+  /** 8-bit picture between the composite and the FXAA pass (only when q.fxaa). */
+  private ldr: THREE.WebGLRenderTarget | null = null;
   private bloomDown: THREE.WebGLRenderTarget[] = [];
   private pxW = 1;
   private pxH = 1;
   private views: ViewRect[] = [];
+  /** How many of `views` were drawn this frame. */
+  private viewCount = 0;
   private supported: boolean;
 
   private readonly brightMat: THREE.ShaderMaterial;
   private readonly downMat: THREE.ShaderMaterial;
   private readonly upMat: THREE.ShaderMaterial;
   private readonly compositeMat: THREE.ShaderMaterial;
+  private readonly fxaaMat: THREE.ShaderMaterial;
 
   constructor(
     private readonly renderer: THREE.WebGLRenderer,
@@ -177,7 +247,7 @@ export class RenderPipeline {
     // Rendering into a floating point texture needs this GPU feature (virtually all desktop GPUs have it).
     this.supported = renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float');
 
-    this.brightMat = passMaterial(BRIGHT_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1 } });
+    this.brightMat = passMaterial(BRIGHT_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() }, threshold: { value: 1 }, tap: { value: 0.5 } });
     this.downMat = passMaterial(DOWN_FRAG, { tSource: { value: null }, texel: { value: new THREE.Vector2() } });
     this.upMat = passMaterial(
       UP_FRAG,
@@ -192,9 +262,12 @@ export class RenderPipeline {
       contrast: { value: 1 },
       tint: { value: new THREE.Color() },
       vignette: { value: 0 },
+      exposure: { value: 1 },
       views: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
       viewCount: { value: 0 },
     }, { toneMapped: true });
+    this.fxaaMat = passMaterial(FXAA_FRAG, { tColor: { value: null }, texel: { value: new THREE.Vector2() } });
+    this.applyQualityDefines();
     this.applyLook();
     this.resize();
   }
@@ -204,10 +277,25 @@ export class RenderPipeline {
     return this.q.post && this.supported;
   }
 
+  /** FXAA is used whenever the post pipeline is on and the preset asks for it. */
+  private get useFxaa(): boolean {
+    return this.active && this.q.fxaa;
+  }
+
   setQuality(q: QualitySettings): void {
     this.q = q;
+    this.applyQualityDefines();
     this.disposeTargets();
     this.resize();
+  }
+
+  private applyQualityDefines(): void {
+    const want = this.useFxaa;
+    if (!!this.compositeMat.defines.LDR_OUT !== want) {
+      if (want) this.compositeMat.defines.LDR_OUT = '';
+      else delete this.compositeMat.defines.LDR_OUT;
+      this.compositeMat.needsUpdate = true;
+    }
   }
 
   setTheme(theme: SkyTheme): void {
@@ -223,6 +311,7 @@ export class RenderPipeline {
     u.contrast.value = l.contrast;
     u.tint.value.set(l.tint);
     u.vignette.value = l.vignette;
+    u.exposure.value = l.exposure;
     this.brightMat.uniforms.threshold.value = l.bloomThreshold;
     this.renderer.toneMappingExposure = l.exposure;
   }
@@ -245,8 +334,15 @@ export class RenderPipeline {
       depthBuffer: true,
       colorSpace: THREE.LinearSRGBColorSpace,
     });
-    // Bloom pyramid: level 0 is half the screen size, each next level half again.
-    for (let i = 0, bw = w >> 1, bh = h >> 1; i < this.q.bloomLevels && bw >= 4 && bh >= 4; i++, bw >>= 1, bh >>= 1) {
+    // We never read the depth afterwards; skipping its multisample resolve saves a lot of bandwidth.
+    this.target.resolveDepthBuffer = false;
+    if (this.useFxaa) {
+      this.ldr = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    }
+    // Bloom pyramid: level 0 is 1/2 (or 1/4) of the screen size, each next level half again.
+    const shift = this.q.bloomShift;
+    this.brightMat.uniforms.tap.value = shift >= 2 ? 1 : 0.5;
+    for (let i = 0, bw = w >> shift, bh = h >> shift; i < this.q.bloomLevels && bw >= 4 && bh >= 4; i++, bw >>= 1, bh >>= 1) {
       this.bloomDown.push(
         new THREE.WebGLRenderTarget(bw, bh, {
           type: THREE.HalfFloatType,
@@ -261,13 +357,29 @@ export class RenderPipeline {
   private disposeTargets(): void {
     this.target?.dispose();
     this.target = null;
+    this.ldr?.dispose();
+    this.ldr = null;
     for (const t of this.bloomDown) t.dispose();
     this.bloomDown = [];
   }
 
+  /**
+   * Compile every material in the scene ahead of time. The render target is bound first because
+   * Three.js builds different shader variants for "draw to texture" (no tone mapping) and "draw to
+   * the canvas"; we want the ones the frames will actually use.
+   */
+  compileAsync(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    if (this.active && this.target) r.setRenderTarget(this.target);
+    const done = r.compileAsync(scene, camera); // the shader variants are decided synchronously, the compiling happens in the background
+    r.setRenderTarget(prev);
+    return done.then(() => undefined);
+  }
+
   /** Start a frame: clear the target (or canvas) and forget last frame's viewports. */
   beginFrame(): void {
-    this.views.length = 0;
+    this.viewCount = 0;
     const r = this.renderer;
     r.setScissorTest(false);
     if (this.active && this.target) {
@@ -295,7 +407,14 @@ export class RenderPipeline {
       this.target.scissor.set(px, py, pw, ph);
       this.target.scissorTest = true;
       r.setRenderTarget(this.target); // re-bind so Three.js picks up the new viewport/scissor
-      if (this.views.length < 4) this.views.push({ x: px, y: py, w: pw, h: ph });
+      if (this.viewCount < 4) {
+        const v = this.views[this.viewCount] ?? (this.views[this.viewCount] = { x: 0, y: 0, w: 0, h: 0 }); // rectangles are reused every frame
+        v.x = px;
+        v.y = py;
+        v.w = pw;
+        v.h = ph;
+        this.viewCount++;
+      }
     } else {
       r.setScissorTest(true);
       r.setViewport(x, y, w, h);
@@ -304,7 +423,7 @@ export class RenderPipeline {
     r.render(scene, camera);
   }
 
-  /** Finish the frame: bloom + composite onto the canvas. */
+  /** Finish the frame: bloom + composite (+ FXAA) onto the canvas. */
   endFrame(): void {
     const r = this.renderer;
     if (!this.active || !this.target) {
@@ -324,19 +443,37 @@ export class RenderPipeline {
       for (let i = levels.length - 1; i > 0; i--) this.pass(this.upMat, levels[i].texture, levels[i], levels[i - 1]);
     }
 
-    // --- Composite onto the canvas. ---
+    // --- Composite: straight onto the canvas, or into the 8-bit picture that FXAA then reads. ---
     const u = this.compositeMat.uniforms;
     u.tScene.value = this.target.texture;
     u.tBloom.value = bloomOn ? levels[0].texture : this.target.texture;
     u.bloomStrength.value = bloomOn ? this.look.bloom : 0;
     const vs = u.views.value as THREE.Vector4[];
-    this.views.forEach((v, i) => vs[i].set(v.x, v.y, v.w, v.h));
-    u.viewCount.value = this.views.length;
-    r.setRenderTarget(null);
+    for (let i = 0; i < this.viewCount; i++) vs[i].set(this.views[i].x, this.views[i].y, this.views[i].w, this.views[i].h);
+    u.viewCount.value = this.viewCount;
     r.setScissorTest(false);
-    r.setViewport(0, 0, this.pxW / r.getPixelRatio(), this.pxH / r.getPixelRatio());
+    const k = r.getPixelRatio();
+    if (this.ldr) {
+      // Into the 8-bit picture: a render target's viewport is in its own pixels (no pixel ratio), and it
+      // already covers the whole target. (setViewport() here would use CSS pixels and, at a render scale
+      // below 1, stretch the picture past the edges.)
+      this.ldr.viewport.set(0, 0, this.pxW, this.pxH);
+      r.setRenderTarget(this.ldr);
+    } else {
+      r.setRenderTarget(null);
+      r.setViewport(0, 0, this.pxW / k, this.pxH / k); // canvas: CSS pixels, Three.js applies the pixel ratio
+    }
     this.quad.material = this.compositeMat;
     this.quad.render(r);
+
+    if (this.ldr) {
+      this.fxaaMat.uniforms.tColor.value = this.ldr.texture;
+      this.fxaaMat.uniforms.texel.value.set(1 / this.pxW, 1 / this.pxH);
+      r.setRenderTarget(null);
+      r.setViewport(0, 0, this.pxW / k, this.pxH / k);
+      this.quad.material = this.fxaaMat;
+      this.quad.render(r);
+    }
     r.autoClear = prevAutoClear;
   }
 
@@ -352,6 +489,6 @@ export class RenderPipeline {
   dispose(): void {
     this.disposeTargets();
     this.quad.dispose();
-    for (const m of [this.brightMat, this.downMat, this.upMat, this.compositeMat]) m.dispose();
+    for (const m of [this.brightMat, this.downMat, this.upMat, this.compositeMat, this.fxaaMat]) m.dispose();
   }
 }

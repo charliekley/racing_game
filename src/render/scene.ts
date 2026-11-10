@@ -18,6 +18,7 @@
  *    view (the shadow map); a pixel is in shadow if something is closer to the sun.
  */
 import * as THREE from 'three';
+import { envQuality } from './env/batch';
 
 export interface QualitySettings {
   name: 'High' | 'Medium' | 'Low';
@@ -35,18 +36,35 @@ export interface QualitySettings {
   post: boolean;
   /** Number of blur levels in the bloom (each is half the size of the previous; 0 = no bloom). */
   bloomLevels: number;
-  /** MSAA samples of the HDR render target (anti-aliasing; 0 = none). */
+  /** The first (biggest) bloom level is 1/2^bloomShift of the screen size: 1 = half, 2 = quarter (cheaper). */
+  bloomShift: number;
+  /** MSAA samples of the HDR render target (hardware anti-aliasing; 0 = none). Costly on integrated GPUs. */
   msaa: number;
+  /** FXAA: a cheap edge-smoothing pass on the finished picture. Used instead of MSAA on Medium/Low. */
+  fxaa: boolean;
   /** Re-render the shadow map for every split-screen view when the karts are far apart. */
   shadowPerView: boolean;
+  /** Half-width (m) of the shadow box around each view in split-screen (smaller = sharper but shorter shadows). */
+  shadowRadius: number;
+  /** Multiplier on the shadow map size when 3 or 4 viewports share the screen (each view is small, so a smaller map is enough). */
+  shadowSplitScale: number;
+  /** Multiplies the distances at which scenery switches to its cheap model (and, scaled again, when it is skipped). */
+  lodScale: number;
   /** Edge length of the sky cube used for environment lighting. */
   envSize: number;
 }
 
+/**
+ * The three presets. Rough cost on an integrated GPU (Intel Iris Plus, 4-way split):
+ *  High    strong GPUs: 4x MSAA, big shadow map, full bloom, all scenery detail.
+ *  Medium  integrated GPUs: FXAA instead of MSAA, 1024 shadow map with a tighter box, 3-level bloom,
+ *          70% ground detail and shorter scenery LOD distances in split-screen.
+ *  Low     fallback: no shadows or clouds, 75% render scale, FXAA, no bloom, little ground detail.
+ */
 export const QUALITY_PRESETS: QualitySettings[] = [
-  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, msaa: 4, shadowPerView: true, envSize: 256 },
-  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 4, msaa: 2, shadowPerView: true, envSize: 128 },
-  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: false, bloomLevels: 0, msaa: 0, shadowPerView: false, envSize: 64 },
+  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, bloomShift: 1, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, shadowSplitScale: 1, lodScale: 1, envSize: 256 },
+  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 38, shadowSplitScale: 0.625, lodScale: 0.7, envSize: 128 },
+  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, shadowSplitScale: 1, lodScale: 0.55, envSize: 64 },
 ];
 export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 
@@ -54,7 +72,9 @@ export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 export const TONE_MAPPING = THREE.ACESFilmicToneMapping;
 
 export function createRenderer(parent: HTMLElement, q: QualitySettings = DEFAULT_QUALITY): THREE.WebGLRenderer {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  // `antialias: false`: the canvas itself is never multisampled (that would cost memory and a resolve every
+  // frame for nothing); anti-aliasing happens in the post pipeline (MSAA target on High, FXAA otherwise).
+  const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(parent.clientWidth, parent.clientHeight);
   // Output as sRGB (the monitor's colour space) and tone map the HDR result.
   // (With post-processing on, scene rendering goes into a linear float target and the
@@ -73,10 +93,21 @@ export function createRenderer(parent: HTMLElement, q: QualitySettings = DEFAULT
   return renderer;
 }
 
-export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySettings): void {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio) * q.renderScale);
+/** `dynamicScale` (0.6..1) is the adaptive-quality multiplier on top of the preset's own render scale. */
+export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySettings, dynamicScale = 1): void {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxPixelRatio) * q.renderScale * dynamicScale);
   renderer.shadowMap.enabled = q.shadows;
   renderer.shadowMap.needsUpdate = true;
+}
+
+/** Shadow map resolution: smaller when the screen is split in 3-4 (each viewport only shows a quarter of the pixels). */
+export function setShadowMapSize(sun: THREE.DirectionalLight, q: QualitySettings, viewCount: number): void {
+  const size = Math.round((q.shadowMapSize * (viewCount >= 3 ? q.shadowSplitScale : 1)) / 32) * 32;
+  if (sun.shadow.mapSize.x !== size) {
+    sun.shadow.mapSize.set(size, size);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
+  }
 }
 
 /**
@@ -86,18 +117,20 @@ export function applyRendererQuality(renderer: THREE.WebGLRenderer, q: QualitySe
  *   userData.cloudLayer: hidden when the preset has clouds off
  * Materials recompile on shadow on/off.
  */
-export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLight, q: QualitySettings): void {
+export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLight, q: QualitySettings, viewCount = 1): void {
   sun.castShadow = q.shadows;
-  if (sun.shadow.mapSize.x !== q.shadowMapSize) {
-    sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
-    sun.shadow.map?.dispose();
-    sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
-  }
+  envQuality.cheap = q.name !== 'High'; // cheaper ground shaders (materials.ts); the needsUpdate below recompiles them
+  setShadowMapSize(sun, q, viewCount);
   scene.traverse((o) => {
     const full = o.userData.detailIndexCount as number | undefined;
     if (full !== undefined) (o as THREE.Mesh).geometry.setDrawRange(0, Math.floor((full * q.sceneryDetail) / 3) * 3);
     if (o.userData.cloudLayer) o.visible = q.clouds;
     const m = (o as THREE.Mesh).material;
+    // The sky shader has a cheaper cloud variant (fewer noise layers) for Medium and Low.
+    if (m instanceof THREE.ShaderMaterial && m.uniforms.sunBoost) {
+      if (q.name === 'High') delete m.defines.CHEAP_SKY;
+      else m.defines.CHEAP_SKY = '';
+    }
     if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
     else if (m) m.needsUpdate = true;
   });
@@ -384,7 +417,12 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
       // Fractal noise: several noise layers, each twice as fine and half as strong.
       float fbm(vec2 p) {
         float v = 0.0, a = 0.5;
+        #ifdef CHEAP_SKY
+        for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        v *= 1.14; // three layers cover less range than four: stretch back to about 0..1
+        #else
         for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        #endif
         return v;
       }
 
@@ -425,11 +463,17 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
         // The layer drifts slowly with time; thresholds below make soft puffy edges.
         if (h > 0.0 && cloudCover > 0.0) {
           vec2 cp = dir.xz / (h + 0.22) * 1.3 + vec2(time * 0.012, time * 0.004);
-          float n = fbm(cp) * 0.75 + fbm(cp * 2.7 + 9.0) * 0.25;
+          float base = fbm(cp);
+          float n = base * 0.75 + fbm(cp * 2.7 + 9.0) * 0.25;
           float dens = smoothstep(1.0 - cloudCover * 0.6 - 0.18, 1.0 - cloudCover * 0.6 + 0.12, n);
           dens *= smoothstep(0.0, 0.14, h); // fade out into the haze at the horizon
           // Light: the side of a puff facing the sun is bright, the rest picks up the sky colour.
-          float lit = fbm(cp + sunDir.xz * 0.15) ;
+          #ifdef CHEAP_SKY
+          // Cheaper: re-use the cloud noise and shift only its first (biggest) layer towards the sun.
+          float lit = base + (noise(cp + sunDir.xz * 0.15) - noise(cp)) * 0.57;
+          #else
+          float lit = fbm(cp + sunDir.xz * 0.15);
+          #endif
           float shade = clamp(0.55 + (n - lit) * 3.0, 0.0, 1.0);
           vec3 cloudCol = mix(top * 0.55 + horizon * 0.35, vec3(1.0), shade) * mix(vec3(1.0), sunColor, 0.25 + 0.5 * pow(d, 4.0));
           col = mix(col, cloudCol, dens * 0.9);
@@ -460,6 +504,11 @@ function createSkyDome(forEnvironment: boolean): THREE.Mesh {
   return dome;
 }
 
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const SUN_RIGHT = new THREE.Vector3();
+const SUN_UP = new THREE.Vector3();
+const SUN_FOCUS = new THREE.Vector3();
+
 /**
  * Point the sun's shadow box at a spot on the ground and make it `radius` wide.
  *
@@ -476,15 +525,18 @@ export function followWithSun(sun: THREE.DirectionalLight, x: number, z: number,
   const texel = (2 * r) / sun.shadow.mapSize.x;
 
   // Light-space basis: snap the focus point to the texel grid on the two axes across the light.
-  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
-  const up = new THREE.Vector3().crossVectors(dir, right).normalize();
-  const focus = new THREE.Vector3(x, 0, z);
+  const right = SUN_RIGHT.crossVectors(WORLD_UP, dir).normalize(); // reused vectors: called up to 4x per frame
+  const up = SUN_UP.crossVectors(dir, right).normalize();
+  const focus = SUN_FOCUS.set(x, 0, z);
   const a = Math.round(focus.dot(right) / texel) * texel;
   const b = Math.round(focus.dot(up) / texel) * texel;
   focus.addScaledVector(right, a - focus.dot(right)).addScaledVector(up, b - focus.dot(up));
 
   sun.target.position.copy(focus);
   sun.position.copy(focus).addScaledVector(dir, SUN_DISTANCE);
+  // Update both matrices right away: the game updates the scene's matrices only once per frame
+  // (Game.frame), but the sun is re-aimed between the split-screen views.
+  sun.updateMatrixWorld();
   sun.target.updateMatrixWorld();
   const cam = sun.shadow.camera;
   if (cam.right !== r) {
