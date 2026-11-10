@@ -7,9 +7,10 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #cfeaff; font-family: system-ui, sans-serif; }
       #view { position: fixed; inset: 0; }
+      #view canvas { display: block; touch-action: none; }
       #labels { position: fixed; inset: 0; pointer-events: none; }
       .label {
-        position: absolute; transform: translate(-50%, -100%); width: 18vw; max-width: 170px; box-sizing: border-box; text-align: center;
+        position: absolute; transform: translate(-50%, -100%); min-width: 70px; box-sizing: border-box; text-align: center;
         color: #fff; background: rgba(15, 18, 38, 0.78); padding: 4px 10px; border-radius: 8px;
       }
       .label b { display: block; font-size: 16px; font-style: italic; letter-spacing: 0.08em; color: #ffbe0b; }
@@ -22,6 +23,7 @@
       #panel button {
         font: inherit; font-weight: 700; border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; background: #3a86ff; color: #fff;
       }
+      #panel select { font: inherit; border-radius: 8px; border: 0; padding: 5px 6px; background: #eef1ff; color: #14172f; }
       #panel a { color: #9aa3d6; margin-left: auto; }
       #stats { color: #9aa3d6; }
     </style>
@@ -31,9 +33,17 @@
     <div id="labels"></div>
     <div id="panel">
       <h1>KART GARAGE</h1>
-      <button id="colors" type="button">Next colors</button>
-      <button id="spin" type="button">Pause spin</button>
-      <button id="markers" type="button">Show effect markers</button>
+      <select id="body"></select>
+      <select id="driver"></select>
+      <select id="colour"></select>
+      <select id="cam"></select>
+      <select id="focus"></select>
+      <select id="pose"></select>
+      <button id="env" type="button"></button>
+      <button id="low" type="button"></button>
+      <button id="spin" type="button"></button>
+      <button id="labels" type="button"></button>
+      <button id="markers" type="button"></button>
       <span id="stats"></span>
       <a href="../">← back</a>
     </div>

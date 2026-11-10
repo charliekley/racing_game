@@ -1,17 +1,23 @@
 /**
  * Draws one kart: interpolates between the previous and current sim state
- * and adds purely cosmetic motion (body lean, wheel spin and steer).
+ * and adds purely cosmetic motion:
+ *  - body lean (cornering), pitch (acceleration / braking), a spring-damper
+ *    suspension bob and a little squash and stretch on hops and landings;
+ *  - wheels that spin at their own radius and steer;
+ *  - the driver (see kart/driverRig.ts): hands on the turning steering wheel,
+ *    leaning, looking into the turn, boost lean-back, trick spin, dizzy wobble.
  */
 import * as THREE from 'three';
 import type { KartState } from '../sim/kart';
 import type { Ground } from '../sim/ground';
 import { KART } from '../sim/config';
 import { DEFAULT_LOADOUT, type Loadout } from '../shared/characters';
-import { WHEEL_RADIUS, buildKartModel, type KartModel } from './kartModel';
+import { buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
 import type { ItemId } from '../sim/items/types';
 import { buildHeldItemMesh, buildNovaAura, type NovaAura } from './itemMeshes';
+import { DriverRig, type DriverInput } from './kart/driverRig';
 
 
 /** Shortest-path angle interpolation (handles wrap-around at ±π). */
@@ -36,8 +42,24 @@ export class KartView {
   private lean = 0;
   private pitch = 0;
   private roll = 0;
-  private wheelSpin = 0;
+  private wheelSpin = 0; // distance rolled (m); divided by each wheel's radius for its angle
   private driftYaw = 0;
+  /** Cosmetic driver animation (hands on the wheel, leaning, trick spin...). */
+  readonly rig: DriverRig;
+  /** Set true when the race is over for this kart: the driver cheers. */
+  finished = false;
+  // Suspension: a damped spring on the body's height, kicked by hops and landings.
+  private bob = 0;
+  private bobVel = 0;
+  private lastSpeed = 0;
+  private accel = 0;
+  private lastVy = 0;
+  private wasGrounded = true;
+  private wasHopping = false;
+  private trickT = -1;
+  private readonly riderInput: DriverInput = {
+    steer: 0, bodyRoll: 0, accel: 0, speed01: 0, drift: 0, boosting: false, airborne: false, trick: -1, spun: false, celebrate: false,
+  };
   private sparks: SparkEmitter;
   private flames: THREE.Group[] = [];
   private drone: CarrierDrone;
@@ -65,6 +87,7 @@ export class KartView {
     this.drone = new CarrierDrone(scene);
     this.aura = buildNovaAura();
     this.model.root.add(this.aura.object);
+    this.rig = new DriverRig(this.model);
   }
 
   update(prev: KartState, cur: KartState, alpha: number, dt: number, ground?: Ground): void {
@@ -123,12 +146,55 @@ export class KartView {
     const targetLean = THREE.MathUtils.clamp(-lateralAccel * 0.006, -0.14, 0.14);
     this.lean += (targetLean - this.lean) * (1 - Math.exp(-dt / 0.08));
     m.body.rotation.z = this.lean;
-    // Slight nose-up under acceleration feel at low speed.
-    m.body.rotation.x = -0.03 * Math.min(1, Math.abs(p.speed) / KART.maxSpeed);
 
-    this.wheelSpin += (p.speed / WHEEL_RADIUS) * dt;
-    for (const w of m.wheels) w.rotation.x = this.wheelSpin;
+    // Longitudinal acceleration (smoothed): the nose lifts when speeding up and dips when braking.
+    if (dt > 0) {
+      const a = (p.speed - this.lastSpeed) / dt;
+      this.accel += (THREE.MathUtils.clamp(a / 14, -1, 1) - this.accel) * (1 - Math.exp(-dt / 0.15));
+    }
+    this.lastSpeed = p.speed;
+    m.body.rotation.x = -0.035 * Math.min(1, Math.abs(p.speed) / KART.maxSpeed) - this.accel * 0.05;
+
+    // Suspension bob: a spring-damper on the body height. Landing compresses it, a hop kicks it up.
+    if (cur.grounded && !this.wasGrounded) this.bobVel -= Math.min(6, Math.max(0, -this.lastVy)) * 0.7 + 0.8;
+    if (cur.hopping && !this.wasHopping) {
+      this.bobVel += 1.6;
+      this.rig.bump(0.6);
+    }
+    this.wasGrounded = cur.grounded;
+    this.wasHopping = cur.hopping;
+    this.lastVy = cur.vel.y;
+    if (dt > 0) {
+      const sub = Math.min(dt, 1 / 30);
+      this.bobVel += (-260 * this.bob - 14 * this.bobVel) * sub;
+      this.bob += this.bobVel * sub;
+    }
+    const bob = THREE.MathUtils.clamp(this.bob, -0.07, 0.08);
+    m.body.position.y = bob;
+    // Squash and stretch (volume-preserving): taller when the body is stretching up, wider when compressed.
+    const sq = bob * 1.1;
+    m.body.scale.set(1 - sq * 0.5, 1 + sq, 1 - sq * 0.5);
+
+    // Wheels spin by their own radius and the front pair steers; they droop a little while airborne.
+    this.wheelSpin += dt * p.speed;
+    for (let i = 0; i < m.wheels.length; i++) m.wheels[i].rotation.x = this.wheelSpin / m.wheelRadii[i];
     for (const pivot of m.frontPivots) pivot.rotation.y = -cur.steer * 0.45;
+
+    // Driver animation.
+    const inp = this.riderInput;
+    if (cur.trickDone && !cur.grounded) this.trickT = this.trickT < 0 ? 0 : Math.min(1, this.trickT + dt / 0.7);
+    else this.trickT = -1;
+    inp.steer = cur.steer;
+    inp.bodyRoll = this.lean;
+    inp.accel = this.accel;
+    inp.speed01 = Math.min(1, Math.abs(p.speed) / KART.maxSpeed);
+    inp.drift = cur.driftDir;
+    inp.boosting = cur.boostTime > 0;
+    inp.airborne = !cur.grounded;
+    inp.trick = this.trickT;
+    inp.spun = cur.spinTime > 0;
+    inp.celebrate = this.finished;
+    this.rig.update(dt, inp);
 
     // Drift sparks from the rear wheels (dust while charging, then blue/orange).
     m.root.updateMatrixWorld();
