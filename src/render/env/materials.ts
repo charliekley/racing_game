@@ -11,6 +11,7 @@
  */
 import * as THREE from 'three';
 import { envQuality } from './batch';
+import type { SurfaceMaps } from '../textures';
 
 /** Shared animation clock (seconds). TrackView.update() advances it once per frame. */
 export const ENV_TIME = { value: 0 };
@@ -113,6 +114,8 @@ export interface GroundOpts {
   roughness?: number;
   side?: THREE.Side;
   polygonOffset?: number;
+  /** Pipeline texture set (map + normal + roughness); the UVs decide the tiling. */
+  maps?: SurfaceMaps;
 }
 
 /**
@@ -122,6 +125,12 @@ export interface GroundOpts {
  */
 export function groundMaterial(o: GroundOpts = {}): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: o.roughness ?? 0.95, metalness: 0, side: o.side ?? THREE.FrontSide });
+  if (o.maps) {
+    mat.map = o.maps.map;
+    mat.normalMap = o.maps.normalMap;
+    mat.roughnessMap = o.maps.roughnessMap;
+    mat.roughness = 1;
+  }
   if (o.polygonOffset) {
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -o.polygonOffset;

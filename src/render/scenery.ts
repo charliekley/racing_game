@@ -48,7 +48,7 @@ export { ENV_TIME };
 export function styleFor(def: TrackDef, biome: Biome): Style {
   if (def.scenery.openSky) return 'sky';
   if ((def.scenery.blocks?.length ?? 0) > 0) return 'harbour';
-  if (biome === 'snow') return 'alpine';
+  if (biome === 'snow' || hexToHsl(def.theme.grass).l > 0.85) return 'alpine';
   if (biome === 'autumn' && hexToHsl(def.theme.grass).l < 0.3) return 'volcanic';
   if (biome === 'desert') return 'desert';
   if (biome === 'autumn') return 'autumn';
@@ -161,7 +161,7 @@ export function buildScenery(track: Track, plan: SceneryPlan = planScenery(track
   for (const o of extraObjects) group.add(o);
 
   const natureMat = propMaterial();
-  const natureGroup = nature.build(natureMat, 130, true);
+  const natureGroup = nature.build(natureMat, 95, true);
   group.add(natureGroup);
   const manGroup = batches.lod.build(natureMat, 85, true);
   group.add(manGroup);
@@ -183,7 +183,8 @@ export function buildScenery(track: Track, plan: SceneryPlan = planScenery(track
   if (!batches.banners.isEmpty) group.add(batches.banners.build(bannerMaterial(bannerTexture()), false));
 
   group.add(buildBackdrop(site, style, def, rnd));
-  group.add(buildClouds(site, style, def.theme, rnd));
+  // The sky dome now draws its own clouds; only sky-island tracks add low cloud banks under the islands.
+  if (style === 'sky') group.add(buildClouds(site, style, def.theme, rnd));
 
   watchQuality(natureGroup.children[0] ?? group);
   disposePropSet(near);
@@ -344,7 +345,7 @@ function buildClouds(site: Site, style: Style, theme: TrackDef['theme'], rnd: ()
   const sky = new THREE.Color(theme.sky);
   const belly = sky.clone().lerp(horizon, 0.55).lerp(new THREE.Color('#9aa4b8'), 0.25);
   const tint = new THREE.Color('#ffffff').lerp(horizon, style === 'volcanic' ? 0.55 : 0.18);
-  const count = style === 'sky' ? 34 : style === 'alpine' ? 22 : style === 'volcanic' ? 12 : style === 'desert' ? 8 : 18;
+  const count = 34;
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < count; i++) {
     const a = rnd() * Math.PI * 2;
@@ -352,7 +353,7 @@ function buildClouds(site: Site, style: Style, theme: TrackDef['theme'], rnd: ()
     const size = 11 + rnd() * 14;
     const g = cloudGeo(rnd, size, belly, tint);
     // Sky tracks also get low clouds hugging the islands' undersides.
-    const low = style === 'sky' && rnd() < 0.55;
+    const low = rnd() < 0.75;
     const y = low ? -40 + rnd() * 25 : 80 + rnd() * 110;
     g.applyMatrix4(matrix(site.cx + Math.cos(a) * dist, y, site.cz + Math.sin(a) * dist, 1, 1, 1, rnd() * 6.28));
     parts.push(g);

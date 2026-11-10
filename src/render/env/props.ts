@@ -125,11 +125,11 @@ function broadleaf(v: number, d: Detail, pal: Palette, style: Style): THREE.Buff
 
 function pine(v: number, d: Detail, pal: Palette): THREE.BufferGeometry {
   const rnd = seededRandom(2000 + v * 53);
-  const tiers = d ? 5 : 3;
+  const tiers = d ? 4 : 3;
   const height = 6.2 + rnd() * 0.8;
   const baseR = 1.75 + rnd() * 0.3;
-  const seg = d ? 22 : 9;
-  const rings = d ? 4 : 2;
+  const seg = d ? 16 : 8;
+  const rings = d ? 3 : 2;
   const parts: THREE.BufferGeometry[] = [];
   const trunk = tubeGeo([new THREE.Vector3(0, -0.4, 0), new THREE.Vector3(0, 1.0, 0), new THREE.Vector3(0, height * 0.9, 0)], [0.46, 0.3, 0.1], d ? 8 : 5);
   paint(trunk, trunkColor(pal));

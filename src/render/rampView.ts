@@ -166,23 +166,9 @@ export function buildRamps(track: Track): THREE.Group {
 
   for (const [kind, acc] of tops) {
     const [base, stripe] = COLORS[kind];
-    group.add(acc.build(new THREE.MeshLambertMaterial({ map: rampTexture(base, stripe), side: THREE.DoubleSide }), true));
+    group.add(acc.build(new THREE.MeshStandardMaterial({ map: rampTexture(base, stripe), roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }), true));
   }
-  if (!sides.isEmpty) group.add(sides.build(new THREE.MeshLambertMaterial({ color: '#4a3a22', side: THREE.DoubleSide }), true));
+  if (!sides.isEmpty) group.add(sides.build(new THREE.MeshStandardMaterial({ color: '#6b7078', roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide }), true));
 
-  // Chasms: a dark floor far below each void gap, so looking down reads as "deep", not "sky".
-  const abyss = new Accumulator();
-  const outer = hw + track.def.offroadWidth + 1;
-  for (const g of track.gaps) {
-    if (g.kind !== 'void') continue;
-    const a = sampleAt(track, g.s0);
-    const b = sampleAt(track, g.s1);
-    const at = (p: TrackSample, d: number) => new THREE.Vector3(p.x + p.rx * d, p.y - 38, p.z + p.rz * d);
-    abyss.strip([
-      { l: at(a, -outer), r: at(a, outer), v: 0 },
-      { l: at(b, -outer), r: at(b, outer), v: 1 },
-    ]);
-  }
-  if (!abyss.isEmpty) group.add(abyss.build(new THREE.MeshBasicMaterial({ color: '#07060a', side: THREE.DoubleSide }), false));
   return group;
 }
