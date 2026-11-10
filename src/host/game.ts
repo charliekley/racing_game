@@ -38,6 +38,8 @@ import {
 import { TrackView } from '../render/trackView';
 import type { PlayerManager } from './playerManager';
 import { ViewHud } from './viewHud';
+// AUDIO: sound engine (src/audio). Created in main.ts and handed over via `game.audio`.
+import { musicForTrack, panForRect, type AudioEngine, type KartAudioState } from '../audio';
 
 const ordinalSuffix = (n: number) => (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
 
@@ -110,6 +112,8 @@ export class Game {
    * this item (or "random" = random item each time). Null = normal item boxes only.
    */
   devItem: ItemId | 'random' | null = null;
+  /** AUDIO: set by main.ts; null = silent (every use below is optional-chained). */
+  audio: AudioEngine | null = null;
   private itemPool: ItemMeshPool;
   /** Launch cannons of the current track (rebuilt for every race). */
   private cannonView: CannonView | null = null;
@@ -228,6 +232,9 @@ export class Game {
     this.lastStatus.clear();
     this.results.classList.add('hidden');
     this.resize();
+    // AUDIO: this track's tune (normal tempo), engines are created on the first frame.
+    this.audio?.setFinalLap(false);
+    this.audio?.playMusic(musicForTrack(this.track.def.name, TRACKS.indexOf(this.track.def)));
   }
 
   /** Bots drive themselves; everyone else uses their controller. */
@@ -289,8 +296,30 @@ export class Game {
       const n = Math.max(1, Math.ceil(-race.time));
       if (n !== this.lastCountdown) {
         this.lastCountdown = n;
+        this.audio?.countdown(n); // AUDIO: 3-2-1 beeps
         for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed);
       }
+    }
+
+    // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
+    if (this.audio) {
+      this.audio.update(
+        dt,
+        this.views.map((v): KartAudioState => {
+          const k = this.world.karts.get(v.slot)!;
+          return {
+            slot: v.slot,
+            human: !this.players.isBot(v.slot),
+            speed: k.speed,
+            boosting: k.boostTime > 0,
+            grounded: k.grounded,
+            drift: k.driftDir !== 0 ? 1 + k.driftTier : 0,
+            silent: !!k.flight || k.respawnTime > 0,
+            rolling: (items.states.get(v.slot)?.roulette ?? 0) > 0,
+            pan: panForRect(v.rect),
+          };
+        }),
+      );
     }
 
     // Render: shadow map once, then the scene once per viewport.
@@ -352,6 +381,7 @@ export class Game {
     if (this.doneAt !== null && !this.resultsShown && this.elapsed - this.doneAt > 2.5) {
       this.resultsShown = true;
       this.showResults();
+      this.audio?.results(); // AUDIO: fanfare + results loop
       this.callbacks.onResults();
     }
   }
@@ -365,6 +395,8 @@ export class Game {
   }
 
   private handleEvents(events: WorldEvent[]): void {
+    // AUDIO: one call turns every event into sounds (mapping lives in src/audio/mapping.ts).
+    this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.track.def.laps });
     for (const e of events) {
       switch (e.kind) {
         case 'go':
@@ -389,7 +421,10 @@ export class Game {
         case 'lap': {
           this.haptic(e.slot, HAPTICS.lap);
           // Only the final lap gets a banner; the lap counter covers the rest.
-          if (e.lap + 1 === this.track.def.laps) this.toast(e.slot, 'FINAL LAP!', 1.5);
+          if (e.lap + 1 === this.track.def.laps) {
+            this.toast(e.slot, 'FINAL LAP!', 1.5);
+            if (!this.players.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
+          }
           break;
         }
         case 'finish':
