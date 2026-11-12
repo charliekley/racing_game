@@ -1,24 +1,33 @@
 /**
- * Track: "Dockside Loop" – an evening harbour figure-8 (about 1.7 km).
+ * Track: "Dockside Loop" – an evening harbour figure-8 (about 1.8 km, ~20 tight corners).
  *
- * Layout (north = +z, east = +x; the start line is on the south quay, heading east):
+ * Layout (north = +z, east = +x; the start line is on the south quay, heading east).
+ * The lap is built from many short bends on purpose: no straight is longer than ~55 m.
  *
- *   START quay ─ four planks-humps, boost pad, then a kicker over a flooded gap in the quay
- *      → ground crossing at the middle (you pass UNDER the overpass)
- *      → climb up the east lobe onto an elevated viaduct through the container yard
- *      → a drawbridge jump (kicker over a gap) on the high road
- *      → the viaduct crosses OVER the ground road at the middle (deck ~8.5 m up)
- *      → long descent through the west lobe, then a wide U-turn round the warehouses.
+ *   START quay: four plank humps on a gentle bend, boost pad, a kicker over a flooded gap
+ *      → tight right, wide left, then an S-bend north to the GROUND CROSSING at the middle
+ *        (you pass UNDER the overpass; point 23)
+ *      → climb up the east lobe through an S-bend, a sweeper and a chicane onto the
+ *        elevated viaduct (bridge with parapets) round the container yard
+ *      → east chicane and the SE hairpin, then a 50 m straight water crossing on the high road
+ *      → the viaduct crosses OVER the ground road (point 64, deck 13 m up)
+ *      → descent through the west lobe: sweeper, two chicanes, a hairpin round the west end.
  *
- *   SHORTCUT (dirt): cuts the inside of that west U-turn, hidden behind the warehouses.
+ *   SHORTCUT (dirt): a U-turn through the inside of the west lobe, hidden behind warehouses.
  *
  * Features used: figure-8 with bridge overpass (>= 7 m separation), solid container
- * stacks and warehouses (scenery.blocks), water gap, hump chain, void-free drawbridge
- * gap, dirt shortcut, boost pads, banked walls.
+ * stacks and warehouses (scenery.blocks), water gaps, hump chain, dirt shortcut, boost
+ * pads, banked walls.
  *
- * Control point numbers (the numbers in `at`/`from`/`to` refer to these):
- *   0 start line … 3 → origin (ground crossing) … 6-9 viaduct east side …
- *   12-13 overpass over the origin … 14-16 descent … 17 west end … 18 back to the quay.
+ * ROOM LEFT FOR LATER GIMMICKS (control-point numbers):
+ *   - DRAWBRIDGE: points 57 to 60 are a dead-straight 50 m water crossing on the viaduct
+ *     (the kicker + 10 m water gap sits at 57.5 for now). Points 52 to 57 are the set-up:
+ *     the SE hairpin exit and a gentle curve (R ~ 180 m), boost pad at 56.3.
+ *
+ * Control point numbers (the numbers in `at`/`from`/`to` refer to these; the comment on
+ * each landmark point says what is there):
+ *   0 start … 23 ground crossing … 36-74 viaduct … 57-60 water crossing … 64 overpass …
+ *   80 shortcut leaves … 90 west end hairpin … 96 shortcut rejoins.
  */
 import type { BlockDef, TrackDef } from '../types';
 
@@ -35,79 +44,161 @@ function warehouse(x: number, z: number, w: number, d: number, color: string, ro
 
 const R = Math.PI / 2; // containers lying along the x axis
 const blocks: BlockDef[] = [
-  // Warehouses between the west U-turn and the dirt shortcut (the shortcut runs behind them).
-  warehouse(-276, 48, 14, 38, '#b7573d'),
-  warehouse(-276, -20, 14, 30, '#6d8aa8'),
-  // Container rows on the north side of the quay.
-  stack(-195, -97, 3, '#c0392b', R),
-  stack(-181, -97, 2, '#2e86c1', R),
-  stack(-167, -97, 3, '#d4a017', R),
-  stack(-153, -97, 2, '#27ae60', R),
-  stack(-120, -92, 3, '#8e44ad', R),
+  // Warehouses inside the west lobe: the dirt shortcut runs behind them.
+  warehouse(-308, -45, 12, 34, '#b7573d'),
+  warehouse(-228, -45, 30, 14, '#6d8aa8'),
+  // Container rows in the middle of the west lobe, north of the quay.
+  stack(-190, -72, 3, '#c0392b', R),
+  stack(-176, -72, 2, '#2e86c1', R),
+  stack(-162, -72, 3, '#d4a017', R),
+  stack(-148, -72, 2, '#27ae60', R),
+  stack(-120, -66, 3, '#8e44ad', R),
   // Backdrop on the harbour side of the quay.
-  stack(-200, -156, 3, '#e67e22', R),
-  stack(-186, -156, 3, '#2e86c1', R),
-  stack(-172, -156, 2, '#c0392b', R),
-  stack(-120, -158, 3, '#27ae60', R),
-  // Container yard inside the east lobe, 8 m below the viaduct.
-  stack(150, 30, 3, '#c0392b', 0),
-  stack(166, 30, 3, '#d4a017', 0),
-  stack(182, 30, 2, '#2e86c1', 0),
-  stack(150, -5, 2, '#27ae60', 0),
-  stack(166, -5, 3, '#e67e22', 0),
-  stack(182, -5, 3, '#8e44ad', 0),
-  stack(205, 5, 2, '#c0392b', R),
-  // A warehouse on the north side of the east lobe, below the road.
-  warehouse(150, 180, 30, 16, '#8a8f98', R),
+  stack(-200, -160, 3, '#e67e22', R),
+  stack(-186, -160, 3, '#2e86c1', R),
+  stack(-172, -160, 2, '#c0392b', R),
+  stack(-60, -170, 3, '#27ae60', R),
+  // Container yard inside the east lobe, far below the viaduct.
+  stack(130, 45, 3, '#c0392b', 0),
+  stack(146, 45, 3, '#d4a017', 0),
+  stack(162, 45, 2, '#2e86c1', 0),
+  stack(178, 45, 2, '#27ae60', 0),
+  stack(122, 75, 2, '#e67e22', 0),
+  stack(138, 75, 3, '#8e44ad', 0),
+  stack(154, 75, 3, '#c0392b', 0),
+  stack(170, 75, 2, '#d4a017', 0),
+  stack(205, 62, 2, '#c0392b', R),
+  // A warehouse north-east of the east lobe, below the road.
+  warehouse(215, 218, 30, 16, '#8a8f98'),
+];
+
+const points: [number, number, number][] = [
+  [-225, -130, 0.0], //  0: start/finish on the south quay, heading east (hump chain starts)
+  [-211, -130, 0.0], //  1
+  [-190.6, -128.1, 0.0], //  2
+  [-171, -122.5, 0.0], //  3
+  [-152.7, -113.3, 0.0], //  4: end of the hump chain (end of the first gentle bend)
+  [-134.4, -104.1, 0.0], //  5
+  [-114.8, -98.5, 0.1], //  6
+  [-94.4, -96.6, 0.1], //  7: quay gap (flooded) after the boost pad; end of the gentle S
+  [-77.1, -96.6, 0.1], //  8
+  [-61.4, -99.1, 0.1], //  9
+  [-47.3, -106.5, 0.1], // 10
+  [-36.2, -117.9, 0.1], // 11: quay: tight right-hander
+  [-20.2, -132.5, 0.2], // 12
+  [0.4, -139, 0.2], // 13
+  [21.9, -136.2, 0.2], // 14
+  [40.1, -124.6, 0.2], // 15: quay: wide left, now heading north-east
+  [50.7, -114, 0.2], // 16
+  [61.5, -96.8, 0.2], // 17
+  [63.6, -76.7, 0.3], // 18
+  [56.7, -57.7, 0.3], // 19
+  [50.9, -44.4, 0.3], // 20
+  [49.5, -30, 0.3], // 21: S-bend ('quay chicane') on the way to the ground crossing
+  [51.1, -8.5, 0.3], // 22
+  [52.6, 13, 0.3], // 23: GROUND CROSSING at the middle (you pass UNDER the viaduct, point 64)
+  [54, 32.9, 0.4], // 24
+  [58.4, 50.2, 0.6], // 25
+  [68.3, 65.1, 1.0], // 26
+  [77, 77.1, 1.5], // 27
+  [82.1, 91.1, 2.1], // 28
+  [83.4, 105.9, 2.8], // 29: the road climbs: S-bend done
+  [86, 123.8, 3.6], // 30
+  [95.4, 139.3, 4.4], // 31
+  [110, 150, 5.3], // 32
+  [127.6, 154.2, 6.2], // 33: NE sweeper; the viaduct (bridge) begins at about point 36
+  [145.2, 157.5, 7.1], // 34
+  [161, 166.1, 8.0], // 35
+  [175.8, 174.4, 8.9], // 36
+  [192.4, 178, 9.7], // 37
+  [209.3, 176.7, 10.5], // 38
+  [225.1, 170.5, 11.2], // 39: NE chicane
+  [240.3, 158, 11.8], // 40
+  [250.4, 141.1, 12.3], // 41
+  [254.3, 121.9, 12.7], // 42
+  [254.7, 107.2, 12.9], // 43
+  [255.2, 92.6, 13.0], // 44
+  [259.9, 71.3, 13.0], // 45
+  [272.2, 53.2, 13.0], // 46
+  [283.8, 36.7, 13.0], // 47
+  [289.1, 17.3, 13.0], // 48: east chicane (east end of the viaduct)
+  [287.6, -0.3, 13.0], // 49
+  [280, -16.2, 13.0], // 50
+  [267.4, -28.5, 13.0], // 51
+  [251.3, -35.7, 13.0], // 52: SE hairpin
+  [233, -39.2, 13.0], // 53
+  [214.5, -40.8, 13.0], // 54
+  [195.9, -40.5, 13.0], // 55
+  [177.4, -38.1, 13.0], // 56
+  [159.3, -33.9, 13.0], // 57: water crossing: 50 m straight (future drawbridge slot) starts; the set-up is the curve 52 to 57
+  [143.2, -29.3, 13.0], // 58
+  [127.2, -24.7, 13.0], // 59
+  [111.2, -20, 13.0], // 60: water crossing ends
+  [92.5, -11.7, 13.0], // 61
+  [79.2, -3.5, 13.0], // 62
+  [66, 4.8, 13.0], // 63
+  [52.7, 13, 13.0], // 64: OVERPASS: the viaduct crosses 13 m above the ground road (point 23)
+  [35.7, 23.5, 12.9], // 65
+  [24.1, 29.4, 12.7], // 66
+  [6.3, 33.9, 12.4], // 67
+  [-12, 33.5, 12.0], // 68
+  [-29.5, 28.2, 11.5], // 69
+  [-45, 18.4, 11.0], // 70: descent begins: west sweeper
+  [-59.3, 10, 10.3], // 71
+  [-75.6, 6.7, 9.6], // 72
+  [-92.1, 9, 8.9], // 73
+  [-113.6, 10.8, 8.1], // 74
+  [-133.8, 3.5, 7.3], // 75: west chicane, first half
+  [-153.5, -3.3, 6.5], // 76
+  [-174, -0.5, 5.7], // 77
+  [-191.2, 11.1, 4.9], // 78
+  [-201.9, 19.7, 4.1], // 79
+  [-214.6, 24.7, 3.4], // 80: west chicane, second half; the dirt shortcut leaves here
+  [-235.2, 27.5, 2.7], // 81
+  [-256, 26.6, 2.0], // 82
+  [-276.4, 22.2, 1.5], // 83
+  [-295.7, 14.3, 1.0], // 84
+  [-313.3, 3.2, 0.6], // 85
+  [-328.7, -10.7, 0.3], // 86
+  [-341.5, -27.2, 0.1], // 87
+  [-347.4, -42.2, 0.0], // 88
+  [-346.8, -58.4, 0.0], // 89
+  [-339.8, -73.1, 0.0], // 90: west end hairpin
+  [-327.4, -85.7, 0.0], // 91
+  [-312, -94.7, 0.0], // 92
+  [-301.1, -101.2, 0.0], // 93
+  [-292.5, -110.6, 0.0], // 94
+  [-276.4, -124.8, 0.0], // 95
+  [-255.5, -130, 0.0], // 96: the dirt shortcut rejoins here, just before the start line
+  [-240.2, -130, 0.0], // 97
 ];
 
 export const docksideLoop: TrackDef = {
   name: 'Dockside Loop',
   blurb: 'Harbour figure-8: pass under, then over, the overpass; quay jumps and a dirt shortcut behind the warehouses.',
-  points: [
-    [-225, -130, 0], // 0: start/finish on the south quay, heading east
-    [-130, -125, 0], // 1
-    [-60, -110, 0], // 2: quay ends, swing north-east
-    [-45, -45, 0], // 3
-    [45, 45, 0.3], // 4: (the road passes the origin at ground level between 3 and 4)
-    [120, 100, 3.5], // 5: climbing
-    [205, 125, 7], // 6: viaduct starts
-    [270, 85, 8.5], // 7
-    [290, -5, 8.5], // 8
-    [250, -95, 8.5], // 9
-    [170, -115, 8.5], // 10: drawbridge jump just before here
-    [95, -80, 8.5], // 11
-    [45, -45, 8.5], // 12
-    [-45, 45, 8], // 13: (deck passes OVER the origin between 12 and 13)
-    [-120, 100, 5], // 14: descending
-    [-200, 125, 2], // 15
-    [-300, 90, 0], // 16
-    [-335, -5, 0], // 17: west end
-    [-300, -100, 0], // 18
-  ],
+  points,
   width: 15,
   offroadWidth: 9,
   bankPerCurvature: 5,
   maxBankDeg: 8,
   walls: [
-    { from: 1.0, to: 1.95, side: 'both' }, // fence the flooded quay gap so nobody drives around it
-    { from: 6.3, to: 14.0, side: 'both' }, // viaduct parapets
-    { from: 16.2, to: 18.0, side: 'outer' }, // around the west end
+    { from: 5.9, to: 7.6, side: 'both' }, // fence the flooded quay gap so nobody drives around it
+    { from: 36, to: 74, side: 'both' }, // viaduct parapets (they stand at the deck edge)
   ],
   ramps: [
     // Quay: a chain of four small humps (the old planks), then a kicker over a flooded gap.
-    { at: 0.35, length: 14, height: 1.2, shape: 'hump' },
-    { at: 0.55, length: 14, height: 1.2, shape: 'hump' },
-    { at: 0.75, length: 14, height: 1.2, shape: 'hump' },
-    { at: 0.95, length: 14, height: 1.2, shape: 'hump' },
-    { at: 1.3, length: 10, height: 2.2, gap: 11, gapKind: 'water', shape: 'kicker' },
-    // Drawbridge on the viaduct.
-    { at: 9.35, length: 10, height: 2.0, gap: 10, gapKind: 'water', shape: 'kicker' },
+    { at: 0.9, length: 14, height: 1.2, shape: 'hump' },
+    { at: 1.85, length: 14, height: 1.2, shape: 'hump' },
+    { at: 2.8, length: 14, height: 1.2, shape: 'hump' },
+    { at: 3.75, length: 14, height: 1.2, shape: 'hump' },
+    { at: 5.9, length: 10, height: 2.2, gap: 11, gapKind: 'water', shape: 'kicker' },
+    // Water crossing on the viaduct (a drawbridge jump): the 50 m straight is points 57 to 60.
+    { at: 57.5, length: 10, height: 2.0, gap: 10, gapKind: 'water', shape: 'kicker' },
   ],
   boostPads: [
-    { at: 1.1, offset: 0, length: 8, width: 5 }, // just before the quay gap
-    { at: 9.1, offset: 0, length: 8, width: 5 }, // just before the drawbridge
-    { at: 16.9, offset: 0.45, length: 7, width: 4 }, // west end apex
+    { at: 5.0, offset: 0, length: 8, width: 5 }, // just before the quay gap
+    { at: 56.3, offset: 0, length: 8, width: 5 }, // just before the water crossing
+    { at: 90, offset: 0.45, length: 7, width: 4 }, // west end hairpin apex
   ],
   laps: 3,
   checkpoints: 16,
@@ -115,16 +206,17 @@ export const docksideLoop: TrackDef = {
   // Evening harbour: slate concrete, sandy verge, orange-pink sky.
   theme: { grass: '#5f6d7a', offroad: '#8d8270', sky: '#e9895d', horizon: '#ffd2a0', mood: 'evening' },
   terrain: { seed: 7, blend: 14 },
-  bridges: [{ from: 5.6, to: 14.3 }],
+  bridges: [{ from: 36, to: 74 }],
   shortcuts: [
     {
-      // Dirt road through the middle of the west U-turn, behind the warehouses.
-      from: 15.4,
-      to: 18.3,
+      // Dirt U-turn through the inside of the west lobe, behind the warehouses.
+      from: 80,
+      to: 96,
       points: [
-        [-245, 72],
-        [-225, 10],
-        [-240, -62],
+        [-252, 12],
+        [-274, -22],
+        [-276, -62],
+        [-264, -100],
       ],
       surface: 'dirt',
       width: 11,

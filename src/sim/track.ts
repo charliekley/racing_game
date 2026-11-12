@@ -588,7 +588,8 @@ export class Track implements Ground {
   /** Lateral position of the wall on each side (m from centerline), or null if no wall here. */
   wallsAt(i: number, route = 0): { left: number | null; right: number | null } {
     const p = this.sampleOf(route, i);
-    const off = p.width / 2 + this.def.offroadWidth;
+    // On a bridge there is no off-road strip (the ground ends at the deck edge), so a parapet stands AT the edge.
+    const off = p.width / 2 + (route === 0 && this.onBridge(p.s) ? CURB_WIDTH : this.def.offroadWidth);
     if (route > 0) return { left: p.wallLeft ? -off : null, right: p.wallRight ? off : null }; // branches: no cliffs
     // A wall on a cliff side stands at the cliff edge (a guard rail) instead of floating over the drop.
     const left = Math.min(off, this.cliffEdgeAt(p.s, -1));
