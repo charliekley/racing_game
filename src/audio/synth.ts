@@ -398,7 +398,7 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
   },
   roller: (e, t, g) => {
     // A heavy snowball rolling closer: a rumble that swells with a few low bumps.
-    noiseBurst(e, t, { dur: 1.6, gain: 0.55 * g, filter: 'lowpass', f0: 140, f1: 320, q: 1, a: 0.7 });
+    noiseBurst(e, t, { dur: 1.6, gain: 0.4 * g, filter: 'lowpass', f0: 140, f1: 320, q: 1, a: 0.7 }); // four balls warn close together: keep each modest
     for (const o of [0.2, 0.55, 0.85, 1.1, 1.3]) tone(e, t + o, { type: 'sine', f0: 70, f1: 40, dur: 0.18, gain: 0.35 * g });
     return 1.65;
   },

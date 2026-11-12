@@ -5,6 +5,7 @@
 import type { HazardDef } from '../../track/hazardTypes';
 import type { Track } from '../track';
 import { Geyser } from './geyser';
+import { Roller } from './roller';
 import type { Hazard } from './types';
 
 type Factory = (id: number, def: HazardDef, track: Track) => Hazard;
@@ -20,5 +21,5 @@ export const HAZARD_FACTORIES: Record<HazardDef['kind'], Factory> = {
   geyser: (id, def, track) => new Geyser(id, def as Extract<HazardDef, { kind: 'geyser' }>, track),
   drawbridge: notBuilt('drawbridge'),
   gust: notBuilt('gust'),
-  roller: notBuilt('roller'),
+  roller: (id, def, track) => new Roller(id, def as Extract<HazardDef, { kind: 'roller' }>, track),
 };
