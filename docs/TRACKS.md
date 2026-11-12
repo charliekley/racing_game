@@ -204,6 +204,14 @@ export type HazardEvent =
 * **Audio**: ids `hazardWarn, geyser, bridgeBell, bridgeMove, gust, roller, hazardHit`; `hazardSound(type, fire)` in `mapping.ts` picks the sound per kind; warn/fire play only if a human slot is in `near`; `hazardHit` only for the human who was hit.
 * **Ember Peaks** (`emberPeaks.ts`): points are built from a named `route` list (`at('name')` gives the control-point position). Measured: 1958 m, 77 % curved, longest straight 126 m (the chasm run-up), 1584 degrees of turning, 28 tight corners (R < 60 m, minimum radius about 18 m), height range 31 m. Five slalom pairs of geysers (period 7 s, staggered phases), walls on the facing sides of the parallel legs, cannon, ridge cliffs, chasm and boost pads kept.
 
+### Drawbridge (Dockside Loop) and wind gusts (Cloud Garden): what is implemented
+
+* **Drawbridge** (`sim/hazards/drawbridge.ts`, `render/hazards/drawbridgeView.ts`, `DrawbridgeDef` has optional `gap`, `lift`, `warn`, `rise`, `hold`, `lower`). Dockside points 57 to 60, period 24 s (down about 14 s, bell and lights 2 s, rising 2 s, up 4 s, lowering 2 s). `Track` adds the 12 m opening as a static water gap for every drawbridge (so the road mesh and minimap show it); `groundAt` fills it with the flat road while down and makes two kicker wedges (tip 3.8 m, reach 25 m down to 19 m up, i.e. the leaves "roll back") with `null` between the tips. A kart needs about 26 m/s to clear it (`clearSpeed()`; top speed 28, boost pad 37). A kart that falls short is bounced off the far leaf's end face (`affect`, one `hazardHit`) instead of being snapped up onto it, then falls and respawns. The old kicker at 57.5 is gone.
+* **Gust** (`sim/hazards/gust.ts`, `gustView.ts`): three gusts on Cloud Garden's exposed bridges (11.2-14.9 dir +1 period 9, 49.2-53.8 dir -1 period 10, 85.1-89.9 dir +1 period 11), warn 1.5 s, active 1.5 s, strength 42 m/s^2 (an unsteered kart drifts about 5 m: fine from the middle, over the edge from the downwind half; steering into the wind cancels it). Push is applied in `affect` to karts on the stretch at the same level.
+* **Bots**: `Hazard` got optional `halfLength` (bots see the whole stretch) and `botCommits(speed, boosting)`; the drawbridge waits (lift, then brake) unless the kart is fast or boosting, gusts mark the downwind half as blocked so bots move upwind.
+* **Views**: bridge = two road-textured leaves with striped tips, four towers with gantries, sliding counterweights, amber then red HDR lamps flashing alternately. Gust = instanced wind streaks (fewer on Low) and windsocks on poles at both ends of the stretch.
+* Tests: `drawbridge.test.ts`, `gust.test.ts`; bots finishing is covered for every track in `bots.test.ts`.
+
 ### Who owns what (wave 4)
 
 | Agent | Owns |

@@ -1,5 +1,8 @@
 export { HazardSystem } from './system';
 export { Geyser, GEYSER_POP_SPEED } from './geyser';
+export { Drawbridge } from './drawbridge';
+export type { BridgeFrame } from './drawbridge';
+export { Gust, gustEnvelope } from './gust';
 export { cyclePose, wrap } from './cycle';
 export { HAZARD_FACTORIES } from './registry';
 export { HAZARD_NEAR_DISTANCE } from './types';

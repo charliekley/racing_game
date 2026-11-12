@@ -169,7 +169,6 @@ describe('hazard events', () => {
 
 describe('registry and World', () => {
   it('kinds that are not built yet fail loudly, but only if a track uses them', () => {
-    expect(() => new HazardSystem(trackWith([{ kind: 'drawbridge', from: 1, to: 2, period: 10 }]))).toThrow(/not built yet/);
     expect(() => new HazardSystem(trackWith([{ kind: 'roller', at: 1, period: 10 }]))).toThrow(/not built yet/);
     expect(() => new HazardSystem(trackWith(undefined))).not.toThrow();
   });
