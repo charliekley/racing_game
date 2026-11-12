@@ -52,7 +52,7 @@ export interface GustDef extends HazardBase {
   strength: number;
 }
 
-/** Switchback Summit: a snowball rolling across the road (built by a later agent). */
+/** Switchback Summit: a snowball rolling down the slope and across the road. */
 export interface RollerDef extends HazardBase {
   kind: 'roller';
   at: number;

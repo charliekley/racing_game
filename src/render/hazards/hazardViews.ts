@@ -11,9 +11,11 @@ import type { HazardSystem } from '../../sim/hazards/system';
 import type { Hazard } from '../../sim/hazards/types';
 import type { QualitySettings } from '../scene';
 import { GeyserView } from './geyserView';
+import { RollerView } from './rollerView';
 
 export class HazardViews {
   private readonly geysers: GeyserView | null;
+  private readonly rollers: RollerView | null;
   private lastTime = Number.NaN;
 
   constructor(
@@ -24,7 +26,9 @@ export class HazardViews {
     const ofKind = (kind: Hazard['kind']) => system.list.filter((h) => h.kind === kind);
     const geysers = ofKind('geyser');
     this.geysers = geysers.length > 0 ? new GeyserView(scene, geysers, quality) : null;
-    // drawbridge / gust / roller: views are added together with their sim classes.
+    const rollers = ofKind('roller');
+    this.rollers = rollers.length > 0 ? new RollerView(scene, rollers, quality) : null;
+    // drawbridge / gust: views are added together with their sim classes.
   }
 
   /** Pose everything at race time `time` (s). `focus` = positions of the karts the cameras follow (culls particles far away). */
@@ -32,13 +36,16 @@ export class HazardViews {
     const dt = Number.isFinite(this.lastTime) ? time - this.lastTime : 0;
     this.lastTime = time;
     this.geysers?.update(time, dt, focus);
+    this.rollers?.update(time, dt, focus);
   }
 
   setQuality(q: QualitySettings): void {
     this.geysers?.setQuality(q);
+    this.rollers?.setQuality(q);
   }
 
   dispose(): void {
     this.geysers?.dispose();
+    this.rollers?.dispose();
   }
 }

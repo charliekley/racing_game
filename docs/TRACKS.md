@@ -204,6 +204,12 @@ export type HazardEvent =
 * **Audio**: ids `hazardWarn, geyser, bridgeBell, bridgeMove, gust, roller, hazardHit`; `hazardSound(type, fire)` in `mapping.ts` picks the sound per kind; warn/fire play only if a human slot is in `near`; `hazardHit` only for the human who was hit.
 * **Ember Peaks** (`emberPeaks.ts`): points are built from a named `route` list (`at('name')` gives the control-point position). Measured: 1958 m, 77 % curved, longest straight 126 m (the chasm run-up), 1584 degrees of turning, 28 tight corners (R < 60 m, minimum radius about 18 m), height range 31 m. Five slalom pairs of geysers (period 7 s, staggered phases), walls on the facing sides of the parallel legs, cannon, ridge cliffs, chasm and boost pads kept.
 
+### Roller (Switchback Summit): what is implemented
+
+* **Sim** (`src/sim/hazards/roller.ts`): a ball starts on the slope side (`from`; -1 on Switchback, the north slope), accelerates down (`d = 6t + t^2`), crosses the road along its sideways line (about 1.3 s over the 14 m road) and bursts 5 m past the far edge. `warn` = 1.5 s before it reaches the road edge, `active` = crossing + burst. Radius 1.5 m growing 25 %. Hit = `spinOut` plus a 7 m/s shove along the ball's direction; respects invuln, Nova, respawn, flight and height. `danger` samples the ball at arrival time +-0.3 s, so bots shift lane or lift.
+* **View** (`src/render/hazards/rollerView.ts`): instanced lumpy snowball (vertex-coloured, rolls by the sim's `roll` angle), shadow blob, snow puffs, sparkles, burst; 2 draw calls on every quality, particles scaled by quality.
+* **Track**: four balls (period 9 s, phases 0/2.3/4.6/6.8 s; 8 s made normal-bot class balance fail by 0.0003) at points 59.9, 61.0, 62.1, 63.2. The old hill feature never reached the road (the road is a 40 m embankment), so it was replaced by two hills that rise to the north of points 59-64. Points 64-72 have no slope. Tests: `src/sim/hazards/roller.test.ts`.
+
 ### Who owns what (wave 4)
 
 | Agent | Owns |

@@ -18,10 +18,10 @@
  *
  * Heights (third number of each point) go 0 -> 42 m up the mountain and back to 0.
  *
- * ROOM LEFT FOR LATER GIMMICKS (control-point numbers): the downhill from the summit,
- * points 59 to 72, is a free-flowing stretch with an open snow slope on its right (north)
- * side (the hill feature in `terrain`): no walls and no trees are placed there, so that is
- * the place for rolling snowballs.
+ * SNOWBALLS (`hazards`): the downhill from the summit, points 59 to 64, has an open snow slope
+ * on its north side (two hill features in `terrain`; sideways sign -1, so `from: -1`). Four snowballs
+ * roll down it and across the road, one every 9 s each, at different moments (phases), so there
+ * is always a gap: time it, or take the other lane.
  *
  * Control point numbers (the numbers in `at`/`from`/`to` refer to these; the comments on
  * the points say what is there).
@@ -187,10 +187,18 @@ export const switchbackSummit: TrackDef = {
     features: [
       { x: 70, z: 110, radius: 200, height: 26 }, // the mountain behind the climb
       { x: -240, z: 35, radius: 55, height: -4 }, // the frozen lake basin between the shortcut and the main road
-      { x: -200, z: 285, radius: 100, height: 45 }, // an open snow slope rising on the right of the downhill (points 59-72)
+      { x: -140, z: 262, radius: 105, height: 58 }, // an open snow slope rising on the left of the downhill (points 59-72): the snowballs roll down it
+      { x: -240, z: 235, radius: 100, height: 52 }, // ...continuing along the road
     ],
     blend: 18,
   },
+  hazards: [
+    // period 9 s, staggered: a ball crosses somewhere every ~2.3 s. Each warns ~1.5 s up the slope first.
+    { kind: 'roller', at: 59.9, period: 9, phase: 0, from: -1 },
+    { kind: 'roller', at: 61.0, period: 9, phase: 2.3, from: -1 },
+    { kind: 'roller', at: 62.1, period: 9, phase: 4.6, from: -1 },
+    { kind: 'roller', at: 63.2, period: 9, phase: 6.8, from: -1 },
+  ],
   shortcuts: [
     {
       // Straight across the frozen lake, on dirt (it is slower than tarmac).
