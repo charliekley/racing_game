@@ -66,6 +66,27 @@ describe('soundsForEvent', () => {
     expect(ids({ kind: 'slipCharge', slot: 0, progress: 0 })).toEqual([]);
   });
 
+  it('hazard warnings and eruptions are heard only when a human kart is near', () => {
+    const warn = (near: number[], type = 'geyser') => ids({ kind: 'hazardWarn', hazard: 0, type, near });
+    const fire = (near: number[], type = 'geyser') => ids({ kind: 'hazardFire', hazard: 0, type, near });
+    expect(warn([0])).toEqual(['hazardWarn']); // slot 0 is the human
+    expect(fire([0, 2])).toEqual(['geyser']);
+    expect(warn([2, 3])).toEqual([]); // only bots nearby: silent
+    expect(fire([])).toEqual([]);
+    // Each kind has its own sound.
+    expect(warn([0], 'drawbridge')).toEqual(['bridgeBell']);
+    expect(fire([0], 'drawbridge')).toEqual(['bridgeMove']);
+    expect(warn([0], 'gust')).toEqual(['gust']);
+    expect(warn([0], 'roller')).toEqual(['roller']);
+    // The cue pans toward the human who is near.
+    expect(soundsForEvent({ kind: 'hazardWarn', hazard: 0, type: 'geyser', near: [2, 0] } as never, ctx)[0].slot).toBe(0);
+  });
+
+  it('being hit by a hazard is heard by the human who was hit, not for bots', () => {
+    expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'geyser' })).toEqual(['hazardHit']);
+    expect(ids({ kind: 'hazardHit', slot: 2, hazard: 1, type: 'geyser' })).toEqual([]);
+  });
+
   it('every sound id has a synth, and every cue returns a known id', () => {
     for (const id of SOUND_IDS) expect(typeof SYNTHS[id]).toBe('function');
     expect(Object.keys(SYNTHS).sort()).toEqual([...SOUND_IDS].sort());

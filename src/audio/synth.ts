@@ -352,6 +352,63 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     notes(e, t, [[523, 0, 0.2], [659, 0.12, 0.2], [784, 0.24, 0.2], [1047, 0.36, 0.2], [1319, 0.48, 0.7]], 'triangle', 0.3 * g);
     return 1.3;
   },
+
+  // --- Track hazards ---------------------------------------------------------
+  hazardWarn: (e, t, g) => {
+    // Geyser warning: a deep rumble that grows, a hiss of steam and a few crackles of sparks.
+    noiseBurst(e, t, { dur: 1.5, gain: 0.5 * g, filter: 'lowpass', f0: 90, f1: 220, q: 1, a: 0.5 });
+    tone(e, t, { type: 'sine', f0: 48, f1: 70, dur: 1.5, gain: 0.5 * g, a: 0.6 });
+    noiseBurst(e, t + 0.2, { dur: 1.3, gain: 0.12 * g, filter: 'highpass', f0: 3500, a: 0.7 });
+    for (const [off, f] of [[0.35, 2600], [0.7, 3300], [0.95, 2900], [1.15, 3600], [1.3, 3100]]) {
+      noiseBurst(e, t + off, { dur: 0.04, gain: 0.25 * g, f0: f, q: 3 });
+    }
+    return 1.55;
+  },
+  geyser: (e, t, g) => {
+    // Eruption: a boom, then a roaring whoosh that fades as the column falls.
+    tone(e, t, { type: 'sine', f0: 110, f1: 34, dur: 0.7, gain: 0.8 * g });
+    noiseBurst(e, t, { dur: 1.2, gain: 0.6 * g, f0: 500, f1: 2200, q: 0.8, a: 0.06 });
+    noiseBurst(e, t + 0.4, { dur: 0.8, gain: 0.35 * g, filter: 'lowpass', f0: 1500, f1: 250 });
+    return 1.25;
+  },
+  bridgeBell: (e, t, g) => {
+    // Two-tone warning bell, ding-dong three times (each note has a bright overtone).
+    for (let i = 0; i < 3; i++) {
+      const o = i * 0.55;
+      tone(e, t + o, { type: 'sine', f0: 880, dur: 0.45, gain: 0.3 * g });
+      tone(e, t + o, { type: 'sine', f0: 2110, dur: 0.3, gain: 0.1 * g });
+      tone(e, t + o + 0.25, { type: 'sine', f0: 660, dur: 0.5, gain: 0.3 * g });
+      tone(e, t + o + 0.25, { type: 'sine', f0: 1580, dur: 0.3, gain: 0.1 * g });
+    }
+    return 1.9;
+  },
+  bridgeMove: (e, t, g) => {
+    // Heavy machinery: a low grinding hum with a clank at the start and a thud at the end.
+    tone(e, t, { type: 'sawtooth', f0: 52, f1: 66, dur: 1.5, gain: 0.22 * g, cutoff: 280, a: 0.2 });
+    noiseBurst(e, t, { dur: 1.5, gain: 0.3 * g, filter: 'lowpass', f0: 260, q: 1, a: 0.3 });
+    tone(e, t, { type: 'square', f0: 300, f1: 180, dur: 0.12, gain: 0.2 * g, cutoff: 1500 });
+    tone(e, t + 1.4, { type: 'sine', f0: 90, f1: 35, dur: 0.3, gain: 0.5 * g });
+    return 1.7;
+  },
+  gust: (e, t, g) => {
+    // Wind whistle that rises and swells.
+    noiseBurst(e, t, { dur: 1.6, gain: 0.35 * g, f0: 500, f1: 1500, q: 7, a: 0.9 });
+    noiseBurst(e, t, { dur: 1.6, gain: 0.15 * g, filter: 'highpass', f0: 2200, a: 0.9 });
+    return 1.65;
+  },
+  roller: (e, t, g) => {
+    // A heavy snowball rolling closer: a rumble that swells with a few low bumps.
+    noiseBurst(e, t, { dur: 1.6, gain: 0.55 * g, filter: 'lowpass', f0: 140, f1: 320, q: 1, a: 0.7 });
+    for (const o of [0.2, 0.55, 0.85, 1.1, 1.3]) tone(e, t + o, { type: 'sine', f0: 70, f1: 40, dur: 0.18, gain: 0.35 * g });
+    return 1.65;
+  },
+  hazardHit: (e, t, g) => {
+    // Burned by lava: a thump and a sizzle.
+    tone(e, t, { type: 'sine', f0: 160, f1: 45, dur: 0.35, gain: 0.7 * g });
+    noiseBurst(e, t, { dur: 0.5, gain: 0.35 * g, filter: 'highpass', f0: 1800, a: 0.01 });
+    noiseBurst(e, t, { dur: 0.3, gain: 0.3 * g, f0: 700, f1: 200, q: 1 });
+    return 0.55;
+  },
 };
 
 // --- Music voices ------------------------------------------------------------

@@ -27,6 +27,7 @@ import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../sh
 import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
+import { HazardViews } from '../render/hazards';
 import { Minimap } from '../render/minimap';
 import {
   applyRendererQuality,
@@ -156,6 +157,8 @@ export class Game {
   private readonly dirScratch = new THREE.Vector3();
   /** Launch cannons of the current track (rebuilt for every race). */
   private cannonView: CannonView | null = null;
+  /** Track hazards (lava geysers...) of the current track, rebuilt for every race. */
+  private hazardViews: HazardViews | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -222,6 +225,8 @@ export class Game {
     this.minimap.canvas.remove();
     this.cannonView?.dispose(this.scene);
     this.cannonView = null;
+    this.hazardViews?.dispose();
+    this.hazardViews = null;
     this.track = new Track(def);
     this.trackView = new TrackView(this.track);
     this.scene.add(this.trackView.group);
@@ -240,6 +245,7 @@ export class Game {
     if (envChanged) applyTheme(this.scene, this.track.def.theme, this.renderer, q.envSize);
     applySceneQuality(this.scene, this.sun, q, this.views.length);
     this.fx.setQuality(q);
+    this.hazardViews?.setQuality(q);
     this.resize();
   }
 
@@ -337,6 +343,9 @@ export class Game {
     // Launch cannons for this track (barrel, mouth glow, landing pad).
     this.cannonView?.dispose(this.scene);
     this.cannonView = this.track.cannons.length > 0 ? new CannonView(this.scene, this.track.cannons, this.track) : null;
+    // Hazards (geysers...): the sim owns the rules (world.hazards), the views only draw them.
+    this.hazardViews?.dispose();
+    this.hazardViews = this.world.hazards ? new HazardViews(this.scene, this.world.hazards, this.quality) : null;
 
     // Item boxes (one floating mesh per box) and any leftover item objects.
     for (const m of this.boxMeshes) this.scene.remove(m);
@@ -466,6 +475,14 @@ export class Game {
       }
     }
     this.fx.update(dt);
+
+    // HAZARDS: a hazard is a pure function of the race clock, so we draw it at the INTERPOLATED race
+    // time (the sim's latest tick time minus the fraction of a tick we have not simulated yet).
+    // Same idea as the kart interpolation above, and it keeps the lava exactly in step with the sim.
+    // The kart positions only tell the views which geysers are near a camera (particles are skipped far away).
+    if (this.hazardViews) {
+      this.hazardViews.update(race.time - (1 - alpha) * SIM_DT, this.views.map((v) => v.kart.pose));
+    }
 
     // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
     if (this.audio) {
@@ -679,6 +696,11 @@ export class Game {
         v.hud.flash('hit');
         this.shake(e.slot, 0.8);
         break;
+      case 'hazardHit': // lava geyser (or another hazard) got this kart: same burst and shake as an item hit
+        this.fx.hit(p.x, p.y, p.z);
+        v.hud.flash('hit');
+        this.shake(e.slot, 0.8);
+        break;
       case 'blocked':
         this.fx.itemPop(p.x, p.y + 0.4, p.z);
         this.shake(e.slot, 0.2);
@@ -825,6 +847,10 @@ export class Game {
           this.sendStatus();
           break;
         }
+        case 'hazardHit':
+          this.haptic(e.slot, HAPTICS.spunOut);
+          this.players.sendTo(e.slot, { t: 'drift', tier: null });
+          break;
         case 'blocked':
           this.haptic(e.slot, HAPTICS.itemUse);
           break;
