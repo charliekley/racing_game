@@ -95,8 +95,12 @@ export class HazardSystem {
     const limit = track.def.width / 2 - 1.8;
     let best: { dist: number; advice: BotAdvice } | null = null;
     for (const h of this.list) {
-      const dist = track.deltaS(p.s, h.s);
+      // Distance to the hazard; for one that covers a stretch (halfLength) it is the distance to its nearest end, 0 inside.
+      const raw = track.deltaS(p.s, h.s);
+      const half = h.halfLength ?? 0;
+      const dist = raw > half ? raw - half : raw < -half ? raw + half : 0;
       if (dist < -BEHIND_MARGIN || dist > LOOK_AHEAD) continue;
+      if (h.botCommits?.(k.speed, k.boostTime > 0.3)) continue; // fast enough to take it as it comes
       const arrive = Math.max(0, dist) / speed;
       const blocked = (d: number) => h.danger(h.s, d, time, arrive) >= 0.5;
       if (!blocked(lane) && !blocked(p.d)) continue; // nothing to do for this hazard

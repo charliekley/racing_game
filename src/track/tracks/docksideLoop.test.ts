@@ -25,7 +25,7 @@ describe('Dockside Loop', () => {
     expect(found).toBe(true);
   });
 
-  it('has solid containers and warehouses, a shortcut and two gaps', () => {
+  it('has solid containers and warehouses, a shortcut and two gaps (the quay jump and the drawbridge opening)', () => {
     const plan = planScenery(track);
     expect(plan.blocks.some((b) => b.kind === 'container')).toBe(true);
     expect(plan.blocks.some((b) => b.kind === 'warehouse')).toBe(true);

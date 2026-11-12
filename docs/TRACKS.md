@@ -210,11 +210,18 @@ export type HazardEvent =
 * **View** (`src/render/hazards/rollerView.ts`): instanced lumpy snowball (vertex-coloured, rolls by the sim's `roll` angle), shadow blob, snow puffs, sparkles, burst; 2 draw calls on every quality, particles scaled by quality.
 * **Track**: four balls (period 9 s, phases 0/2.3/4.6/6.8 s; 8 s made normal-bot class balance fail by 0.0003) at points 59.9, 61.0, 62.1, 63.2. The old hill feature never reached the road (the road is a 40 m embankment), so it was replaced by two hills that rise to the north of points 59-64. Points 64-72 have no slope. Tests: `src/sim/hazards/roller.test.ts`.
 
+### Drawbridge (Dockside Loop) and wind gusts (Cloud Garden): what is implemented
+* **Drawbridge** (`sim/hazards/drawbridge.ts`, `render/hazards/drawbridgeView.ts`, `DrawbridgeDef` has optional `gap`, `lift`, `warn`, `rise`, `hold`, `lower`). Dockside points 57 to 60, period 24 s (down about 14 s, bell and lights 2 s, rising 2 s, up 4 s, lowering 2 s). `Track` adds the 12 m opening as a static water gap for every drawbridge (so the road mesh and minimap show it); `groundAt` fills it with the flat road while down and makes two kicker wedges (tip 3.8 m, reach 25 m down to 19 m up, i.e. the leaves "roll back") with `null` between the tips. A kart needs about 26 m/s to clear it (`clearSpeed()`; top speed 28, boost pad 37). A kart that falls short is bounced off the far leaf's end face (`affect`, one `hazardHit`) instead of being snapped up onto it, then falls and respawns. The old kicker at 57.5 is gone.
+* **Gust** (`sim/hazards/gust.ts`, `gustView.ts`): three gusts on Cloud Garden's exposed bridges (11.2-14.9 dir +1 period 9, 49.2-53.8 dir -1 period 10, 85.1-89.9 dir +1 period 11), warn 1.5 s, active 1.5 s, strength 42 m/s^2 (an unsteered kart drifts about 5 m: fine from the middle, over the edge from the downwind half; steering into the wind cancels it). Push is applied in `affect` to karts on the stretch at the same level.
+* **Bots**: `Hazard` got optional `halfLength` (bots see the whole stretch) and `botCommits(speed, boosting)`; the drawbridge waits (lift, then brake) unless the kart is fast or boosting, gusts mark the downwind half as blocked so bots move upwind.
+* **Views**: bridge = two road-textured leaves with striped tips, four towers with gantries, sliding counterweights, amber then red HDR lamps flashing alternately. Gust = instanced wind streaks (fewer on Low) and windsocks on poles at both ends of the stretch.
+* Tests: `drawbridge.test.ts`, `gust.test.ts`; bots finishing is covered for every track in `bots.test.ts`.
+
 ### Who owns what (wave 4)
 
 | Agent | Owns |
 |---|---|
-| **hazards + Ember** | `src/sim/hazards/**`, `src/track/hazardTypes.ts`, the `hazards` field in `types.ts`, hooks in `world.ts` and `bots.ts`, `src/render/hazards/**`, wiring in `src/host/game.ts`, all hazard sounds in `src/audio/**`, Ember Peaks redesign + geysers (`emberPeaks.ts`, `emberPeaks.test.ts`). Builds `geyser` fully; the other three kinds get types and registry stubs only. |
+| **hazards + Ember** | `src/sim/hazards/**`, `src/track/hazardTypes.ts`, the `hazards` field in `types.ts`, hooks in `world.ts` and `bots.ts`, `src/render/hazards/**`, wiring in `src/host/game.ts`, all hazard sounds in `src/audio/**`, Ember Peaks redesign + geysers (`emberPeaks.ts`, `emberPeaks.test.ts`). Built `geyser`. |
 | **layouts** | Redesign of `docksideLoop.ts`, `cloudGarden.ts`, `switchbackSummit.ts` (+ their tests), new `src/track/layout.test.ts`. Leaves room for the gimmicks: Dockside a 40-60 m straight water crossing with a set-up straight before it (drawbridge); Cloud 2-3 exposed bridges/edges (gusts); Switchback a downhill stretch with open slope on one side (rollers). |
 | later: **dockside + cloud gimmicks** | `drawbridge` and `gust` kinds (sim + view files), those two track files |
 | later: **switchback gimmick** | `roller` kind (sim + view file), `switchbackSummit.ts` |

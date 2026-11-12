@@ -36,6 +36,10 @@ export interface Hazard {
   groundAt?(x: number, z: number, time: number): number | null | undefined;
   /** 0..1 danger for a kart at main-route distance s, lateral offset d (m, + = right), `ahead` seconds from now. For bots. */
   danger(s: number, d: number, time: number, ahead: number): number;
+  /** Hazards that cover a stretch of road (drawbridge, gust): half its length (m) around `s`. Bots see the whole stretch. Default 0. */
+  readonly halfLength?: number;
+  /** Bots: true if a kart with this speed (m/s) and boost state can simply drive through / jump it, so it need not wait. */
+  botCommits?(speed: number, boosting: boolean): boolean;
 }
 
 /** Karts within this distance (m, along the road) of a hazard hear / see its warning. */

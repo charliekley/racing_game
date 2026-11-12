@@ -25,10 +25,11 @@
  * Features used: bridges, void gaps (chasm jumps), a cannon, hump chain, double kicker,
  * boost pads, open drop-offs everywhere, deep-sky terrain.
  *
- * ROOM LEFT FOR LATER GIMMICKS (control-point numbers): the three EXPOSED BRIDGES have no
- * walls and are the places for wind gusts: bridge 1 = points 11 to 15, bridge 2 = 49 to 54,
- * bridge 3 = 85 to 90 (each is a gentle curve about 80-100 m long). The open edges of the
- * void-jump approaches (points 36 to 39 and 61 to 64) work too.
+ * WIND GUSTS (hazards, see src/sim/hazards/gust.ts): the three EXPOSED BRIDGES have no walls:
+ * bridge 1 = points 11 to 15, bridge 2 = 49 to 54, bridge 3 = 85 to 90 (each a gentle curve
+ * about 70-90 m long). Each has a gust that pushes karts toward one edge now and then; you steer
+ * into the wind. (The open edges of the void-jump approaches, points 36 to 39 and 61 to 64,
+ * would work too.)
  *
  * Control points are [x, z, height] in metres; the comment on each landmark point says what is
  * near it. Features refer to them by number ("9.25" = a quarter of the way from point 9 to 10).
@@ -182,6 +183,14 @@ export const cloudGarden: TrackDef = {
     { from: 11.2, to: 14.9 }, // A -> B (bridge 1)
     { from: 49.2, to: 53.8 }, // C -> D (bridge 2)
     { from: 85.1, to: 89.9 }, // E -> A (bridge 3)
+  ],
+  hazards: [
+    // WIND GUSTS on the three exposed bridges (no walls): every ~10 s a gust pushes karts sideways for 1.5 s,
+    // after 1.5 s of warning (streaks, whistle). Alternating directions and different periods/phases, so
+    // the three bridges do not gust in step. Strength 42 m/s^2: see sim/hazards/gust.ts for what it does.
+    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 9, phase: 2 },
+    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 10, phase: 6 },
+    { kind: 'gust', from: 85.1, to: 89.9, dir: 1, strength: 42, period: 11, phase: 4 },
   ],
   cannons: [{ at: 46.8, offset: 0.6, target: { at: 64.5, offset: 0 }, flightTime: 3.4, apex: 24 }],
 };

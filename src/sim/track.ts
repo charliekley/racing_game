@@ -6,6 +6,7 @@
  * Pure math; the renderer builds its meshes from the same samples so visuals
  * and physics always agree.
  */
+import { DRAWBRIDGE_GAP } from '../track/hazardTypes';
 import type { TrackDef } from '../track/types';
 import { ITEMS } from './config';
 import type { Ground, GroundHit, Surface } from './ground';
@@ -270,6 +271,13 @@ export class Track implements Ground {
       const landing = gap > 0 && (r.landing ?? true);
       this.ramps.push({ s0, s1: s0 + r.length, height: r.height, shape: r.shape ?? 'kicker', gap, landHeight: landing ? landingHeight(r.height) : 0 });
       if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap, kind: r.gapKind ?? 'water' });
+    }
+    // A drawbridge's opening is water (no road) in the static track; the hazard puts the leaves back (groundAt).
+    for (const h of def.hazards ?? []) {
+      if (h.kind !== 'drawbridge') continue;
+      const mid = (this.sAt(h.from) + this.sAt(h.to)) / 2;
+      const half = (h.gap ?? DRAWBRIDGE_GAP) / 2;
+      this.gaps.push({ s0: mid - half, s1: mid + half, kind: 'water' });
     }
     const reach = def.width / 2 + def.offroadWidth;
     for (const b of def.bridges ?? []) this.bridges.push({ s0: this.sAt(b.from), s1: this.sAt(b.to) });

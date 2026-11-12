@@ -19,10 +19,10 @@
  * stacks and warehouses (scenery.blocks), water gaps, hump chain, dirt shortcut, boost
  * pads, banked walls.
  *
- * ROOM LEFT FOR LATER GIMMICKS (control-point numbers):
- *   - DRAWBRIDGE: points 57 to 60 are a dead-straight 50 m water crossing on the viaduct
- *     (the kicker + 10 m water gap sits at 57.5 for now). Points 52 to 57 are the set-up:
- *     the SE hairpin exit and a gentle curve (R ~ 180 m), boost pad at 56.3.
+ * THE DRAWBRIDGE (hazard, see src/sim/hazards/drawbridge.ts): points 57 to 60 are a dead-straight
+ * 50 m water crossing on the viaduct. Points 52 to 57 are the set-up: the SE hairpin exit and a
+ * gentle curve (R ~ 180 m), boost pad at 56.3. Two leaves hinged at the ends rise (kicker ramps with
+ * a 12 m opening between the tips); the boost pad gives the speed to jump it, a slow kart drops in.
  *
  * Control point numbers (the numbers in `at`/`from`/`to` refer to these; the comment on
  * each landmark point says what is there):
@@ -192,13 +192,17 @@ export const docksideLoop: TrackDef = {
     { at: 2.8, length: 14, height: 1.2, shape: 'hump' },
     { at: 3.75, length: 14, height: 1.2, shape: 'hump' },
     { at: 5.9, length: 10, height: 2.2, gap: 11, gapKind: 'water', shape: 'kicker' },
-    // Water crossing on the viaduct (a drawbridge jump): the 50 m straight is points 57 to 60.
-    { at: 57.5, length: 10, height: 2.0, gap: 10, gapKind: 'water', shape: 'kicker' },
   ],
   boostPads: [
     { at: 5.0, offset: 0, length: 8, width: 5 }, // just before the quay gap
     { at: 56.3, offset: 0, length: 8, width: 5 }, // just before the water crossing
     { at: 90, offset: 0.45, length: 7, width: 4 }, // west end hairpin apex
+  ],
+  hazards: [
+    // The DRAWBRIDGE over the 50 m water crossing (points 57 to 60, straight and level). The leaves are down
+    // for ~14 s of every 24 s; then bell and lights (2 s), up (8 s with the rising and lowering). The boost
+    // pad at 56.3 gives a kart the speed to jump the 12 m opening: see sim/hazards/drawbridge.ts.
+    { kind: 'drawbridge', from: 57, to: 60, period: 24, phase: 9 },
   ],
   laps: 3,
   checkpoints: 16,

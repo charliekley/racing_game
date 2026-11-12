@@ -33,23 +33,47 @@ export interface GeyserDef extends HazardBase {
   active?: number;
 }
 
-/** Dockside Loop: a drawbridge over water (built by a later agent). */
+/**
+ * Dockside Loop: a drawbridge over water. Two leaves hinged at the outer ends of the span
+ * (`from` and `to`). Cycle: down (flat road) -> bell + lights (`warn`) -> rising -> up -> lowering.
+ * While up each leaf is a kicker ramp with an open gap between the two tips (see sim/hazards/drawbridge.ts).
+ */
 export interface DrawbridgeDef extends HazardBase {
   kind: 'drawbridge';
-  /** Ends of the bridge (control-point units). */
+  /** Ends of the bridge (control-point units): the two hinges. The road between them must be straight and level. */
   from: number;
   to: number;
+  /** Width (m) of the opening between the two tips when fully up. Default DRAWBRIDGE_GAP. */
+  gap?: number;
+  /** Height (m) of each tip when fully up. Default DRAWBRIDGE_LIFT. */
+  lift?: number;
+  /** Bell and flashing lights before the leaves move (s, default 2). */
+  warn?: number;
+  /** Time the leaves take to rise (s, default 2). */
+  rise?: number;
+  /** Time the bridge stays fully up (s, default 4). */
+  hold?: number;
+  /** Time the leaves take to come down (s, default 2). */
+  lower?: number;
 }
 
-/** Cloud Garden: a gust of wind pushing karts sideways (built by a later agent). */
+/** Default opening between the tips (m) and tip height (m) of a raised drawbridge. */
+export const DRAWBRIDGE_GAP = 12;
+export const DRAWBRIDGE_LIFT = 3.8;
+
+/** Cloud Garden: a gust of wind pushing karts sideways while it is active, on the stretch `from`..`to`. */
 export interface GustDef extends HazardBase {
   kind: 'gust';
   from: number;
   to: number;
   /** +1 pushes to the right of the direction of travel, -1 to the left. */
   dir: 1 | -1;
-  /** Sideways acceleration (m/s^2). */
+  /** Peak sideways acceleration (m/s^2). A kart that does not steer drifts sideways at about strength / 9 m/s. */
   strength: number;
+  /** Warning time (s, default 1.5): wind streaks and a rising whistle. */
+  warn?: number;
+  /** Time the wind blows (s, default 1.5). */
+  active?: number;
 }
 
 /** Switchback Summit: a snowball rolling down the slope and across the road. */
