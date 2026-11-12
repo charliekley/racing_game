@@ -118,3 +118,86 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * `src/sim/mapData.ts` `mapDataFromTrack(track)` builds the compact `MapData` from `track.routes/bridges/cliffs/gaps/cannons` (≤120 points per route, 0.1 m rounding, ~2–4 KB JSON).
 * Protocol: `{ t: 'track', pts, w, map?: MapData }` (`map` optional; phones fall back to `pts`).
 * A new track needs nothing special: put roads in `track.routes` (shortcuts: `kind: 'shortcut'`, `surface`) and the maps pick them up.
+
+## Wave 4: twistier layouts + track gimmicks (hazards)
+
+Feedback after play-testing: tracks had long boring straights, and each track needs a
+signature moving part / unique risk. Already on main before this wave:
+
+* **Fork markers** (`branchView.ts` `buildForkMarker`): a small chevron sign at the split and a row of cones. No text.
+* **Skipped checkpoints** (`race.ts`): a forward jump in `s` of <= `SKIP_CREDIT_DISTANCE` (30 m) past a checkpoint is credited; a bigger one, held for `OFF_COURSE_SECONDS` (0.3 s), raises the race event `offCourse` and `World` carries the kart back to its last checkpoint (it emits a normal `respawn`). Test: `src/sim/cutting.test.ts`.
+* **No cutting between parallel legs**: separate legs that run side by side (switchbacks, hairpin pairs) with walls on the facing sides, a cliff/drop, or >= 7 m of height. Keep the walls off hairpin apexes and exits (bots and class balance suffer otherwise).
+
+### Layout rules (enforced by `src/track/layout.test.ts`, every track in `TRACKS`)
+
+Measured on `track.samples` (`curvature` in 1/m, `spacing` m):
+
+| Rule | Limit |
+|---|---|
+| Length | 1200 to 2000 m |
+| "Straight" = a run of samples with \|curvature\| < 1/250 | every straight <= 100 m; at most ONE up to 150 m (a set-up straight for a jump, cannon or slipstream fight) |
+| Curved share (\|curvature\| >= 1/250) | >= 70 % of the lap |
+| Total turning, sum of \|curvature\| x spacing | >= 1260 degrees per lap |
+| Tight corners (separate runs with radius < 60 m) | >= 8 |
+| Height range of the main road | >= 12 m |
+
+Before this wave (curved %, longest straight, turning, tight corners): Ember 61 % / 284 m / 957 deg / 10, Dockside 63 / 188 / 639 / 4, Cloud 61 / 382 / 999 / 12, Switchback 58 / 150 / 1008 / 7.
+Vocabulary: S-bends, chicanes, hairpins, long sweepers, decreasing-radius corners, blind crests (a hump or height change right before a corner), dips. Keep every existing feature (cannons, shortcuts, bridges, overpasses with >= 7 m, jumps, cliffs, boost pads). Bots must finish on every difficulty; all existing tests must pass (class balance included).
+
+### Hazards: the contract
+
+A hazard is a moving object or timed danger on a track. **Its state is a pure function of the race clock** (`race.time`, s, negative during the countdown): no random numbers, no state carried between ticks. So sim, renderer (interpolated time) and bots agree, and replays are exact.
+
+**Data**: `src/track/hazardTypes.ts` (new) and `TrackDef.hazards?: HazardDef[]` in `types.ts`. Every def has `kind`, `period` (s), `phase` (s, default 0) and a position in control-point units. Agents may add optional fields to their own kind.
+
+| kind | Track | What it does | Telegraph (before it hits) |
+|---|---|---|---|
+| `geyser` | Ember Peaks | Lava geyser at `at` + `offset` (lateral -1..1), radius ~3 m, erupts ~1.2 s each `period`. Hit = spin-out + small upward pop. Several, staggered, so a free lane always exists. | ~1.5 s: glowing crack, sparks, rumble, steam |
+| `drawbridge` | Dockside Loop | Bridge over water `from`..`to`, two leaves. Cycle: down, rising, up, lowering. Rising/up, each leaf is a kicker: at speed you jump the opening, too slow and you drop into the water (normal respawn). | bell + flashing lights ~2 s before it moves |
+| `gust` | Cloud Garden | Wind on `from`..`to` pushes karts sideways (`dir`, `strength` m/s²) ~1.5 s each `period`, at exposed edges and bridges. | ~1.5 s: wind streaks + rising whistle |
+| `roller` | Switchback Summit | Snowballs roll across the road (moving sphere collider on a path at `at`, from beyond one road edge to beyond the other) once per `period`. Hit = spin-out. | rumble + snow puffs up the slope ~1.5 s before |
+
+**Sim API** (`src/sim/hazards/`, new, pure TS):
+
+```ts
+export type HazardPhase = 'idle' | 'warn' | 'active';
+export interface HazardPose { phase: HazardPhase; t: number /* 0..1 within the phase */; [k: string]: unknown /* kind data */ }
+export interface Hazard {
+  readonly id: number;            // index in def.hazards
+  readonly kind: HazardDef['kind'];
+  readonly s: number;             // main-route distance (m), for bots, audio and maps
+  pose(time: number): HazardPose; // PURE
+  /** Apply to one kart this tick. Respect invulnTime, respawnTime and flight. */
+  affect(k: KartState, time: number, dt: number, c: KartConfig): 'hit' | 'push' | null;
+  /** Ground override (drawbridge): a height, null = no ground (fall), undefined = not mine. */
+  groundAt?(x: number, z: number, time: number): number | null | undefined;
+  /** 0..1 danger for a kart at main-route distance s, lateral offset d, `ahead` seconds from now (bots). */
+  danger(s: number, d: number, time: number, ahead: number): number;
+}
+export class HazardSystem {
+  constructor(track: Track);   // one Hazard per def, via a registry kind -> factory
+  readonly list: Hazard[];
+  step(time: number, karts: Map<number, KartState>, configOf: (slot: number) => KartConfig): HazardEvent[];
+  wrapGround(g: Ground): Ground; // applies groundAt; World passes this to stepKart
+  dangerAhead(k: KartState, track: Track, time: number): { brake: number; steer: number }; // bot advice
+}
+export type HazardEvent =
+  | { kind: 'hazardWarn'; hazard: number; type: HazardDef['kind']; near: number[] } // near = slots within 150 m
+  | { kind: 'hazardFire'; hazard: number; type: HazardDef['kind']; near: number[] }
+  | { kind: 'hazardHit'; slot: number; hazard: number; type: HazardDef['kind'] };
+```
+
+* `World.hazards: HazardSystem | null` (built in `startRace`; null when the track has none). `tick` calls `step(race.time, ...)` after kart physics, adds the events to `WorldEvent`, and gives kart physics `wrapGround(ground)`.
+* **Bots** (`bots.ts`) use `world.hazards?.dangerAhead(...)` to lift, brake or steer away; on hard they mostly avoid hazards. Bots must still finish every track on every difficulty.
+* **Render** (`src/render/hazards/`, new): `HazardViews.update(time)` called from `game.ts` with the interpolated race time, one view file per kind. Warnings visible in all 4 viewports without HUD text (light, particles, motion). Cheap on Low quality.
+* **Audio**: sound ids `hazardWarn`, `geyser`, `bridgeBell`, `bridgeMove`, `gust`, `roller`, `hazardHit` (synth recipes in `synth.ts`, mapping in `mapping.ts`): play only when a human slot is in `near`, or when the human is the one hit.
+* **Tests**: pose is periodic and pure; hits and misses where expected; a kart parked in a geyser/roller path is hit once per cycle (invuln respected); bots finish every track with hazards on every difficulty.
+
+### Who owns what (wave 4)
+
+| Agent | Owns |
+|---|---|
+| **hazards + Ember** | `src/sim/hazards/**`, `src/track/hazardTypes.ts`, the `hazards` field in `types.ts`, hooks in `world.ts` and `bots.ts`, `src/render/hazards/**`, wiring in `src/host/game.ts`, all hazard sounds in `src/audio/**`, Ember Peaks redesign + geysers (`emberPeaks.ts`, `emberPeaks.test.ts`). Builds `geyser` fully; the other three kinds get types and registry stubs only. |
+| **layouts** | Redesign of `docksideLoop.ts`, `cloudGarden.ts`, `switchbackSummit.ts` (+ their tests), new `src/track/layout.test.ts`. Leaves room for the gimmicks: Dockside a 40-60 m straight water crossing with a set-up straight before it (drawbridge); Cloud 2-3 exposed bridges/edges (gusts); Switchback a downhill stretch with open slope on one side (rollers). |
+| later: **dockside + cloud gimmicks** | `drawbridge` and `gust` kinds (sim + view files), those two track files |
+| later: **switchback gimmick** | `roller` kind (sim + view file), `switchbackSummit.ts` |

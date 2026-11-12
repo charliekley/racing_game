@@ -2,9 +2,16 @@
  * Race rules: countdown, checkpoints, laps, positions, finish.
  *
  * Checkpoints: the lap is cut into N equal pieces along the track. A kart
- * must enter them strictly in order (0, 1, 2, …); entering one out of order
- * (e.g. by cutting across the infield) simply doesn't count, so shortcuts
- * gain nothing. Crossing into checkpoint 0 = crossing the start/finish line.
+ * must enter them strictly in order (0, 1, 2, …). Crossing into checkpoint 0 =
+ * crossing the start/finish line.
+ *
+ * Skipping checkpoints (cutting across the infield, between switchback legs…):
+ *  - a SMALL forward jump in track distance (<= SKIP_CREDIT_DISTANCE, e.g. the
+ *    nearest-road point hopping across a tight corner) is simply credited;
+ *  - a BIG one makes the kart "off course": if it stays on the wrong section for
+ *    OFF_COURSE_SECONDS the race emits `offCourse`, and the world carries the kart
+ *    back to its last checkpoint. So a lap can never be lost silently and a kart
+ *    can never get stuck uncounted.
  *
  * Pure logic: give it each kart's distance along the track every tick.
  */
@@ -18,6 +25,10 @@ export const FINISH_GRACE_SECONDS = 20;
 export const START_BOOST_WINDOW = 0.8;
 /** Gas held longer than this before GO -> engine floods. */
 export const START_STALL_AFTER = 2.0;
+/** A forward jump in track distance up to this (m) that skips a checkpoint is credited, not punished. */
+export const SKIP_CREDIT_DISTANCE = 30;
+/** How long (s) a kart may sit on a section past a skipped checkpoint before `offCourse` fires. */
+export const OFF_COURSE_SECONDS = 0.3;
 
 export type RacePhase = 'countdown' | 'racing' | 'done';
 
@@ -37,6 +48,10 @@ export interface Racer {
   place: number | null;
   /** When gas was pressed during the countdown (race clock), for the rocket start. */
   gasSince: number | null;
+  /** Track distance reported last tick (null before the first tick). */
+  lastS: number | null;
+  /** How long (s) the kart has been on a section past a skipped checkpoint. */
+  offCourseTime: number;
 }
 
 export type RaceEvent =
@@ -49,6 +64,8 @@ export type RaceEvent =
   | { kind: 'finish'; slot: number; place: number; time: number }
   /** Two karts finished within START.photoFinishGap seconds of each other (the host may show slow motion). */
   | { kind: 'photoFinish'; slots: [number, number]; gap: number }
+  /** The kart skipped checkpoints (cut across): the world should put it back at its last checkpoint. */
+  | { kind: 'offCourse'; slot: number }
   | { kind: 'done' };
 
 export interface TrackInfo {
@@ -82,6 +99,8 @@ export class Race {
         finishTime: null,
         place: null,
         gasSince: null,
+        lastS: null,
+        offCourseTime: 0,
       });
     }
   }
@@ -186,8 +205,30 @@ export class Race {
       if (s === undefined) continue;
       if (this.phase === 'racing' && !r.finished) {
         const seg = this.segmentOf(s);
-        if (seg === r.next) this.enterSegment(r, events);
+        // How many checkpoints ahead of the expected one is the kart? (0 = the expected one.)
+        const ahead = (seg - r.next + K) % K;
+        if (seg === r.next) {
+          this.enterSegment(r, events);
+          r.offCourseTime = 0;
+        } else if (ahead > 0 && ahead < K / 2) {
+          // Past a checkpoint it never entered. Small hop forward: credit it. Otherwise: off course.
+          const jump = r.lastS === null ? Infinity : (((s - r.lastS) % L) + L) % L;
+          if (jump <= SKIP_CREDIT_DISTANCE) {
+            events.push(...this.grantProgress(r.slot, s));
+            r.offCourseTime = 0;
+          } else {
+            r.offCourseTime += dt;
+            if (r.offCourseTime >= OFF_COURSE_SECONDS) {
+              r.offCourseTime = 0;
+              events.push({ kind: 'offCourse', slot: r.slot });
+            }
+            continue; // keep lastS at the last legit spot, so the jump is measured from there
+          }
+        } else {
+          r.offCourseTime = 0;
+        }
       }
+      r.lastS = s;
       // Progress = completed laps + distance into the current checkpoint segment.
       const cur = (r.next - 1 + K) % K;
       const segLen = (cur + 1 < K ? cps[cur + 1] : L) - cps[cur];

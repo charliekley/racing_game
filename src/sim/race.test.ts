@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Buttons, type ControlInput } from '../shared/protocol';
-import { COUNTDOWN_SECONDS, Race } from './race';
+import { COUNTDOWN_SECONDS, OFF_COURSE_SECONDS, Race, SKIP_CREDIT_DISTANCE } from './race';
 
 const L = 1600;
 const K = 16;
@@ -45,6 +45,29 @@ describe('lap counting', () => {
     // Teleport-style shortcut: jump from s=200 to s=L-20, then cross the line.
     driveAlong(r, 0, L - 20, L + 10);
     expect(r.racers.get(0)!.lap).toBe(1);
+  });
+
+  it('a small forward hop over a checkpoint (<= SKIP_CREDIT_DISTANCE) is credited', () => {
+    // Short checkpoint segments (12.5 m), so a 25 m hop skips one whole segment.
+    const short = { length: 400, checkpoints: Array.from({ length: 32 }, (_, i) => i * 12.5) };
+    const r = new Race(short, 3, [0]);
+    r.tick(COUNTDOWN_SECONDS + DT, new Map([[0, 395]]), none);
+    for (let s = 395; s <= 405; s += 2) r.tick(DT, new Map([[0, s % 400]]), none); // lap 1, in segment 0
+    expect(r.racers.get(0)!.next).toBe(1);
+    r.tick(DT, new Map([[0, 5 + SKIP_CREDIT_DISTANCE - 5]]), none); // 5 -> 30: skips segment 1, lands in 2
+    expect(r.racers.get(0)!.next).toBe(3);
+  });
+
+  it('a big jump past checkpoints raises offCourse after OFF_COURSE_SECONDS, without credit', () => {
+    const r = racing([0], 3);
+    driveAlong(r, 0, L - 5, L + 50);
+    const next = r.racers.get(0)!.next;
+    const events: string[] = [];
+    for (let t = 0; t < OFF_COURSE_SECONDS + 3 * DT; t += DT) {
+      for (const e of r.tick(DT, new Map([[0, 450]]), none)) events.push(e.kind);
+    }
+    expect(events).toContain('offCourse');
+    expect(r.racers.get(0)!.next).toBe(next);
   });
 
   it('driving backwards over the line does not count a lap', () => {

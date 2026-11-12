@@ -659,37 +659,34 @@ export function dirtTexture(): THREE.CanvasTexture {
 }
 
 /**
- * "SHORTCUT" board for the fork: yellow with black chevron blocks at both ends. Drawn left to
- * right for a driver coming up to the board. Only the top quarter of the canvas is used (the
- * board is 4:1), so the texture's repeat/offset show just that strip.
+ * Chevron board for a shortcut fork: black arrowheads on a yellow board, pointing RIGHT, no text
+ * (like the turn-warning signs on real mountain roads). Mirror the mesh to point left.
+ * Only the top half of the square canvas is used (the board is 2:1); repeat/offset show that strip.
  */
-export function shortcutSignTexture(): THREE.CanvasTexture {
-  const tex = canvasTexture(512, (ctx, n) => {
-    const h = n / 4;
+export function chevronSignTexture(): THREE.CanvasTexture {
+  const tex = canvasTexture(256, (ctx, n) => {
+    const h = n / 2;
     ctx.fillStyle = '#f2b01e';
     ctx.fillRect(0, 0, n, h);
-    // Chevron blocks at both ends (pointing in the direction of travel).
+    ctx.strokeStyle = '#161616';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, n - 8, h - 8);
+    // Three arrowheads ("chevrons") pointing right.
     ctx.fillStyle = '#161616';
-    for (const x0 of [10, n - 10 - 56]) {
-      for (let k = 0; k < 3; k++) {
-        const x = x0 + k * 19;
-        ctx.beginPath();
-        ctx.moveTo(x, 14);
-        ctx.lineTo(x + 16, h / 2);
-        ctx.lineTo(x, h - 14);
-        ctx.lineTo(x + 8, h - 14);
-        ctx.lineTo(x + 24, h / 2);
-        ctx.lineTo(x + 8, 14);
-        ctx.fill();
-      }
+    for (let k = 0; k < 3; k++) {
+      const x = 52 + k * 52;
+      ctx.beginPath();
+      ctx.moveTo(x, 22);
+      ctx.lineTo(x + 30, h / 2);
+      ctx.lineTo(x, h - 22);
+      ctx.lineTo(x + 16, h - 22);
+      ctx.lineTo(x + 46, h / 2);
+      ctx.lineTo(x + 16, 22);
+      ctx.fill();
     }
-    ctx.font = 'bold 60px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('SHORTCUT', n / 2, h / 2 + 3);
   });
-  tex.repeat.set(1, 0.25);
-  tex.offset.set(0, 0.75);
+  tex.repeat.set(1, 0.5);
+  tex.offset.set(0, 0.5);
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 }

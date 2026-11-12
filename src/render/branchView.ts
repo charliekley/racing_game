@@ -1,6 +1,7 @@
 /**
  * Meshes for shortcut branch roads (see sim/shortcuts.ts), built from the same samples the
- * physics uses: banked road, curbs, off-road strips, walls, plus a "SHORTCUT" gate at the fork.
+ * physics uses: banked road, curbs, off-road strips, walls, plus a small fork marker (chevron sign
+ * and a row of cones at the split).
  *
  * Near a fork the branch overlaps the main road for a while. Its road is drawn a hair above the
  * main road (and with a polygon offset, so it does not flicker); its curbs and strips are only
@@ -9,7 +10,7 @@
 import * as THREE from 'three';
 import type { Branch } from '../sim/shortcuts';
 import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
-import { curbTexture, dirtTexture, grassTexture, roadTexture, shortcutSignTexture, wallTexture } from './textures';
+import { curbTexture, dirtTexture, grassTexture, roadTexture, chevronSignTexture, wallTexture } from './textures';
 
 interface Edge {
   d: number;
@@ -125,44 +126,84 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
       }
     }
 
-    group.add(buildGate(b, clearAt));
+    group.add(buildForkMarker(b, clearAt));
   }
   return group;
 }
 
-/** Shared by all gates. */
+/** Shared by all fork markers. */
 let signTex: THREE.CanvasTexture | null = null;
+let markerMats: { post: THREE.Material; board: THREE.Material; back: THREE.Material; cone: THREE.Material; band: THREE.Material } | null = null;
 
 /**
- * The fork marker: two posts and a "SHORTCUT" board across the branch road, a little way
- * past the fork where the branch has cleared the main road. Faces the oncoming driver.
+ * The fork marker, deliberately low-key: at the "gore" (the wedge where the branch splits off
+ * the main road) a knee-high chevron sign points into the branch, and a short row of traffic
+ * cones lines the split. Nothing is written on it: you see the opening and the arrows.
  */
-function buildGate(b: Branch, clear: (p: TrackSample, d: number) => boolean): THREE.Group {
+function buildForkMarker(b: Branch, clear: (p: TrackSample, d: number) => boolean): THREE.Group {
   const g = new THREE.Group();
   const S = b.samples;
   // First sample (after the first 6) whose whole road width is clear of the main road.
   let k = 6;
   while (k < S.length - 8 && !(clear(S[k], 0) && clear(S[k], -S[k].width / 2 - 1.5) && clear(S[k], S[k].width / 2 + 1.5))) k++;
-  const p = S[Math.min(k, S.length - 8)];
-  const half = p.width / 2 + 1.4;
-  const postH = 5.2;
-  const postMat = new THREE.MeshStandardMaterial({ color: b.surface === 'dirt' ? '#7a5230' : '#3a3f4a' });
-  for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.45, postH, 0.45), postMat);
-    post.position.set(p.x + p.rx * side * half, p.y + postH / 2, p.z + p.rz * side * half);
-    post.castShadow = true;
-    g.add(post);
-  }
-  signTex ??= shortcutSignTexture();
-  const w = half * 2 + 0.6;
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: signTex, transparent: true }));
-  board.position.set(p.x, p.y + postH - 0.9, p.z);
+  k = Math.min(k, S.length - 8);
+  const p = S[k];
+
+  // Which side of the branch is the main road on? Step outwards on both sides until we hit it.
+  const reach = (side: number) => {
+    for (let d = p.width / 2 + 2; d < 60; d += 2) if (!clear(p, side * d)) return d;
+    return Infinity;
+  };
+  const mainSide = reach(-1) < reach(1) ? -1 : 1;
+
+  markerMats ??= {
+    post: new THREE.MeshStandardMaterial({ color: '#4a4f58', roughness: 0.6 }),
+    board: new THREE.MeshBasicMaterial({ map: (signTex ??= chevronSignTexture()) }),
+    back: new THREE.MeshStandardMaterial({ color: '#8a8f96' }),
+    cone: new THREE.MeshStandardMaterial({ color: '#ff6a1a', roughness: 0.5 }),
+    band: new THREE.MeshStandardMaterial({ color: '#f4f4f4', roughness: 0.4 }),
+  };
+  const M = markerMats;
+
+  // --- Chevron sign at the gore, facing drivers coming along the main road. ---
+  const signD = mainSide * (p.width / 2 + 1.6);
+  const sx = p.x + p.rx * signD;
+  const sz = p.z + p.rz * signD;
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.5, 0.14), M.post);
+  post.position.set(sx, p.y + 0.75, sz);
+  post.castShadow = true;
+  g.add(post);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), M.board);
+  board.position.set(sx, p.y + 1.45, sz);
   board.rotation.y = Math.atan2(-p.tx, -p.tz); // face the driver coming along the road
+  // The texture points right. The branch lies on the side away from the main road, so the
+  // arrows should point that way; mirror the board when that is the driver's left.
+  if (-mainSide < 0) board.scale.x = -1;
   g.add(board);
-  // A plain back so the board is not see-through from behind.
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ color: '#d79a1a' }));
-  back.position.copy(board.position).addScaledVector(new THREE.Vector3(p.tx, 0, p.tz), 0.03);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), M.back);
+  back.position.copy(board.position).addScaledVector(new THREE.Vector3(p.tx, 0, p.tz), 0.02);
   back.rotation.y = board.rotation.y + Math.PI;
   g.add(back);
+
+  // --- Cones along the gore edge, after the sign, where the two roads part (one InstancedMesh per colour). ---
+  // InstancedMesh = one geometry drawn many times in a single draw call, each with its own matrix.
+  const spots: THREE.Vector3[] = [];
+  for (let j = k + 3; j < S.length - 8 && spots.length < 5; j += 3) {
+    const q = S[j];
+    const d = mainSide * (q.width / 2 + 0.6);
+    if (!clear(q, d)) continue; // this spot is on the main road
+    spots.push(new THREE.Vector3(q.x + q.rx * d, q.y, q.z + q.rz * d));
+  }
+  if (spots.length) {
+    const cones = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.75, 10), M.cone, spots.length);
+    const bands = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.17, 0.21, 0.12, 10), M.band, spots.length);
+    const m = new THREE.Matrix4();
+    spots.forEach((v, i) => {
+      cones.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.375, v.z));
+      bands.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.45, v.z));
+    });
+    cones.castShadow = true;
+    g.add(cones, bands);
+  }
   return g;
 }

@@ -79,6 +79,12 @@ export const switchbackSummit: TrackDef = {
     { from: 2.6, to: 5.4, side: 'outer' },
     { from: 8.6, to: 11.4, side: 'outer' },
     { from: 14.6, to: 17.4, side: 'outer' },
+    // Guard rails on the sides of the climbing legs that face the next leg, so nobody can
+    // cut across the hillside from one leg to another (that would skip checkpoints).
+    { from: 0.6, to: 2.2, side: 'left' }, // leg 1 (east): leg 2 is to the north = left
+    { from: 6.0, to: 8.0, side: 'both' }, // leg 2: legs 1 and 3 on either side
+    { from: 12.0, to: 14.0, side: 'both' }, // leg 3: legs 2 and 4 on either side
+    { from: 18.0, to: 19.6, side: 'left' }, // leg 4 (west): leg 3 is to the south = left
     // Fence both sides of the ski-jump chasm so nobody drives round it.
     { from: 31.1, to: 31.8, side: 'both' },
   ],

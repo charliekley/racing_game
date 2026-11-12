@@ -193,6 +193,15 @@ export class World {
       for (const e of this.race.tick(SIM_DT, positions, inputs)) {
         if (e.kind === 'startBoost') applyBoost(this.karts.get(e.slot)!, KART.startBoostTime * (e.perfect ? START.perfectBoostFactor : 1));
         if (e.kind === 'stall') this.karts.get(e.slot)!.stallTime = KART.startStallTime;
+        if (e.kind === 'offCourse') {
+          // Cut across and skipped checkpoints: the carrier drone takes it back to its last checkpoint.
+          const k = this.karts.get(e.slot)!;
+          if (k.respawnTime <= 0 && !k.flight) {
+            this.startRespawn(e.slot, k);
+            events.push({ kind: 'respawn', slot: e.slot });
+          }
+          continue; // the UI only needs the respawn
+        }
         events.push(e);
       }
     }
