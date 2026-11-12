@@ -193,6 +193,17 @@ export type HazardEvent =
 * **Audio**: sound ids `hazardWarn`, `geyser`, `bridgeBell`, `bridgeMove`, `gust`, `roller`, `hazardHit` (synth recipes in `synth.ts`, mapping in `mapping.ts`): play only when a human slot is in `near`, or when the human is the one hit.
 * **Tests**: pose is periodic and pure; hits and misses where expected; a kart parked in a geyser/roller path is hit once per cycle (invuln respected); bots finish every track with hazards on every difficulty.
 
+### Hazards + Ember Peaks: what is implemented (hazards agent)
+
+* **Data**: `src/track/hazardTypes.ts` (`GeyserDef`, `DrawbridgeDef`, `GustDef`, `RollerDef`, union `HazardDef`), `TrackDef.hazards`.
+* **Sim** (`src/sim/hazards/`): `types.ts` (`Hazard`, `HazardPose`, `HazardEvent`, `BotAdvice`), `cycle.ts` (`cyclePose`: idle, warn, active; the cycle always ENDS with the dangerous part, `phase` slides it), `geyser.ts`, `registry.ts` (kind -> factory; `drawbridge`, `gust`, `roller` throw "not built yet" only when a track uses them; replace the `notBuilt(...)` entry with a factory), `system.ts` (`HazardSystem`). Add a kind: write a class implementing `Hazard`, one line in the registry, one view file in `src/render/hazards/`.
+* **World** (`world.ts`): `world.hazards` (null without hazards), `step(race.time, ...)` right after kart physics (not during the countdown), `wrapGround` handed to `stepKart`, `HazardEvent`s are `WorldEvent`s.
+* **Bots** (`bots.ts`): `dangerAhead(k, track, time, lane)` returns `steer` (sideways shift in metres, + = right, from the kart's current position) and `brake` (0..1). The bot moves its line (smoothed) or lifts / brakes when every lane is blocked. Easy bots react at 75 %, hard at 100 %.
+* **Geyser**: hit radius = radius + 0.9 m, only while `active`, `spinOut` + `vel.y = 7` pop; invulnTime / starTime / respawn / cannon flight protect; karts more than 4 m above or 3 m below it are safe (overpasses).
+* **Render** (`src/render/hazards/`): `HazardViews.update(time, focus)`, `geyserView.ts` (instanced scorch, crack, light halo, lava column with HDR colour; `geyserLook` is the pure animation curve). `game.ts` calls it with `race.time - (1 - alpha) * SIM_DT`.
+* **Audio**: ids `hazardWarn, geyser, bridgeBell, bridgeMove, gust, roller, hazardHit`; `hazardSound(type, fire)` in `mapping.ts` picks the sound per kind; warn/fire play only if a human slot is in `near`; `hazardHit` only for the human who was hit.
+* **Ember Peaks** (`emberPeaks.ts`): points are built from a named `route` list (`at('name')` gives the control-point position). Measured: 1958 m, 77 % curved, longest straight 126 m (the chasm run-up), 1584 degrees of turning, 28 tight corners (R < 60 m, minimum radius about 18 m), height range 31 m. Five slalom pairs of geysers (period 7 s, staggered phases), walls on the facing sides of the parallel legs, cannon, ridge cliffs, chasm and boost pads kept.
+
 ### Who owns what (wave 4)
 
 | Agent | Owns |

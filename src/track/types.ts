@@ -95,6 +95,8 @@ export interface BlockDef {
   color: string;
 }
 
+import type { HazardDef } from './hazardTypes';
+
 export interface TrackDef {
   name: string;
   /** One-line description for menus and docs. */
@@ -160,4 +162,6 @@ export interface TrackDef {
   bridges?: BridgeDef[];
   cannons?: CannonDef[];
   shortcuts?: ShortcutDef[];
+  /** Timed dangers and moving parts (geysers, drawbridges...). Their state depends only on the race clock; see src/sim/hazards/. */
+  hazards?: HazardDef[];
 }

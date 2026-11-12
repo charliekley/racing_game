@@ -16,6 +16,8 @@ export const SOUND_IDS = [
   'hit', 'hitNova', 'blocked', 'jumbled', 'itemDestroyed',
   'cannonFire', 'cannonLand', 'fall', 'drone',
   'lap', 'finalLap', 'finishWin', 'finish', 'resultsJingle',
+  // Track hazards (wave 4). Only ever append to this list.
+  'hazardWarn', 'geyser', 'bridgeBell', 'bridgeMove', 'gust', 'roller', 'hazardHit',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -114,6 +116,12 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [cue('cannonLand')];
     case 'respawn':
       return [cue('fall'), cue('drone', 0.8)];
+    case 'hazardWarn':
+    case 'hazardFire':
+      return hazardCues(ev, e.kind === 'hazardFire', ctx);
+    case 'hazardHit':
+      // Only the person who got hit hears the sizzle (bots being hit make no sound).
+      return slot !== undefined && ctx.isHuman(slot) ? [cue('hazardHit')] : [];
     case 'lap': {
       // `lap` = the lap just completed; the next lap is the last one when lap + 1 === totalLaps.
       const out: Cue[] = [cue('lap')];
@@ -124,6 +132,35 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [cue(ev.place === 1 ? 'finishWin' : 'finish')];
     default:
       return [];
+  }
+}
+
+/**
+ * Sounds of a hazard warning (`fire` = false) or going off (`fire` = true). They play only when a HUMAN kart is
+ * near the hazard (the event's `near` list, within 150 m): nobody wants to hear lava from the other side of the map.
+ * The cue's `slot` is that human, so the sound pans toward their viewport.
+ */
+function hazardCues(ev: Record<string, any>, fire: boolean, ctx: MapContext): Cue[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const near: number[] = Array.isArray(ev.near) ? ev.near : [];
+  const human = near.find((s) => ctx.isHuman(s));
+  if (human === undefined) return [];
+  const id = hazardSound(String(ev.type), fire);
+  return id ? [{ id, gain: 1, rate: 1, slot: human }] : [];
+}
+
+/** Which sound a hazard kind makes when it warns / fires. Null = silent at that moment. */
+export function hazardSound(type: string, fire: boolean): SoundId | null {
+  switch (type) {
+    case 'geyser':
+      return fire ? 'geyser' : 'hazardWarn'; // rumble and crackle, then the eruption
+    case 'drawbridge':
+      return fire ? 'bridgeMove' : 'bridgeBell'; // bell before it moves, machinery while it moves
+    case 'gust':
+      return fire ? null : 'gust'; // the rising whistle is the warning; the gust itself is already audible
+    case 'roller':
+      return fire ? null : 'roller'; // rumbling snowball
+    default:
+      return null;
   }
 }
 

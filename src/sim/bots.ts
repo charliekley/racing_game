@@ -166,6 +166,8 @@ export class Bot {
   private reverseUntil = 0;
   // Dodging
   private avoid = 0;
+  /** Smoothed sideways shift (m) of the racing line that steers around hazards. */
+  private hazardShift = 0;
   // Items
   private tapLeft = 0;
   private tapBackward = false;
@@ -219,8 +221,16 @@ export class Bot {
     // Not on a shortcut or right before its junction: there the line must stay exactly on the branch.
     const sNow = track.project(k.pos.x, k.pos.z, k.trackIndex);
     const nearFork = sNow.route > 0 || track.branches.some((b) => track.deltaS(sNow.s, b.s0) > -15 && track.deltaS(sNow.s, b.s0) < 70);
-    const lane = this.style.lane + (nearFork ? 0 : this.dodge(world, k) * this.skill.dodge);
+    let lane = this.style.lane + (nearFork ? 0 : this.dodge(world, k) * this.skill.dodge);
     const half = track.def.width / 2 - 2.2;
+    // --- Hazards (lava geysers...): swing to a free lane, or lift when every lane is blocked ---
+    // The advice is a function of the race clock, so bots "see" the same eruptions as the players.
+    // Easy bots react only partly (care 0.75), so they are sometimes caught; hard bots almost never.
+    const care = 0.5 + 0.5 * this.skill.dodge;
+    const hazard = world.hazards && !nearFork ? world.hazards.dangerAhead(k, track, race.time, clamp(lane, -half, half)) : { brake: 0, steer: 0 };
+    const hazardTarget = hazard.steer !== 0 ? sNow.d + hazard.steer * care - lane : 0;
+    this.hazardShift += (hazardTarget - this.hazardShift) * 0.25;
+    lane += this.hazardShift;
     const style: BotStyle = { ...this.style, pace: this.skill.pace * this.rubber, lane: clamp(lane, -half, half) };
 
     // --- Base driving ---------------------------------------------------------------------
@@ -229,7 +239,12 @@ export class Bot {
     const base = autopilot(sliding ? { ...k, heading: Math.atan2(k.vel.x, k.vel.z) } : k, track, style, world.configOf(this.slot));
     let steer = base.steer;
     let buttons = base.buttons;
-    const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+    // No free lane past a hazard: lift (and brake when it is close) so we arrive after it has finished.
+    if (hazard.brake * care >= 0.5 && k.grounded) {
+      buttons &= ~Buttons.GAS;
+      if (hazard.brake * care >= 0.85 && k.speed > 12) buttons |= Buttons.BRAKE;
+    }
+    const p =track.project(k.pos.x, k.pos.z, k.trackIndex);
     const ahead = (o: number) => track.sampleAhead(p.route, p.i, o).curvature;
 
     // --- Jumbled (steering flipped by ink): steer the opposite way. Easy bots take a second to work it out. ---

@@ -129,12 +129,15 @@ const CLASS_REPS: Record<'light' | 'medium' | 'heavy', number[]> = { light: [0, 
 
 describe.each(TRACKS.map((t) => [t.name, t] as const))('class balance on %s', (_name, def) => {
   const track = new Track(def);
+  // The plain autopilot (used by the first two tests) cannot see track hazards and would get spun out by geysers at
+  // random, which measures luck, not handling. So those tests drive the same track without its hazards.
+  const handlingTrack = new Track({ ...def, hazards: undefined });
   const results = new Map<string, number>(); // "c:k" -> time
 
   it('all 8 characters x 4 kart bodies finish a lap', () => {
     for (let c = 0; c < CHARACTERS.length; c++)
       for (let k = 0; k < KART_BODIES.length; k++) {
-        const t = lapTime(track, 1, { character: c, kart: k });
+        const t = lapTime(handlingTrack, 1, { character: c, kart: k });
         results.set(`${c}:${k}`, t);
         expect(t, `${CHARACTERS[c].name} + ${KART_BODIES[k].name}`).toBeLessThan(Infinity);
       }
@@ -147,7 +150,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('class balance on %s', (_
   it('light, medium and heavy lap times are within 4% of each other', () => {
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     const byClass = {} as Record<string, number>;
-    for (const [cls, chars] of Object.entries(CLASS_REPS)) byClass[cls] = mean(chars.map((c) => lapTime(track, 1, { character: c, kart: 0 })));
+    for (const [cls, chars] of Object.entries(CLASS_REPS)) byClass[cls] = mean(chars.map((c) => lapTime(handlingTrack, 1, { character: c, kart: 0 })));
     const times = Object.values(byClass);
     const spread = (Math.max(...times) - Math.min(...times)) / Math.min(...times);
     if (process.env.PRINT_LAPS) console.log(def.name, byClass, `spread ${(spread * 100).toFixed(2)}%`);

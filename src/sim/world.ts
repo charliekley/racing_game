@@ -12,6 +12,8 @@ import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import { Colliders } from './colliders';
 import type { Ground } from './ground';
 import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartState } from './kart';
+import { HazardSystem } from './hazards/system';
+import type { HazardEvent } from './hazards/types';
 import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
 import { Race, type RaceEvent } from './race';
@@ -32,6 +34,7 @@ export type WorldEvent =
   | { kind: 'respawn'; slot: number }
   | ItemEvent
   | CannonEvent
+  | HazardEvent
   | StyleEvent
   | (KartEvent & { slot: number });
 
@@ -54,6 +57,8 @@ export class World {
   items: ItemSystem | null = null;
   /** Solid scenery (trees, houses, grandstands…). Built from the scenery plan in startRace unless set before. */
   colliders: Colliders | null = null;
+  /** Track hazards such as lava geysers (null when the track has none). Pure functions of the race clock. */
+  hazards: HazardSystem | null = null;
   /** Slipstream charges (null until a race starts). */
   slip: SlipstreamSystem | null = null;
   /** Remembers tricks / mini-turbos / slingshots for the style combo. */
@@ -112,6 +117,7 @@ export class World {
     this.respawnTargets.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
+    this.hazards = this.track.def.hazards?.length ? new HazardSystem(this.track) : null;
     this.slip = new SlipstreamSystem();
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
     this.items.configOf = (slot) => this.configOf(slot);
@@ -125,6 +131,8 @@ export class World {
     const inputs = new Map<number, ControlInput>();
     for (const slot of this.karts.keys()) inputs.set(slot, getInput(slot));
     const frozen = this.race?.phase === 'countdown';
+    // Hazards may replace the ground under karts (a raised drawbridge); otherwise this is just `this.ground`.
+    const ground = this.hazards ? this.hazards.wrapGround(this.ground) : this.ground;
 
     for (const [slot, kart] of this.karts) {
       this.prevKarts.set(slot, cloneKart(kart));
@@ -133,7 +141,7 @@ export class World {
         this.lowerByCarrier(slot, kart);
         continue;
       }
-      for (const e of stepKart(kart, inputs.get(slot)!, this.ground, SIM_DT, this.configOf(slot))) {
+      for (const e of stepKart(kart, inputs.get(slot)!, ground, SIM_DT, this.configOf(slot))) {
         events.push({ ...e, slot });
         if (e.kind === 'trickBoost') this.noteStyle(slot, 'trick', kart, events);
         if (e.kind === 'miniTurbo') this.noteStyle(slot, 'miniTurbo', kart, events);
@@ -154,6 +162,8 @@ export class World {
         }
       }
     }
+    // Hazards act after kart physics, on the race clock (identical for every viewer and bot).
+    if (this.hazards && this.race && !frozen) events.push(...this.hazards.step(this.race.time, this.karts, (slot) => this.configOf(slot)));
     // Launch cannons: capture, fly and land karts; a landing credits the skipped checkpoints.
     if (this.track && !frozen) {
       for (const e of stepCannons(this.track, this.karts, SIM_DT)) {
