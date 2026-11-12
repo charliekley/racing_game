@@ -247,7 +247,8 @@ export class TrackView {
       const has = (p: TrackSample) => (side < 0 ? p.wallLeft : p.wallRight);
       for (const run of runs(track.samples, has)) {
         // A wall on a cliff side stands at the cliff edge (like the collision wall does).
-        const wallD = (p: TrackSample) => side * Math.min(outer, track.cliffEdgeAt(p.s, side));
+        // On a bridge the parapet stands at the deck edge (like the collision wall: Track.wallsAt).
+        const wallD = (p: TrackSample) => side * Math.min(track.onBridge(p.s) ? hw + CURB_WIDTH : outer, track.cliffEdgeAt(p.s, side));
         const m = add(ribbon(run, false, (p) => BARRIER_PROFILE.map(([dIn, h]) => ({ d: wallD(p) - side * dIn, h })), 6), barrierMat);
         m.castShadow = true;
         const pts: THREE.Vector3[] = [];
