@@ -1,5 +1,6 @@
 /**
- * Race intro: a short camera flyover of the track before the countdown.
+ * Race intro: a slow camera flyover of the track before the countdown, shown FULL SCREEN
+ * (one camera for everybody); the game switches to split screen when it ends.
  *
  * While it plays, the game does not advance the simulation (karts sit on the
  * grid anyway), so the 3-2-1 countdown starts only after the flyover. The
@@ -65,16 +66,18 @@ export class Flyover {
   /**
    * Replace the camera's pose (already set by the chase camera) with the
    * flyover pose, blending back to the chase pose at the end.
-   * @param variant 0..3: each player's viewport gets a slightly different shot
+   * @param variant 0..3: a slightly different shot (side and height)
+   * @param blend   true: ease into the chase camera's pose at the end (single player keeps the same view);
+   *                false: keep the flyover pose to the end (the host cuts to split screen afterwards)
    */
-  apply(camera: THREE.PerspectiveCamera, track: Track, variant: number): void {
+  apply(camera: THREE.PerspectiveCamera, track: Track, variant: number, blend = true): void {
     if (this.t === null) return;
     const T = CAMERA.introSeconds;
     const u = this.t / T;
     const S = track.samples;
     const n = S.length;
-    // Travel from ~70% round the lap up to the start line (index n == index 0).
-    const fi = n * (0.68 + 0.32 * smooth(u * 0.9 + 0.1 * u));
+    // Glide over the last ~22% of the lap up to the start line (index n == index 0): slow enough to take it in.
+    const fi = n * (0.78 + 0.22 * smooth(u * 0.9 + 0.1 * u));
     const i0 = Math.floor(fi) % n;
     const i1 = (i0 + 1) % n;
     const f = fi - Math.floor(fi);
@@ -96,7 +99,7 @@ export class Flyover {
     camera.position.copy(this.pos);
     camera.lookAt(this.look);
     this.flyQuat.copy(camera.quaternion);
-    const w = smooth((this.t - (T - 0.9)) / 0.9);
+    const w = blend ? smooth((this.t - (T - 0.9)) / 0.9) : 0;
     camera.position.lerp(this.chasePos, w);
     camera.quaternion.copy(this.flyQuat).slerp(this.chaseQuat, w);
     camera.updateMatrixWorld();

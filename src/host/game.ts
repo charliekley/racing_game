@@ -148,6 +148,10 @@ export class Game {
   private fx: GameFx;
   /** The pre-race camera flyover (skipped with ?drive unless ?intro=1). */
   private flyover = new Flyover();
+  /** Camera for the full-screen intro (with several players there is no single chase camera to borrow). */
+  private readonly introCam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 2000);
+  /** The whole canvas as a viewport rect (the intro is drawn full screen). */
+  private static readonly FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
   private camState = newCameraState();
   private introTitle: HTMLElement | null = null;
   /** Was each item box active last frame? (to spot the moment one is smashed) */
@@ -512,7 +516,28 @@ export class Game {
     const size = this.renderer.getSize(this.sizeScratch); // reused vector: no allocation in the frame loop
     if (sharedShadow) this.renderer.shadowMap.needsUpdate = true;
     this.pipeline.beginFrame();
-    for (const v of this.views) {
+    // Intro flyover: ONE full-screen picture. With one player the flyover eases into that player's chase
+    // camera; with split screen it holds its shot and the view simply cuts to the split screen afterwards.
+    if (intro) {
+      const r = toViewport(Game.FULL, size.x, size.y);
+      const solo = this.views.length === 1;
+      const cam = solo ? this.views[0].chase.camera : this.introCam;
+      if (solo) {
+        const v = this.views[0];
+        const k = this.world.karts.get(v.slot)!;
+        v.chase.update(v.kart.pose, dt, this.camState, (x, z) => this.track.sample(x, z, k.trackIndex)?.height ?? null);
+      }
+      cam.aspect = r.w / Math.max(1, r.h);
+      cam.updateProjectionMatrix();
+      this.flyover.apply(cam, this.track, 0, solo);
+      // Aim the shadow box at what the flyover camera looks at (the karts are far away).
+      const fwd = cam.getWorldDirection(this.dirScratch);
+      followWithSun(this.sun, cam.position.x + fwd.x * 30, cam.position.z + fwd.z * 30, this.quality.shadowRadius + 20);
+      this.renderer.shadowMap.needsUpdate = true;
+      this.fx.beginView(cam, r.h * this.renderer.getPixelRatio());
+      this.pipeline.renderView(this.scene, cam, r.x, r.y, r.w, r.h);
+    }
+    for (const v of intro ? [] : this.views) {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
@@ -526,7 +551,6 @@ export class Game {
       cs.finished = racer.finished;
       cs.driftDir = kart.driftDir;
       v.chase.update(v.kart.pose, dt, cs, ground);
-      if (intro) this.flyover.apply(v.chase.camera, this.track, v.slot);
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
         const fwd = v.chase.camera.getWorldDirection(this.dirScratch);

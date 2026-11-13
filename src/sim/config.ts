@@ -269,6 +269,6 @@ export const CAMERA = {
   orbitDistance: 6.5,
   orbitHeight: 2.4,
   orbitSpeed: 0.55,
-  /** Race intro flyover length (s). */
-  introSeconds: 3.2,
+  /** Race intro flyover length (s). Long and slow: one full-screen shot of the track before the split screen. */
+  introSeconds: 7,
 } as const;
