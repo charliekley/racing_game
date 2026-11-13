@@ -213,16 +213,19 @@ export const docksideLoop: TrackDef = {
   bridges: [{ from: 36, to: 74 }],
   shortcuts: [
     {
-      // Dirt U-turn through the inside of the west lobe, behind the warehouses.
+      // Dirt U-turn through the inside of the west lobe, behind the warehouses. It is only a dirt path: it starts
+      // beside the kerb of the west chicane, cuts across the inside of the lobe, then hugs the inside of the
+      // hairpin and merges back into the road's edge at a shallow angle (see sim/shortcuts.ts).
       from: 80,
       to: 96,
       points: [
         [-252, 12],
-        [-274, -22],
-        [-276, -62],
-        [-264, -100],
+        [-274, -20],
+        [-286, -48],
+        [-294, -72],
+        [-288, -88],
+        [-279, -101],
       ],
-      surface: 'dirt',
       width: 11,
     },
   ],

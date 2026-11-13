@@ -14,7 +14,7 @@ import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 import { CANNON, resolveCannons, type ResolvedCannon } from './cannon';
 import { branchRoute, mainRoute, type RouteLine } from './routes';
-import { buildBranches, projectOnMain, projectWithBranches, sampleAhead, ROUTE_STRIDE, withBranchField, type Branch } from './shortcuts';
+import { buildBranches, projectOnMain, projectWithBranches, sampleAhead, ROUTE_STRIDE, type Branch } from './shortcuts';
 import { LANDING_LENGTH, landingHeight, shapeHeight, type RampShape } from './jumps';
 
 /** Distance between centerline samples (m). */
@@ -266,9 +266,6 @@ export class Track implements Ground {
       });
     }
 
-    // 5b) Shortcut branches (need the main samples and sAt; the terrain below blends toward them too).
-    this.branches = buildBranches(this);
-
     // 6) Features.
     for (const r of def.ramps) {
       const s0 = this.sAt(r.at);
@@ -297,7 +294,8 @@ export class Track implements Ground {
     }
 
     // Terrain: active when the def asks for it or the track has bridges (they need ground to be above).
-    const terrainOn = def.terrain !== undefined || this.bridges.length > 0;
+    // (Shortcuts are dirt paths draped on the terrain, so they need it too.)
+    const terrainOn = def.terrain !== undefined || this.bridges.length > 0 || (def.shortcuts?.length ?? 0) > 0;
     let field: RoadField | null = null;
     if (terrainOn) {
       // Segments touching a bridge are left out of the road blend: under a bridge the ground is natural.
@@ -308,8 +306,9 @@ export class Track implements Ground {
       const influence = reach + TERRAIN_SKIRT + (def.terrain?.blend ?? TERRAIN_BLEND);
       field = new RoadField(S, skip, influence, spacing);
     }
-    // Shortcut roads shape the ground like the main road does.
-    this.terrain = new Terrain(def.terrain, terrainOn, field && withBranchField(this, field, reach), reach, (hit) => this.roadLevel(hit));
+    this.terrain = new Terrain(def.terrain, terrainOn, field, reach, (hit) => this.roadLevel(hit));
+    // Shortcut dirt paths follow the terrain (and nudge it a little); they need the terrain, the main samples and sAt.
+    this.branches = buildBranches(this);
     for (const b of def.boostPads) {
       const s0 = this.sAt(b.at);
       const c = (b.offset * def.width) / 2;
@@ -532,24 +531,13 @@ export class Track implements Ground {
     return y + lift * (1 - f);
   }
 
-  /** Road/strip level at a nearest-segment hit (what the terrain blends toward). */
+  /** Main-road/strip level at a nearest-segment hit (what the terrain blends toward). */
   private roadLevel(hit: RoadHit): number {
-    let level = this.roadLevelOf(hit);
-    // Overlapping roads (shortcut fork / lip): never rise above any of them.
-    if (hit.others) for (const o of hit.others) level = Math.min(level, this.roadLevelOf(o));
-    return level;
-  }
-
-  private roadLevelOf(hit: RoadHit): number {
-    const S = hit.route ? this.branches[hit.route - 1].samples : this.samples; // shortcut branches have their own samples
-    const a = S[hit.i];
-    const b = S[(hit.i + 1) % S.length];
-    let y = a.y + (b.y - a.y) * hit.u;
-    // A branch's kicker is built ON the ground: the terrain follows the ground level under it, not its top.
-    if (hit.route) y -= this.branches[hit.route - 1].kickAt((hit.i + hit.u) * this.branches[hit.route - 1].spacing);
+    const a = this.samples[hit.i];
+    const b = this.samples[(hit.i + 1) % this.samples.length];
+    const y = a.y + (b.y - a.y) * hit.u;
     const bank = a.bank + (b.bank - a.bank) * hit.u;
-    const half = hit.route ? (a.width + (b.width - a.width) * hit.u) / 2 : this.def.width / 2;
-    return Track.groundLevel(y, bank, half, hit.d, this.def.offroadWidth);
+    return Track.groundLevel(y, bank, this.def.width / 2, hit.d, this.def.offroadWidth);
   }
 
   /**
@@ -588,21 +576,11 @@ export class Track implements Ground {
   }
 
   /**
-   * Ground on a shortcut branch: banked road (a dirt branch counts as 'offroad' for speed),
-   * then the off-road strip, then the terrain. No ramps, gaps, cliffs or bridges here.
+   * Ground on a shortcut dirt path: simply the terrain (the path is draped on it), counted as off-road for speed.
+   * No ramps, gaps, cliffs or bridges here.
    */
   private branchSurfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
-    const hw = p.width / 2;
-    const ad = Math.abs(p.d);
-    const br = this.branches[p.route - 1];
-    if (ad <= hw + CURB_WIDTH) {
-      const dirt = br.isDirt(p.i);
-      return { height: p.y + Track.bankLift(p.bank, hw, p.d), surface: dirt ? 'offroad' : 'road' };
-    }
-    const height =
-      this.terrain.enabled && x !== undefined && z !== undefined && ad > hw + this.def.offroadWidth
-        ? this.terrain.height(x, z)
-        : Track.groundLevel(p.y - br.kickAt(((p.s - br.s0 + this.length) % this.length) * (br.length / br.span)), p.bank, hw, p.d, this.def.offroadWidth);
+    const height = x !== undefined && z !== undefined ? this.terrain.height(x, z) : p.y;
     return { height, surface: 'offroad' };
   }
 

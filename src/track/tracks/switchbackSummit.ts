@@ -190,7 +190,7 @@ export const switchbackSummit: TrackDef = {
       { x: -140, z: 262, radius: 105, height: 58 }, // an open snow slope rising on the left of the downhill (points 59-72): the snowballs roll down it
       { x: -240, z: 235, radius: 100, height: 52 }, // ...continuing along the road
     ],
-    blend: 18,
+    blend: 40,
   },
   hazards: [
     // period 9 s, staggered: a ball crosses somewhere every ~2.3 s. Each warns ~1.5 s up the slope first.

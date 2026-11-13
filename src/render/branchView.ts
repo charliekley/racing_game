@@ -1,16 +1,18 @@
 /**
- * Meshes for shortcut branch roads (see sim/shortcuts.ts), built from the same samples the
- * physics uses: banked road, curbs, off-road strips, walls, plus a small fork marker (chevron sign
- * and a row of cones at the split).
+ * Meshes for shortcut dirt paths (see sim/shortcuts.ts), built from the same samples and the same terrain
+ * height the physics uses.
  *
- * Near a fork the branch overlaps the main road for a while. Its road is drawn a hair above the
- * main road (and with a polygon offset, so it does not flicker); its curbs and strips are only
- * drawn where they do not lie on the main road.
+ * A path is only a dirt surface "draped" on the terrain: every vertex sits DIRT_LIFT above `terrain.height`,
+ * so it can never float or sink. Its soft edges fade into the grass/snow (vertex alpha), it fades in over
+ * the first metres and out over the last (it emerges from the verge and melts back into it), and it is
+ * hidden over the main road's tarmac and kerb, so the main road is untouched. Plus the tire barriers the
+ * def asked for, and a small fork marker (chevron sign and cones) on the verge beside the main road.
  */
 import * as THREE from 'three';
 import type { Branch } from '../sim/shortcuts';
+import { DIRT_LIFT } from '../sim/shortcuts';
 import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
-import { curbTexture, dirtTexture, grassTexture, roadTexture, chevronSignTexture, wallTexture } from './textures';
+import { dirtTexture, chevronSignTexture, wallTexture } from './textures';
 
 interface Edge {
   d: number;
@@ -35,153 +37,111 @@ function ranges(count: number, pred: (i: number) => boolean): [number, number][]
   return out.filter(([a, b]) => b > a);
 }
 
+const smooth01 = (t: number) => {
+  const c = Math.max(0, Math.min(1, t));
+  return c * c * (3 - 2 * c);
+};
+
+/** Width of the soft, fading edge on each side of the path (m). */
+const SOFT_EDGE = 2.6;
+/** Vertices across the path (odd, so there is one on the centerline). */
+const ACROSS = 13;
+/** The path is this fraction of its full width right at its ends and widens to the full width over FLARE metres. */
+const END_WIDTH_FRACTION = 0.4;
+const FLARE = 22;
+/** Metres over which the dirt fades in / out at its two ends. */
+const FADE = 5;
+
 /**
- * Main-road samples whose kerb lies under a branch road (where a shortcut opens through the verge).
- * trackView leaves the kerb out there: it is 12 cm tall and would poke through the branch road.
- * Returns, per side (-1 / 1), the set of covered main samples.
+ * The dirt surface of one path as a single mesh: a ribbon across the path, draped on the terrain.
+ * Vertex colour carries the alpha (white, fading to nothing at the soft edges, at the two ends and over the main road).
  */
-export function mainKerbCovered(track: Track): (side: number) => Set<TrackSample> {
-  const sets = new Map<number, Set<TrackSample>>([[-1, new Set()], [1, new Set()]]);
-  const hw = track.def.width / 2;
-  for (const b of track.branches) {
-    for (const p of track.samples) {
-      for (const side of [-1, 1]) {
-        // Middle of the kerb band, on the main road's level.
-        const x = p.x + p.rx * side * (hw + CURB_WIDTH / 2);
-        const z = p.z + p.rz * side * (hw + CURB_WIDTH / 2);
-        for (let k = 0; k < b.samples.length - 1; k++) {
-          const a = b.samples[k];
-          const c = b.samples[k + 1];
-          if (Math.abs(a.y - p.y) > 1.2) continue;
-          const ex = c.x - a.x;
-          const ez = c.z - a.z;
-          const u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez || 1)));
-          const half = (a.width + (c.width - a.width) * u) / 2;
-          if (Math.hypot(a.x + ex * u - x, a.z + ez * u - z) < half + 0.3) {
-            sets.get(side)!.add(p);
-            break;
-          }
-        }
+function dirtGeometry(track: Track, b: Branch): THREE.BufferGeometry {
+  const S = b.samples;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const half = S[0].width / 2;
+  let dist = 0;
+  S.forEach((p, k) => {
+    if (k > 0) dist += Math.hypot(p.x - S[k - 1].x, p.z - S[k - 1].z);
+    const along = k * b.spacing;
+    // Narrow at the very ends (where the path touches the main road), full width in between.
+    const flare = Math.min(smooth01(along / FLARE), smooth01((b.length - along) / FLARE));
+    const body = half * (END_WIDTH_FRACTION + (1 - END_WIDTH_FRACTION) * flare);
+    const extent = body + SOFT_EDGE;
+    const lengthAlpha = smooth01(along / FADE) * smooth01((b.length - along) / FADE);
+    for (let j = 0; j < ACROSS; j++) {
+      const t = (2 * j) / (ACROSS - 1) - 1; // -1 .. 1 across the path
+      const l = t * extent;
+      const x = p.x + p.rx * l;
+      const z = p.z + p.rz * l;
+      let y = track.terrain.height(x, z) + DIRT_LIFT;
+      // Soft edge: solid inside 55 % of the body, fading to nothing at the outside of the soft band.
+      let alpha = 1 - smooth01((Math.abs(l) - body * 0.55) / (extent - body * 0.55));
+      alpha *= lengthAlpha;
+      // Over the main road's tarmac and kerb (same level): hidden, so the main road looks exactly as it would without the path.
+      const m = track.projectOnMain(x, z);
+      if (Math.abs(m.y - y) < 3) {
+        const off = Math.abs(m.d) - (m.width / 2 + CURB_WIDTH);
+        alpha *= smooth01((off - 0.1) / 0.9);
+        if (off < 0.1) y -= 0.3;
+      }
+      pos.push(x, y, z);
+      col.push(1, 1, 1, alpha);
+      uv.push(j / (ACROSS - 1), dist / 10);
+    }
+    if (k < S.length - 1) {
+      for (let j = 0; j < ACROSS - 1; j++) {
+        const q = k * ACROSS + j;
+        idx.push(q, q + 1, q + ACROSS, q + 1, q + ACROSS + 1, q + ACROSS);
       }
     }
-  }
-  return (side) => sets.get(side)!;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); // RGBA: three.js uses the 4th as alpha
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
-
-/** Metres at the end of a branch (run-up + kicker) drawn without curbs and off-road strips. */
-const END_BARE = 30;
 
 export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
   const group = new THREE.Group();
   if (track.branches.length === 0) return group;
   const def = track.def;
-  const mainHalf = def.width / 2 + CURB_WIDTH;
 
-  // Materials are shared by every branch. polygonOffset pulls the branch road toward the camera where it overlaps the main road.
-  const onTop = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
-  const roadMat = new THREE.MeshStandardMaterial({ map: roadTexture(), ...onTop });
-  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTexture(), ...onTop });
-  const curbMat = new THREE.MeshStandardMaterial({ map: curbTexture(), ...onTop });
-  const offTex = grassTexture(def.theme.offroad, 3);
-  offTex.repeat.set(1, 1);
-  const offMat = new THREE.MeshStandardMaterial({ map: offTex });
+  // Dirt: transparent (soft edges), drawn without writing depth and pulled toward the camera a little (polygon offset)
+  // so it never z-fights with the strip or the terrain under it.
+  const dirtMat = new THREE.MeshStandardMaterial({
+    map: dirtTexture(),
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), side: THREE.DoubleSide });
-  // Sides and lip face of the kicker: packed dirt.
-  const kickMat = new THREE.MeshStandardMaterial({ map: dirtTexture(), side: THREE.DoubleSide });
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, cast = false) => {
     const m = new THREE.Mesh(geo, mat);
     m.receiveShadow = true;
     m.castShadow = cast;
     group.add(m);
-  };
-
-  /** Is the point (x, z) at height y clear of the main road (so branch decoration there is not on top of it)? */
-  const clearOfMain = (x: number, z: number, y: number): boolean => {
-    for (const q of track.samples) {
-      if (Math.abs(q.y - y) >= 3) continue; // a different level (bridge): no overlap
-      if ((q.x - x) ** 2 + (q.z - z) ** 2 < (mainHalf + 0.4) ** 2) return false;
-    }
-    return true;
+    return m;
   };
 
   for (const b of track.branches) {
     const S = b.samples;
     const count = S.length;
-    const lift = (p: TrackSample, d: number) => Track.bankLift(p.bank, p.width / 2, d);
     const hw = (p: TrackSample) => p.width / 2;
-    /** Is the point `d` metres to the side of sample p clear of the main road? */
-    const clearAt = (p: TrackSample, d: number) => clearOfMain(p.x + p.rx * d, p.z + p.rz * d, p.y);
 
-    // Which stretches are dirt (the ends of a dirt branch are still tarmac, like the physics says).
-    const isDirt = (i: number) => b.isDirt(i);
+    add(dirtGeometry(track, b), dirtMat).renderOrder = 1;
 
-    // Tarmac: edge to edge (all of a road branch; the two ends of a dirt branch).
-    for (const [a, c] of ranges(count, (i) => !isDirt(i) || !isDirt(i + 1))) {
-      add(strip(S.slice(a, c + 1), false, (p) => [{ d: -hw(p), h: lift(p, -hw(p)) + 0.04 }, { d: hw(p), h: lift(p, hw(p)) + 0.04 }], 12), roadMat);
-    }
-    // Dirt: packed earth over the road AND curb width.
-    for (const [a, c] of ranges(count, (i) => isDirt(i))) {
-      const run = S.slice(a, Math.min(count, c + 2)); // one more sample so it meets the tarmac end
-      add(strip(run, false, (p) => [{ d: -hw(p) - CURB_WIDTH, h: lift(p, -hw(p)) + 0.045 }, { d: hw(p) + CURB_WIDTH, h: lift(p, hw(p)) + 0.045 }], 10), dirtMat);
-    }
-
-    // The last stretch (run-up + kicker) stands alone beside the main road: no curbs or strips there, the terrain shows.
-    const endStart = Math.floor((b.length - END_BARE) / b.spacing);
-    // Kicker: the road surface already rises (the samples carry the height); close its sides and lip with solid dirt.
-    const kStart = b.kick.findIndex((h) => h > 0) - 1;
-    if (kStart >= 0) {
-      const KS = S.slice(kStart);
-      for (const side of [-1, 1]) {
-        add(strip(KS, false, (p) => {
-          const k = b.kick[S.indexOf(p)];
-          return [{ d: side * hw(p), h: lift(p, side * hw(p)) + 0.04 }, { d: side * hw(p), h: -k - 0.4 }];
-        }, 2), kickMat);
-      }
-      // Lip face: a vertical quad across the last sample.
-      const e = S[count - 1];
-      const topH = lift(e, hw(e)) + 0.04;
-      const bot = -b.kick[count - 1] - 0.4;
-      const q = new THREE.BufferGeometry();
-      const v = (d: number, h: number) => [e.x + e.rx * d, e.y + h, e.z + e.rz * d];
-      q.setAttribute('position', new THREE.Float32BufferAttribute([...v(-hw(e), topH), ...v(hw(e), topH), ...v(-hw(e), bot), ...v(hw(e), bot)], 3));
-      q.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2));
-      q.setIndex([0, 2, 1, 1, 2, 3]);
-      q.computeVertexNormals();
-      add(q, kickMat);
-    }
-
-    // Curbs (tarmac only) and off-road strips, each side, only where they do not lie on the main road.
-    for (const side of [-1, 1]) {
-      const curbOk = (i: number) => i < endStart && !isDirt(i) && clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH));
-      for (const [a, c] of ranges(count, curbOk)) {
-        add(
-          strip(S.slice(a, c + 1), false, (p): [Edge, Edge] => {
-            const e0 = side * hw(p);
-            const e1 = side * (hw(p) + CURB_WIDTH);
-            const h = lift(p, e0) + 0.05;
-            return side < 0 ? [{ d: e1, h }, { d: e0, h }] : [{ d: e0, h }, { d: e1, h }];
-          }, 3),
-          curbMat,
-        );
-      }
-      const outerD = (p: TrackSample) => hw(p) + def.offroadWidth;
-      const stripOk = (i: number) => i < endStart && clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH)) && clearAt(S[i], side * outerD(S[i]));
-      for (const [a, c] of ranges(count, stripOk)) {
-        add(
-          strip(S.slice(a, c + 1), false, (p): [Edge, Edge] => {
-            const inner = side * (hw(p) + CURB_WIDTH);
-            const out = side * outerD(p);
-            // Slopes from the road edge down to the road's base height, like Track.groundLevel.
-            const hOut = Track.groundLevel(p.y, p.bank, hw(p), out, def.offroadWidth) - p.y + 0.01;
-            const hIn = lift(p, inner) + 0.02;
-            return side < 0 ? [{ d: out, h: hOut }, { d: inner, h: hIn }] : [{ d: inner, h: hIn }, { d: out, h: hOut }];
-          }, 8),
-          offMat,
-        );
-      }
-    }
-
-    // Walls (same tire barriers as the main road), where the def asked for them.
+    // Walls (the same tire barriers as the main road), where the def asked for them.
     for (const side of [-1, 1]) {
       const has = (i: number) => (side < 0 ? S[i].wallLeft : S[i].wallRight);
       for (const [a, c] of ranges(count, has)) {
@@ -189,7 +149,7 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
       }
     }
 
-    group.add(buildForkMarker(b, clearAt));
+    group.add(buildForkMarker(track, b));
   }
   return group;
 }
@@ -199,25 +159,23 @@ let signTex: THREE.CanvasTexture | null = null;
 let markerMats: { post: THREE.Material; board: THREE.Material; back: THREE.Material; cone: THREE.Material; band: THREE.Material } | null = null;
 
 /**
- * The fork marker, deliberately low-key: at the "gore" (the wedge where the branch splits off
- * the main road) a knee-high chevron sign points into the branch, and a short row of traffic
- * cones lines the split. Nothing is written on it: you see the opening and the arrows.
+ * The fork marker, deliberately low-key, on the VERGE beside the main road (never on it): a knee-high
+ * chevron sign a little before the opening, pointing toward the path, and a short row of traffic cones
+ * along the kerb leading up to where the dirt leaves the road. Nothing is written on it.
  */
-function buildForkMarker(b: Branch, clear: (p: TrackSample, d: number) => boolean): THREE.Group {
+function buildForkMarker(track: Track, b: Branch): THREE.Group {
   const g = new THREE.Group();
-  const S = b.samples;
-  // First sample (after the first 6) whose whole road width is clear of the main road.
-  let k = 6;
-  while (k < S.length - 8 && !(clear(S[k], 0) && clear(S[k], -S[k].width / 2 - 1.5) && clear(S[k], S[k].width / 2 + 1.5))) k++;
-  k = Math.min(k, S.length - 8);
-  const p = S[k];
-
-  // Which side of the branch is the main road on? Step outwards on both sides until we hit it.
-  const reach = (side: number) => {
-    for (let d = p.width / 2 + 2; d < 60; d += 2) if (!clear(p, side * d)) return d;
-    return Infinity;
+  const S = track.samples;
+  const n = S.length;
+  const side = b.startSide; // +1 = the path leaves on the right of the main road
+  const edge = track.def.width / 2 + CURB_WIDTH;
+  /** A spot on the verge `back` samples before the fork, `out` metres outside the kerb. */
+  const spot = (back: number, out: number) => {
+    const p = S[(((b.fromIdx - back) % n) + n) % n];
+    const x = p.x + p.rx * side * (edge + out);
+    const z = p.z + p.rz * side * (edge + out);
+    return { p, x, z, y: track.terrain.height(x, z) };
   };
-  const mainSide = reach(-1) < reach(1) ? -1 : 1;
 
   markerMats ??= {
     post: new THREE.MeshStandardMaterial({ color: '#4a4f58', roughness: 0.6 }),
@@ -228,45 +186,34 @@ function buildForkMarker(b: Branch, clear: (p: TrackSample, d: number) => boolea
   };
   const M = markerMats;
 
-  // --- Chevron sign at the gore, facing drivers coming along the main road. ---
-  const signD = mainSide * (p.width / 2 + 1.6);
-  const sx = p.x + p.rx * signD;
-  const sz = p.z + p.rz * signD;
+  // --- Chevron sign, facing drivers coming along the main road. ---
+  const sp = spot(8, 1.6);
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.5, 0.14), M.post);
-  post.position.set(sx, p.y + 0.75, sz);
+  post.position.set(sp.x, sp.y + 0.75, sp.z);
   post.castShadow = true;
   g.add(post);
   const board = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), M.board);
-  board.position.set(sx, p.y + 1.45, sz);
-  board.rotation.y = Math.atan2(-p.tx, -p.tz); // face the driver coming along the road
-  // The texture points right. The branch lies on the side away from the main road, so the
-  // arrows should point that way; mirror the board when that is the driver's left.
-  if (-mainSide < 0) board.scale.x = -1;
+  board.position.set(sp.x, sp.y + 1.45, sp.z);
+  board.rotation.y = Math.atan2(-sp.p.tx, -sp.p.tz); // face the driver coming along the road
+  // The texture's arrows point right: mirror the board when the path leaves on the driver's left.
+  if (side < 0) board.scale.x = -1;
   g.add(board);
   const back = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), M.back);
-  back.position.copy(board.position).addScaledVector(new THREE.Vector3(p.tx, 0, p.tz), 0.02);
+  back.position.copy(board.position).addScaledVector(new THREE.Vector3(sp.p.tx, 0, sp.p.tz), 0.02);
   back.rotation.y = board.rotation.y + Math.PI;
   g.add(back);
 
-  // --- Cones along the gore edge, after the sign, where the two roads part (one InstancedMesh per colour). ---
+  // --- Cones along the kerb, just before the opening (one InstancedMesh per colour). ---
   // InstancedMesh = one geometry drawn many times in a single draw call, each with its own matrix.
-  const spots: THREE.Vector3[] = [];
-  for (let j = k + 3; j < S.length - 8 && spots.length < 5; j += 3) {
-    const q = S[j];
-    const d = mainSide * (q.width / 2 + 0.6);
-    if (!clear(q, d)) continue; // this spot is on the main road
-    spots.push(new THREE.Vector3(q.x + q.rx * d, q.y, q.z + q.rz * d));
-  }
-  if (spots.length) {
-    const cones = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.75, 10), M.cone, spots.length);
-    const bands = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.17, 0.21, 0.12, 10), M.band, spots.length);
-    const m = new THREE.Matrix4();
-    spots.forEach((v, i) => {
-      cones.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.375, v.z));
-      bands.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.45, v.z));
-    });
-    cones.castShadow = true;
-    g.add(cones, bands);
-  }
+  const spots = [6, 4, 2].map((back) => spot(back, 0.7));
+  const cones = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.75, 10), M.cone, spots.length);
+  const bands = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.17, 0.21, 0.12, 10), M.band, spots.length);
+  const m = new THREE.Matrix4();
+  spots.forEach((v, i) => {
+    cones.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.375, v.z));
+    bands.setMatrixAt(i, m.makeTranslation(v.x, v.y + 0.45, v.z));
+  });
+  cones.castShadow = true;
+  g.add(cones, bands);
   return g;
 }
