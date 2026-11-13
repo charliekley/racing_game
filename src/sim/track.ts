@@ -117,6 +117,8 @@ export interface Gap {
 export interface BridgeRange {
   s0: number;
   s1: number;
+  /** Railings are drawn (decoration only; see BridgeDef.rails). */
+  rails: boolean;
 }
 /** A stretch where the ground ends beside the road (see CliffDef). */
 export interface CliffRange {
@@ -288,7 +290,7 @@ export class Track implements Ground {
       if (c.mandatory) this.gaps.push({ s0: this.sAt(c.at) + CANNON.padAhead, s1: this.sAt(c.target.at) - CANNON.landBehind, kind: 'sky' });
     }
     const reach = def.width / 2 + def.offroadWidth;
-    for (const b of def.bridges ?? []) this.bridges.push({ s0: this.sAt(b.from), s1: this.sAt(b.to) });
+    for (const b of def.bridges ?? []) this.bridges.push({ s0: this.sAt(b.from), s1: this.sAt(b.to), rails: b.rails ?? true });
     for (const c of def.cliffs ?? []) {
       const edge = c.edge ?? def.width / 2 + CURB_WIDTH + 2;
       this.cliffs.push({ s0: this.sAt(c.from), s1: this.sAt(c.to), side: c.side, edge });

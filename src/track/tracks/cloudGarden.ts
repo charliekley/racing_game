@@ -172,17 +172,18 @@ export const cloudGarden: TrackDef = {
     blend: 14,
   },
   bridges: [
-    { from: 11.2, to: 14.9 }, // A -> B (bridge 1)
-    { from: 49.2, to: 53.8 }, // C -> D (bridge 2)
-    { from: 78.1, to: 82.9 }, // E -> A (bridge 3)
+    { from: 11.2, to: 14.9, rails: false }, // open edges (wind): A -> B (bridge 1)
+    { from: 49.2, to: 53.8, rails: false }, // open edges (wind): C -> D (bridge 2)
+    { from: 78.1, to: 82.9, rails: false }, // open edges (wind): E -> A (bridge 3)
   ],
   hazards: [
-    // WIND GUSTS on the three exposed bridges (no walls): every 5-6 s a gust pushes karts sideways for 1.5 s,
-    // after 1.5 s of warning (streaks, whistle). Alternating directions and different periods/phases, so
-    // the three bridges do not gust in step. Strength 42 m/s^2: see sim/hazards/gust.ts for what it does.
-    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 5, phase: 2 },
-    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 5.5, phase: 4 },
-    { kind: 'gust', from: 78.1, to: 82.9, dir: 1, strength: 42, period: 6, phase: 1 },
+    // WIND GUSTS on the three open-edged bridges (no walls, no railings): every 4-5 s a gust pushes karts
+    // sideways for 1.8 s, after 1.2 s of warning (streaks, whistle). Strong enough (110 m/s^2) to blow an
+    // unsteered kart off the deck: steer into the wind. Alternating directions and different periods/phases,
+    // so the three bridges do not gust in step. See sim/hazards/gust.ts for what it does.
+    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 110, period: 4, phase: 2, warn: 1.2, active: 1.8 },
+    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 110, period: 4.5, phase: 4, warn: 1.2, active: 1.8 },
+    { kind: 'gust', from: 78.1, to: 82.9, dir: 1, strength: 110, period: 5, phase: 1, warn: 1.2, active: 1.8 },
   ],
   // THE CANNON: mandatory. Mouth = the pad at point 58, landing = point 62 on island E (about 195 m away, 175 m of it sky).
   cannons: [{ at: 58, offset: 0, target: { at: 62, offset: 0 }, flightTime: 4.6, apex: 16, mandatory: true }],

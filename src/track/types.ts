@@ -44,6 +44,9 @@ export interface CliffDef {
 export interface BridgeDef {
   from: number;
   to: number;
+  /** Draw railings along the edges (default true). Railings are only decoration: karts never hit them,
+   *  so open-edged bridges (e.g. where the wind can blow you off) should set this to false. */
+  rails?: boolean;
 }
 
 /** A launch cannon: drive into its mouth and you are fired along an arc to the target. */

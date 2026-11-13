@@ -572,8 +572,8 @@ export class TerrainView {
       const r = ss.map((p) => under(surf(p, half)));
       quadStrip(l, r, shade, shade, true);
 
-      // Rounded bridge railings: posts every ~3 m and two smooth rails along each edge.
-      for (const side of [-1, 1]) {
+      // Rounded bridge railings: posts every ~3 m and two smooth rails along each edge (unless the bridge is open-edged).
+      for (const side of b.rails ? [-1, 1] : []) {
         const rail = (h: number) => ss.map((p) => ({ x: p.x + p.rx * side * (half + 0.15), y: surf(p, side * half).y + h, z: p.z + p.rz * side * (half + 0.15) }));
         for (const h of [0.55, 1.05]) {
           const path = rail(h).filter((_, i) => i % 3 === 0 || i === ss.length - 1).map((v) => new THREE.Vector3(v.x, v.y, v.z));
