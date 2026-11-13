@@ -48,29 +48,8 @@ export function isPortrait(): boolean {
   return window.innerHeight > window.innerWidth;
 }
 
-// --- Wake Lock: keep the screen on while playing ---------------------------
-let wakeLock: { release(): Promise<void> } | null = null;
-let wantWakeLock = false;
-
-export async function enableWakeLock(): Promise<void> {
-  wantWakeLock = true;
-  const wl = (navigator as unknown as { wakeLock?: { request(type: 'screen'): Promise<{ release(): Promise<void> }> } }).wakeLock;
-  if (!wl || wakeLock) return;
-  try {
-    wakeLock = await wl.request('screen');
-    (wakeLock as unknown as EventTarget).addEventListener?.('release', () => (wakeLock = null));
-  } catch {
-    /* not allowed right now (e.g. tab hidden); retried on visibility change */
-  }
-}
-
-// The browser drops the wake lock whenever the tab is hidden; take it back.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && wantWakeLock) {
-    wakeLock = null;
-    void enableWakeLock();
-  }
-});
+// --- Wake Lock: keep the screen on while playing (shared with the host page) ---
+export { enableWakeLock } from '../shared/wakeLock';
 
 /** Fullscreen + landscape lock. Works on Android Chrome; iOS Safari ignores it (that's fine). */
 export function tryFullscreenLandscape(): void {

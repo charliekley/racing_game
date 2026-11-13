@@ -27,6 +27,7 @@ import { SeriesHost } from './seriesHost';
 import { MODE_NAMES, SERIES_MODES, sanitizeMode } from './series';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
 import { AudioEngine } from '../audio'; // AUDIO
+import { enableWakeLock } from '../shared/wakeLock';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -450,3 +451,8 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 openRoom().then(showRoom);
+
+// Keep the laptop/TV screen awake while the game page is open (like a video site does).
+// Some browsers only grant it after the user interacts with the page, so also try on the first key/click.
+void enableWakeLock();
+for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, () => void enableWakeLock(), { once: true });
