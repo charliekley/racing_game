@@ -69,6 +69,9 @@ racing_game/
    │  ├─ game.ts               ✅ one race: World + split-screen rendering + loop,
    │  │                           results, phone status + haptics, bot inputs
    │  ├─ viewHud.ts            ✅ per-viewport HUD (position, lap, time, item, toasts)
+   │  ├─ series.ts             ✅ race modes state machine: single / Grand Prix / Loser picks,
+   │  │                           points table, tie-breaks, who picks (pure, tested)
+   │  ├─ seriesHost.ts         ✅ wires series to phones (menu owner, picker) + TV podium / pick strip
    ├─ sim/                     ✅ pure TS, no DOM/Three.js
    │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
    │  ├─ loop.ts               ✅ fixed-timestep accumulator
@@ -118,6 +121,11 @@ racing_game/
     maxRetransmits: 0` (true UDP-like). 8-byte packets: `seq`, `steer`, `buttons`,
     sent at 60 Hz and immediately when a button changes. The host keeps only the
     newest `seq`; lost or late packets are simply superseded.
+* **Race modes**: the host sends every phone a `series` message (mode, track, stage, who owns the
+  menu, standings). Only the menu owner may send `setup` / `series` actions and only the last-place human
+  may send `pick`; the host validates every field (`parseSetup`, `sanitizeTrackIndex`). Track pictures
+  are tiny WebP data URLs, one `tracks` message per card (the PeerJS JSON channel caps a message at ~16 KB),
+  sent only to a phone that asks and may choose.
 * **Identity / rejoin**: each phone stores a random `clientId` in `localStorage`.
   The host maps `clientId → slot`; a phone that reconnects (Wi-Fi blip, page
   reload, screen lock) gets the same slot. While disconnected, its input is

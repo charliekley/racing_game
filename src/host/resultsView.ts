@@ -9,6 +9,8 @@
  */
 
 export interface ResultRow {
+  /** Player slot, used to look up series points. */
+  slot?: number;
   place: number;
   name: string;
   /** Player colour (CSS hex). */
@@ -24,6 +26,21 @@ export interface ResultRow {
   finished: boolean;
 }
 
+/** Extra information for Grand Prix / Loser-picks results (see seriesHost.ts). Absent for a single race. */
+export interface ResultsExtras {
+  /** Small title above "Results", e.g. "GRAND PRIX 2/4". */
+  heading: string;
+  /** Points each slot earned in this race. */
+  gain: Map<number, number>;
+  /** Running standings, best first. */
+  standings: { name: string; color: string; points: number }[];
+  /** Label of the main button (e.g. "NEXT RACE"); empty hides it. */
+  primary: string;
+  secondary: string;
+  /** One line under the buttons, e.g. who picks next. */
+  note: string;
+}
+
 export interface ResultsActions {
   raceAgain(): void;
   changeTrack(): void;
@@ -32,7 +49,13 @@ export interface ResultsActions {
 const ordinalSuffix = (n: number) => (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
 const CONFETTI = ['#ff4d6d', '#ffbe0b', '#3ddc84', '#3a86ff', '#c77dff', '#ff7a1a'];
 
-export function buildResults(container: HTMLElement, rows: ResultRow[], trackName: string, actions: ResultsActions): void {
+export function buildResults(
+  container: HTMLElement,
+  rows: ResultRow[],
+  trackName: string,
+  actions: ResultsActions,
+  extras?: ResultsExtras,
+): void {
   const box = document.createElement('div');
   box.className = 'results-box';
 
@@ -40,10 +63,11 @@ export function buildResults(container: HTMLElement, rows: ResultRow[], trackNam
   head.className = 'res-head';
   head.innerHTML = '<div class="res-flag">RACE COMPLETE</div><h2>Results</h2><div class="res-track"></div>';
   head.querySelector('.res-track')!.textContent = trackName;
+  if (extras) head.querySelector('.res-flag')!.textContent = extras.heading;
   box.appendChild(head);
 
   const list = document.createElement('ol');
-  list.className = 'res-list';
+  list.className = extras ? 'res-list with-pts' : 'res-list';
   rows.forEach((row, i) => {
     const li = document.createElement('li');
     li.className = `res-row${row.place === 1 ? ' winner' : ''}${row.finished ? '' : ' dnf'}`;
@@ -54,7 +78,9 @@ export function buildResults(container: HTMLElement, rows: ResultRow[], trackNam
       <span class="res-dot"></span>
       <span class="res-who"><span class="res-name"></span><span class="res-kart"></span></span>
       <span class="res-time"></span>
-      <span class="res-best"></span>`;
+      <span class="res-best"></span>
+      ${extras ? '<span class="res-pts"></span>' : ''}`;
+    if (extras) li.querySelector('.res-pts')!.textContent = `+${extras.gain.get(row.slot ?? -1) ?? 0}`;
     li.querySelector('.res-place')!.innerHTML = `${row.place}<sup>${ordinalSuffix(row.place)}</sup>`;
     li.querySelector('.res-name')!.textContent = row.name;
     li.querySelector('.res-kart')!.textContent = row.loadoutText;
@@ -67,6 +93,26 @@ export function buildResults(container: HTMLElement, rows: ResultRow[], trackNam
   });
   box.appendChild(list);
 
+  // Grand Prix / Loser picks: the running standings as a row of chips (names are set with textContent).
+  if (extras) {
+    const st = document.createElement('div');
+    st.className = 'res-standings';
+    extras.standings.forEach((r, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'res-chip';
+      chip.style.setProperty('--slot-color', r.color);
+      const rank = document.createElement('b');
+      rank.textContent = String(i + 1);
+      const name = document.createElement('span');
+      name.textContent = r.name;
+      const pts = document.createElement('em');
+      pts.textContent = `${r.points} pts`;
+      chip.append(rank, name, pts);
+      st.appendChild(chip);
+    });
+    box.appendChild(st);
+  }
+
   const actionsEl = document.createElement('div');
   actionsEl.className = 'res-actions';
   const mk = (label: string, key: string, primary: boolean, fn: () => void) => {
@@ -76,12 +122,18 @@ export function buildResults(container: HTMLElement, rows: ResultRow[], trackNam
     b.addEventListener('click', fn);
     return b;
   };
-  actionsEl.append(mk('RACE AGAIN', 'Enter', true, actions.raceAgain), mk('CHANGE TRACK', 'Esc', false, actions.changeTrack));
+  if (!extras) {
+    actionsEl.append(mk('RACE AGAIN', 'Enter', true, actions.raceAgain), mk('CHANGE TRACK', 'Esc', false, actions.changeTrack));
+  } else {
+    if (extras.primary) actionsEl.append(mk(extras.primary, 'Enter', true, actions.raceAgain));
+    actionsEl.append(mk(extras.secondary, 'Esc', false, actions.changeTrack));
+  }
   box.appendChild(actionsEl);
 
   const help = document.createElement('p');
   help.className = 'res-help';
-  help.innerHTML = 'Or tap <b>RACE AGAIN</b> on every phone';
+  if (extras) help.textContent = extras.note;
+  else help.innerHTML = 'Or tap <b>RACE AGAIN</b> on every phone';
   box.appendChild(help);
 
   // A cheap CSS confetti rain behind the box (24 little rectangles).

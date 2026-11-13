@@ -20,7 +20,8 @@ import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera, newCameraState } from '../render/chaseCamera';
 import { GameFx } from '../render/fx/gameFx';
 import { Flyover, introWanted } from '../render/fx/intro';
-import { buildResults, type ResultRow } from './resultsView';
+import { buildResults, type ResultRow, type ResultsExtras } from './resultsView';
+import type { Placing } from './series';
 import { setKartDetail, type KartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
@@ -86,6 +87,11 @@ export interface GameCallbacks {
   /** Results screen buttons (the keyboard keys are handled in main.ts). */
   onRaceAgain?(): void;
   onChangeTrack?(): void;
+  /**
+   * The race just ended: hands over who finished where (every racer, best first). main.ts feeds it to the
+   * Grand Prix / Loser-picks series and may return extra results content (points, standings, button labels).
+   */
+  onRaceResults?(placings: Placing[]): ResultsExtras | undefined;
   /** Adaptive quality: frames stay too slow even at the lowest render scale, so main.ts should drop one preset. */
   onQualityStepDown?(): void;
 }
@@ -920,6 +926,7 @@ export class Game {
       const best = r.lapTimes.length ? Math.min(...r.lapTimes) : Infinity;
       const loadout = sanitizeLoadout(p?.loadout);
       const row: ResultRow = {
+        slot,
         place: r.place ?? 0,
         name: p?.name ?? `P${slot + 1}`,
         color: colorHex(p?.color ?? slot),
@@ -935,11 +942,15 @@ export class Game {
     // Mark the single fastest lap of the race.
     const fastest = Math.min(...rows.map((r) => r.best));
     if (Number.isFinite(fastest)) rows.find((r) => r.best === fastest)!.row.fastest = true;
+    // Series hook: places are taken from the ranking order (always unique, even for DNFs).
+    const placings: Placing[] = race.standings().map((slot, i) => ({ slot, place: i + 1, human: !this.players.isBot(slot) }));
+    const extras = this.callbacks.onRaceResults?.(placings);
     buildResults(
       this.results,
       rows.map((r) => r.row),
       this.track.def.name,
       { raceAgain: () => this.callbacks.onRaceAgain?.(), changeTrack: () => this.callbacks.onChangeTrack?.() },
+      extras,
     );
     this.results.classList.remove('hidden');
   }

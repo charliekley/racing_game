@@ -8,6 +8,7 @@
 import QRCode from 'qrcode';
 import './host.css';
 import './lobby.css'; // title screen + lobby polish (loaded after host.css so it overrides)
+import './series.css'; // race modes: mode chips, podium, loser-picks strip
 import { PeerHostTransport } from '../shared/net/peerTransport';
 import { RoomTakenError } from '../shared/net/transport';
 import type { ItemDisplay } from '../shared/protocol';
@@ -22,6 +23,8 @@ import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
+import { SeriesHost } from './seriesHost';
+import { MODE_NAMES, SERIES_MODES, sanitizeMode } from './series';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
 import { AudioEngine } from '../audio'; // AUDIO
 
@@ -36,6 +39,7 @@ const players = new PlayerManager(transport, keys);
 const audio = new AudioEngine();
 audio.playMusic('lobby');
 if (import.meta.env.DEV) (window as unknown as { __audio?: AudioEngine }).__audio = audio; // debugging aid
+if (import.meta.env.DEV) (window as unknown as { __players?: PlayerManager }).__players = players; // debugging aid (dev server only)
 
 const netStatus = $('net-status');
 function setStatus(text: string, cls: 'ok' | 'warn' | 'bad' | '') {
@@ -219,21 +223,61 @@ const trackEl = $('track');
 trackEl.textContent = track.name;
 const trackPreview = new TrackPreview($<HTMLCanvasElement>('track-map'), $('track-name'), $('track-meta'));
 trackPreview.show(track);
-/** step = +1 next track, -1 previous. */
-function cycleTrack(step = 1) {
-  const i = Math.max(0, TRACKS.indexOf(track));
-  track = TRACKS[(i + step + TRACKS.length) % TRACKS.length];
+/** Make `def` the lobby's selected track (keyboard, TV buttons, or P1's phone all end up here). */
+function selectTrack(def: TrackDef) {
+  track = def;
   trackEl.textContent = track.name;
   trackPreview.show(track);
+  updateModeUi();
   try {
     localStorage.setItem(TRACK_KEY, track.name);
   } catch {
     /* ignore */
   }
+  seriesHost.refresh(); // tell phones
+}
+/** step = +1 next track, -1 previous. */
+function cycleTrack(step = 1) {
+  const i = Math.max(0, TRACKS.indexOf(track));
+  selectTrack(TRACKS[(i + step + TRACKS.length) % TRACKS.length]);
 }
 
-$('track-prev').addEventListener('click', () => cycleTrack(-1));
-$('track-next').addEventListener('click', () => cycleTrack(1));
+// Clicking a button gives it keyboard focus; blur so Enter / arrows keep working for the lobby shortcuts.
+$('track-prev').addEventListener('click', (e) => {
+  cycleTrack(-1);
+  (e.currentTarget as HTMLElement).blur();
+});
+$('track-next').addEventListener('click', (e) => {
+  cycleTrack(1);
+  (e.currentTarget as HTMLElement).blur();
+});
+
+// --- Race mode (single race / Grand Prix / Loser picks) -----------------------
+// The mode is chosen on P1's phone, or here with the up/down arrow keys (or a click). The rules live in
+// series.ts, the glue (what phones are told, podium, pick strip) in seriesHost.ts.
+const modePills = $('mode-pills');
+const modeBtns = SERIES_MODES.map((m) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mode-pill';
+  b.textContent = MODE_NAMES[m];
+  b.addEventListener('click', () => {
+    seriesHost.setMode(m);
+    b.blur();
+  });
+  modePills.appendChild(b);
+  return b;
+});
+/** Highlight the chosen mode; in Grand Prix the track panel says "all tracks" instead of one name. */
+function updateModeUi() {
+  const m = seriesHost.mode;
+  SERIES_MODES.forEach((mode, i) => modeBtns[i].classList.toggle('on', mode === m));
+  $('mode-note').textContent =
+    m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : 'Last place picks the next track';
+  document.querySelector('.track-panel')!.classList.toggle('gp', m === 'gp');
+  if (m === 'gp') $('track-meta').textContent = `Grand Prix: all ${TRACKS.length} tracks in order`;
+  else trackPreview.show(track);
+}
 
 // --- Mute indicator ----------------------------------------------------------
 // The audio engine owns mute (M key, works in the lobby and during a race, saved
@@ -249,6 +293,21 @@ showMute();
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
 const gameEl = $('game');
+const seriesHost: SeriesHost = new SeriesHost({
+  players,
+  tracks: TRACKS,
+  card: (def) => trackPreview.card(def),
+  lobbyTrack: () => track,
+  setLobbyTrack: (i) => selectTrack(TRACKS[i]),
+  onModeChange: () => updateModeUi(),
+  startRace: () => startDriving(),
+  toLobby: () => backToLobby(),
+  gameEl,
+});
+// Dev: ?mode=gp or ?mode=loser picks the mode from the address (handy with ?drive=4).
+const URL_MODE = sanitizeMode(new URLSearchParams(location.search).get('mode'));
+if (URL_MODE) seriesHost.mode = URL_MODE;
+updateModeUi();
 let game: Game | null = null; // created on first use (sets up WebGL)
 let driving = false;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
@@ -256,6 +315,7 @@ let startTimer: ReturnType<typeof setTimeout> | null = null;
 function startDriving() {
   startTimer = null;
   if (players.slots.players.length === 0) return;
+  if (!seriesHost.series) seriesHost.begin(); // starting from the lobby: a new series with the chosen mode and track
   driving = true;
   players.setPhase('countdown');
   $('app').classList.add('hidden');
@@ -269,6 +329,7 @@ function startDriving() {
       // Results screen buttons (same as the Enter / Esc keys).
       onRaceAgain: () => raceAgain(),
       onChangeTrack: () => backToLobby(),
+      onRaceResults: (placings) => seriesHost.onRaceResults(placings),
       onQualityStepDown: () => stepDownQuality(),
     },
     quality,
@@ -276,23 +337,28 @@ function startDriving() {
   // ?quality=... in the address is for testing and measuring: keep that preset exactly as it is (no adaptive scaling).
   if (URL_QUALITY) game.adaptive.enabled = false;
   game.audio = audio; // AUDIO
-  game.setTrack(track);
+  game.setTrack(seriesHost.currentTrack()); // the lobby's track, or the series' next one
   game.botDifficulty = botDifficulty;
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
   // Practice aid: /host/?give=nova (or dash, slick, ricochet, seeker, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');
   game.devItem = give === 'random' || (ITEM_IDS as readonly string[]).includes(give ?? '') ? (give as ItemId | 'random') : null;
   game.start(players.slots.players.map((p) => p.index));
+  seriesHost.refresh(); // phones learn the series state ('racing')
 }
 
-/** From the results screen: same players, new race. */
-function raceAgain() {
-  if (driving && players.slots.phase === 'results') startDriving();
+/**
+ * From the results screen: the next step of the series (same track again, next Grand Prix race, the
+ * loser's pick, the podium, or back to the menu). `fromReady` = every phone tapped READY.
+ */
+function raceAgain(fromReady = false) {
+  if (driving && players.slots.phase === 'results') seriesHost.next(fromReady);
 }
 
 function backToLobby() {
   if (!driving) return;
   driving = false;
+  seriesHost.end();
   players.setPhase('lobby');
   audio.stopKarts(); // AUDIO
   audio.playMusic('lobby');
@@ -303,9 +369,10 @@ function backToLobby() {
 
 players.onLobbyChange.add(() => {
   lobbyView.render();
+  seriesHost.refresh(); // the menu owner may have changed (P1 left / joined)
   if (driving) {
     // Results screen: when every connected player taps RACE AGAIN, go again.
-    if (players.slots.phase === 'results' && players.slots.allReady()) raceAgain();
+    if (players.slots.phase === 'results' && players.slots.allReady()) raceAgain(true);
     return;
   }
   // When everyone is ready, start after a short pause (cancelled if someone un-readies).
@@ -332,6 +399,14 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyQ') cycleQuality();
     if (e.code === 'KeyD') cycleDifficulty();
     if (e.code === 'KeyT') cycleTrack();
+    // Menu without phones: arrows choose track (left/right) and mode (up/down), Enter starts.
+    if (e.code === 'ArrowLeft') cycleTrack(-1);
+    if (e.code === 'ArrowRight') cycleTrack(1);
+    if (e.code === 'Enter' && players.slots.players.length > 0 && !(e.target instanceof HTMLButtonElement)) startDriving();
+    if (seriesHost.key(e.code, true)) e.preventDefault();
+    if (e.code.startsWith('Arrow')) e.preventDefault(); // don't scroll the page
+  } else if (driving && seriesHost.key(e.code, false)) {
+    e.preventDefault(); // Loser picks: arrows / S on the results screen
   }
 });
 
@@ -339,6 +414,7 @@ window.addEventListener('keydown', (e) => {
 // a race; /host/?drive=4 also adds 3 bots (instant 4-way split-screen).
 const driveParam = new URLSearchParams(location.search).get('drive');
 if (driveParam !== null) {
+  if (!URL_MODE) seriesHost.mode = 'single'; // the dev shortcut stays a plain single race unless ?mode= says otherwise
   players.slots.join({ kind: 'keyboard', scheme: 0 }, 'Keys WASD', 2);
   players.addKeyboardInput(0);
   const total = Math.max(1, Math.min(4, Number(driveParam) || 1));

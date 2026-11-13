@@ -196,6 +196,16 @@ Holding it from the very beginning floods the engine. Laps only count if you
 pass every checkpoint in order, so shortcuts across the grass don't work. Hit
 the orange arrow pads for a boost and take the yellow ramp for some air.
 
+### Race modes
+
+The first player's phone (P1, or the next player if P1 leaves) has a button under the top bar that opens the race setup: pick the mode and, with a small map picture per track, the track.
+
+* **Single race**: one track, then back to the menu (Enter / RACE AGAIN repeats it).
+* **Grand Prix**: all tracks in order. Points per place **10 / 7 / 5 / 3** (`GP_POINTS` in `src/host/series.ts`), standings on the TV after each race, a podium at the end. Ties: more wins, then more 2nd places..., then the last race, then slot number.
+* **Loser picks**: after each race the last-place *human* picks the next track on their phone (the others see who is choosing). Points are kept like in a Grand Prix. P1 taps STOP for the podium.
+
+Without phones, in the lobby: **Left/Right** = track, **Up/Down** = mode, **Enter** = start. In Loser picks the TV shows the track strip: Left/Right + Enter to pick, **S** to stop. `?drive` and `?track=` work as before (a single race); `?mode=gp` or `?mode=loser` picks a mode from the address.
+
 ### Keyboard / gamepad on the host (for testing without phones)
 
 | | Player "WASD" (press **1** to add) | Player "Arrows" (press **2** to add) | Gamepad (press **A/Start** to join) |
