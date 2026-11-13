@@ -78,6 +78,9 @@ html, body {
   border: 2px solid rgba(255, 255, 255, 0.1);
 }
 #track-map { height: clamp(70px, 14vh, 150px); width: auto; aspect-ratio: 220 / 130; border-radius: 10px; }
+/* The rendered course picture replaces the flat map once it is ready (trackPreview.ts). */
+#track-shot { height: clamp(70px, 14vh, 150px); width: auto; aspect-ratio: 208 / 120; border-radius: 10px; object-fit: cover; }
+#track-map[hidden], #track-shot[hidden] { display: none; }
 .track-info { flex: 1; min-width: 0; }
 .track-label { color: var(--muted); letter-spacing: 0.3em; font-size: clamp(11px, 1.6vh, 15px); font-weight: 700; }
 .track-name {

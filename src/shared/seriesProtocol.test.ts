@@ -76,4 +76,21 @@ describe('host -> phone payload validation', () => {
     expect(parseSeriesInfo({ ...good, standings: [0] }, 4)).toBeNull();
     expect(parseSeriesInfo({ ...good, raceTotal: 'x' }, 4)).toBeNull();
   });
+
+  it('pending is optional (old hosts) but must be a boolean when present', () => {
+    const menu = { ...good, stage: 'menu', picker: null, racesDone: 0, raceTotal: null, standings: [] };
+    expect(parseSeriesInfo(menu, 4)?.pending).toBeUndefined();
+    expect(parseSeriesInfo({ ...menu, pending: true }, 4)?.pending).toBe(true);
+    expect(parseSeriesInfo({ ...menu, pending: false }, 4)?.pending).toBeUndefined();
+    expect(parseSeriesInfo({ ...menu, pending: 'yes' }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...menu, pending: 1 }, 4)).toBeNull();
+  });
+
+  it('parseSetup understands done (strictly true) and keeps old messages working', () => {
+    expect(parseSetup({ t: 'setup', done: true }, 4)).toEqual({ done: true });
+    expect(parseSetup({ t: 'setup', track: 2, done: true }, 4)).toEqual({ track: 2, done: true });
+    expect(parseSetup({ t: 'setup', done: 'true' }, 4)).toBeNull();
+    expect(parseSetup({ t: 'setup', done: 1 }, 4)).toBeNull();
+    expect(parseSetup({ t: 'setup', mode: 'gp', done: false }, 4)).toEqual({ mode: 'gp' });
+  });
 });

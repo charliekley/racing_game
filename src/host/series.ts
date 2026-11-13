@@ -185,3 +185,31 @@ export class Series {
 export function menuOwner(candidates: { slot: number; human: boolean; connected: boolean }[]): number | null {
   return candidates.find((c) => c.human && c.connected)?.slot ?? null;
 }
+
+/**
+ * "Has the menu owner made this round's choice yet?" The owner's phone shows a forced pop-up while this
+ * is pending (see shared/forcedChoice.ts). It starts pending, becomes done when the owner finishes the
+ * pop-up OR when the host keyboard / TV picks a mode or track, and is pending again every time we return
+ * to the menu. It belongs to the round, not to a player: if the owner leaves, the next owner inherits it.
+ */
+export class MenuChoice {
+  private _pending = true;
+  get pending(): boolean {
+    return this._pending;
+  }
+  /** Returns true if the value changed. */
+  complete(): boolean {
+    const was = this._pending;
+    this._pending = false;
+    return was;
+  }
+  reset(): boolean {
+    const was = this._pending;
+    this._pending = true;
+    return !was;
+  }
+  /** Phones' READY flags must not start a race while someone is still choosing (the keyboard still can). */
+  blocksAutoStart(ownerPresent: boolean): boolean {
+    return this._pending && ownerPresent;
+  }
+}

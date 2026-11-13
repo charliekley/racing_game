@@ -198,7 +198,7 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 
 ### Race modes
 
-The first player's phone (P1, or the next player if P1 leaves) has a button under the top bar that opens the race setup: pick the mode and, with a small map picture per track, the track.
+The first player's phone (P1, or the next player if P1 leaves) gets a **forced pop-up** when it joins and every time the game returns to the menu: pick the mode, then the track (Grand Prix needs none). It has no close button; it goes away when the choice is made, when the host keyboard / TV picks a mode or track instead, or when someone else becomes the menu owner (who then gets it). Other phones say "<name> is choosing...", and phones' READY does not start the race meanwhile (the host keyboard still can). In Loser picks the last-place player gets the same pop-up for the track. Track cards are small pictures of the real 3D course (`src/render/trackShot.ts`, rendered one at a time in the background and cached, about 4-6 KB each); the TV lobby shows the same picture.
 
 * **Single race**: one track, then back to the menu (Enter / RACE AGAIN repeats it).
 * **Grand Prix**: all tracks in order. Points per place **10 / 7 / 5 / 3** (`GP_POINTS` in `src/host/series.ts`), standings on the TV after each race, a podium at the end. Ties: more wins, then more 2nd places..., then the last race, then slot number.

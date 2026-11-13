@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GP_POINTS, MODE_NAMES, Series, menuOwner, nextMode, pointsForPlace, type Placing } from './series';
+import { GP_POINTS, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, pointsForPlace, type Placing } from './series';
 
 /** Build a race result from slots listed best first. `bots` are slots that are computers. */
 function race(order: number[], bots: number[] = []): Placing[] {
@@ -201,5 +201,33 @@ describe('menu owner', () => {
   it('is null with no humans', () => {
     expect(menuOwner([c(0, false)])).toBeNull();
     expect(menuOwner([])).toBeNull();
+  });
+});
+
+describe('menu choice (the forced pop-up)', () => {
+  it('starts pending, completes once, and is pending again after a reset', () => {
+    const c = new MenuChoice();
+    expect(c.pending).toBe(true);
+    expect(c.complete()).toBe(true); // changed
+    expect(c.complete()).toBe(false); // already done
+    expect(c.pending).toBe(false);
+    expect(c.reset()).toBe(true);
+    expect(c.pending).toBe(true);
+    expect(c.reset()).toBe(false);
+  });
+  it('blocks the READY auto-start only while pending and somebody can answer (never a deadlock without phones)', () => {
+    const c = new MenuChoice();
+    expect(c.blocksAutoStart(true)).toBe(true);
+    expect(c.blocksAutoStart(false)).toBe(false); // no human owner: nothing to wait for
+    c.complete();
+    expect(c.blocksAutoStart(true)).toBe(false);
+  });
+  it('belongs to the round, not the player: a new owner inherits it', () => {
+    const c = new MenuChoice();
+    const p = (slot: number, connected: boolean) => ({ slot, human: true, connected });
+    expect(menuOwner([p(0, true), p(1, true)])).toBe(0);
+    // P1 leaves mid-choice: P2 becomes owner and the choice is still pending.
+    expect(menuOwner([p(0, false), p(1, true)])).toBe(1);
+    expect(c.pending).toBe(true);
   });
 });

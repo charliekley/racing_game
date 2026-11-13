@@ -222,7 +222,7 @@ function loadTrack(): TrackDef {
 let track = loadTrack();
 const trackEl = $('track');
 trackEl.textContent = track.name;
-const trackPreview = new TrackPreview($<HTMLCanvasElement>('track-map'), $('track-name'), $('track-meta'));
+const trackPreview = new TrackPreview($<HTMLCanvasElement>('track-map'), $('track-name'), $('track-meta'), $<HTMLImageElement>('track-shot'));
 trackPreview.show(track);
 /** Make `def` the lobby's selected track (keyboard, TV buttons, or P1's phone all end up here). */
 function selectTrack(def: TrackDef) {
@@ -239,6 +239,7 @@ function selectTrack(def: TrackDef) {
 }
 /** step = +1 next track, -1 previous. */
 function cycleTrack(step = 1) {
+  seriesHost.hostChose(); // the host's own choice also closes the phone pop-up
   const i = Math.max(0, TRACKS.indexOf(track));
   selectTrack(TRACKS[(i + step + TRACKS.length) % TRACKS.length]);
 }
@@ -264,6 +265,7 @@ const modeBtns = SERIES_MODES.map((m) => {
   b.textContent = MODE_NAMES[m];
   b.addEventListener('click', () => {
     seriesHost.setMode(m);
+    seriesHost.hostChose();
     b.blur();
   });
   modePills.appendChild(b);
@@ -273,8 +275,9 @@ const modeBtns = SERIES_MODES.map((m) => {
 function updateModeUi() {
   const m = seriesHost.mode;
   SERIES_MODES.forEach((mode, i) => modeBtns[i].classList.toggle('on', mode === m));
-  $('mode-note').textContent =
-    m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : 'Last place picks the next track';
+  $('mode-note').textContent = seriesHost.choosing
+    ? `${seriesHost.ownerName()} is choosing on their phone…`
+    : m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : 'Last place picks the next track';
   document.querySelector('.track-panel')!.classList.toggle('gp', m === 'gp');
   if (m === 'gp') $('track-meta').textContent = `Grand Prix: all ${TRACKS.length} tracks in order`;
   else trackPreview.show(track);
@@ -301,6 +304,10 @@ const seriesHost: SeriesHost = new SeriesHost({
   lobbyTrack: () => track,
   setLobbyTrack: (i) => selectTrack(TRACKS[i]),
   onModeChange: () => updateModeUi(),
+  onPendingChange: () => {
+    updateModeUi();
+    updateStartBanner(); // while the owner is choosing, READY flags don't start the race
+  },
   startRace: () => startDriving(),
   toLobby: () => backToLobby(),
   gameEl,
@@ -309,6 +316,12 @@ const seriesHost: SeriesHost = new SeriesHost({
 const URL_MODE = sanitizeMode(new URLSearchParams(location.search).get('mode'));
 if (URL_MODE) seriesHost.mode = URL_MODE;
 updateModeUi();
+// Render the 3D course pictures for the track cards in the background (one per ~250 ms, after the page has settled).
+trackPreview.renderShots(TRACKS, () => {
+  seriesHost.cardsUpdated(); // phones that are choosing get the new picture
+  trackPreview.show(track);
+  updateModeUi();
+});
 let game: Game | null = null; // created on first use (sets up WebGL)
 let driving = false;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
@@ -376,8 +389,12 @@ players.onLobbyChange.add(() => {
     if (players.slots.phase === 'results' && players.slots.allReady()) raceAgain(true);
     return;
   }
-  // When everyone is ready, start after a short pause (cancelled if someone un-readies).
-  const all = players.slots.allReady();
+  updateStartBanner();
+});
+/** When everyone is ready (and nobody is still choosing the mode), start after a short pause (cancelled if someone un-readies). */
+function updateStartBanner() {
+  if (driving) return;
+  const all = players.slots.allReady() && !seriesHost.choosing;
   banner.classList.toggle('hidden', !all);
   banner.textContent = all ? 'Everyone is ready! Starting…' : '';
   const n = players.slots.players.length;
@@ -388,7 +405,7 @@ players.onLobbyChange.add(() => {
     clearTimeout(startTimer);
     startTimer = null;
   }
-});
+}
 lobbyView.render();
 
 window.addEventListener('keydown', (e) => {

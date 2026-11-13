@@ -22,7 +22,12 @@ export class PhoneMap {
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
     this.resize();
+    // The canvas' on-screen size is set by CSS and changes when the layout does (the game screen
+    // appearing, rotating the phone, the mode line showing up), not only on window resize. A
+    // ResizeObserver reports every such change, so the bitmap always matches the pixels shown.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.resize()).observe(canvas);
     window.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', () => this.resize());
   }
 
   get hasTrack(): boolean {
@@ -53,14 +58,20 @@ export class PhoneMap {
     this.draw();
   }
 
-  /** Match the canvas bitmap to its on-screen size x devicePixelRatio for crisp lines. */
+  /**
+   * Match the canvas bitmap to its on-screen size x devicePixelRatio (one bitmap pixel per screen
+   * pixel = crisp lines). Phones are 2-3x, so the cap is 3. Nothing is done while the canvas is hidden
+   * (size 0) or when the size did not change, so the cached road layer is only rebuilt when needed.
+   */
   private resize(): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const px = Math.max(64, Math.round(Math.min(rect.width, rect.height) * (window.devicePixelRatio || 1)));
-    if (this.canvas.width !== px) {
-      this.canvas.width = px;
-      this.canvas.height = px;
-    }
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (w === 0 || h === 0) return; // hidden: wait for the next size report
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const px = Math.max(64, Math.round(Math.min(w, h) * dpr));
+    if (this.canvas.width === px && this.canvas.height === px) return;
+    this.canvas.width = px;
+    this.canvas.height = px;
     this.draw();
   }
 

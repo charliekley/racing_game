@@ -20,7 +20,7 @@ import { colorHex } from '../shared/colors';
 import type { TrackDef } from '../track';
 import type { PlayerManager } from './playerManager';
 import type { ResultsExtras } from './resultsView';
-import { DEFAULT_MODE, MODE_NAMES, Series, menuOwner, nextMode, sanitizeMode, type Placing } from './series';
+import { DEFAULT_MODE, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, sanitizeMode, type Placing } from './series';
 import { buildPickStrip, buildPodium } from './seriesView';
 
 const MODE_KEY = 'tiltkart.mode';
@@ -35,6 +35,8 @@ export interface SeriesHostDeps {
   setLobbyTrack(index: number): void;
   /** The mode changed (update the lobby chips). */
   onModeChange(mode: SeriesMode): void;
+  /** "Owner still choosing" turned on or off (TV hint; the lobby may now be allowed to auto-start). */
+  onPendingChange(): void;
   /** Start the race for the current series state (main.ts: startDriving). */
   startRace(): void;
   /** Back to the lobby / menu. */
@@ -50,7 +52,9 @@ export class SeriesHost {
   private podium = false;
   /** Track highlighted on the TV pick strip (loser mode, arrow keys). */
   private tvPick = 0;
-  private cardList: TrackCard[] | null = null;
+  /** Has the menu owner made this round's choice? (drives the forced pop-up on their phone) */
+  private readonly choice = new MenuChoice();
+  private lastPending = false; // (what choosing was the last time we told main.ts)
   private lastKey = '';
   private readonly podiumLayer: HTMLElement;
   private readonly pickLayer: HTMLElement;
@@ -95,8 +99,31 @@ export class SeriesHost {
     return (slot !== null ? this.d.players.slots.slots[slot]?.name : null) ?? 'Player';
   }
 
+  /** Cards for every track (the caller caches them, so this is cheap; pictures upgrade as they get rendered). */
   private cards(): TrackCard[] {
-    return (this.cardList ??= this.d.tracks.map((t) => this.d.card(t)));
+    return this.d.tracks.map((t) => this.d.card(t));
+  }
+
+  /** The owner is still choosing in the menu (phones' READY must not start the race meanwhile). */
+  get choosing(): boolean {
+    return !this.series && this.choice.blocksAutoStart(this.owner() !== null);
+  }
+
+  /** Name of the menu owner, for the TV hint "X is choosing". */
+  ownerName(): string {
+    return this.nameOf(this.owner());
+  }
+
+  /** The host keyboard / TV buttons chose a mode or track: that counts as the choice and closes the phone pop-up. */
+  hostChose(): void {
+    if (this.choice.complete()) this.refresh();
+  }
+
+  /** A track picture was (re)rendered: send the new cards to whoever is choosing a track and redraw the TV strip. */
+  cardsUpdated(): void {
+    const slot = this.series ? this.picker() : this.owner(); // (same rule as the 'cards' request below)
+    if (slot !== null) this.sendCards(slot);
+    this.drawTv();
   }
 
   // --- mode (lobby) -----------------------------------------------------------
@@ -135,6 +162,7 @@ export class SeriesHost {
   end(): void {
     this.series = null;
     this.podium = false;
+    this.choice.reset(); // a new round: the owner's phone asks for mode and track again
     this.refresh();
   }
 
@@ -228,6 +256,7 @@ export class SeriesHost {
       if (!v) return;
       if (v.track !== undefined) this.d.setLobbyTrack(v.track);
       if (v.mode) this.setMode(v.mode);
+      if (v.done) this.choice.complete(); // the owner finished the forced pop-up
       this.refresh();
     } else if (t === 'pick') {
       this.choose(slot, (m as { track?: unknown }).track);
@@ -252,6 +281,7 @@ export class SeriesHost {
       if (code === 'ArrowUp') this.cycleMode(-1);
       else if (code === 'ArrowDown') this.cycleMode(1);
       else return false;
+      this.hostChose();
       return true;
     }
     const s = this.series;
@@ -275,7 +305,7 @@ export class SeriesHost {
     const s = this.series;
     const lobbyIdx = Math.max(0, this.d.tracks.indexOf(this.d.lobbyTrack()));
     if (!s) {
-      return { mode: this.mode, track: lobbyIdx, stage: 'menu', owner: this.owner(), picker: null, racesDone: 0, raceTotal: this.mode === 'gp' ? this.d.tracks.length : null, standings: [] };
+      return { mode: this.mode, track: lobbyIdx, stage: 'menu', owner: this.owner(), picker: null, racesDone: 0, raceTotal: this.mode === 'gp' ? this.d.tracks.length : null, standings: [], pending: this.choice.pending };
     }
     const stage = s.stage === 'racing' ? 'racing' : this.podium ? 'over' : 'between';
     const standings = s.scoring ? s.standings(this.d.players.slots.players.map((p) => p.index)).flatMap((r) => [r.slot, r.points]) : [];
@@ -295,6 +325,11 @@ export class SeriesHost {
   refresh(force = false): void {
     const info = this.info();
     const key = JSON.stringify(info);
+    const pending = this.choosing;
+    if (pending !== this.lastPending) {
+      this.lastPending = pending;
+      this.d.onPendingChange();
+    }
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.d.players.setSeriesMessage({ t: 'series', ...info });
