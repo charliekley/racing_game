@@ -35,6 +35,42 @@ function ranges(count: number, pred: (i: number) => boolean): [number, number][]
   return out.filter(([a, b]) => b > a);
 }
 
+/**
+ * Main-road samples whose kerb lies under a branch road (where a shortcut opens through the verge).
+ * trackView leaves the kerb out there: it is 12 cm tall and would poke through the branch road.
+ * Returns, per side (-1 / 1), the set of covered main samples.
+ */
+export function mainKerbCovered(track: Track): (side: number) => Set<TrackSample> {
+  const sets = new Map<number, Set<TrackSample>>([[-1, new Set()], [1, new Set()]]);
+  const hw = track.def.width / 2;
+  for (const b of track.branches) {
+    for (const p of track.samples) {
+      for (const side of [-1, 1]) {
+        // Middle of the kerb band, on the main road's level.
+        const x = p.x + p.rx * side * (hw + CURB_WIDTH / 2);
+        const z = p.z + p.rz * side * (hw + CURB_WIDTH / 2);
+        for (let k = 0; k < b.samples.length - 1; k++) {
+          const a = b.samples[k];
+          const c = b.samples[k + 1];
+          if (Math.abs(a.y - p.y) > 1.2) continue;
+          const ex = c.x - a.x;
+          const ez = c.z - a.z;
+          const u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez || 1)));
+          const half = (a.width + (c.width - a.width) * u) / 2;
+          if (Math.hypot(a.x + ex * u - x, a.z + ez * u - z) < half + 0.3) {
+            sets.get(side)!.add(p);
+            break;
+          }
+        }
+      }
+    }
+  }
+  return (side) => sets.get(side)!;
+}
+
+/** Metres at the end of a branch (run-up + kicker) drawn without curbs and off-road strips. */
+const END_BARE = 30;
+
 export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
   const group = new THREE.Group();
   if (track.branches.length === 0) return group;
@@ -50,6 +86,8 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
   offTex.repeat.set(1, 1);
   const offMat = new THREE.MeshStandardMaterial({ map: offTex });
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), side: THREE.DoubleSide });
+  // Sides and lip face of the kicker: packed dirt.
+  const kickMat = new THREE.MeshStandardMaterial({ map: dirtTexture(), side: THREE.DoubleSide });
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, cast = false) => {
     const m = new THREE.Mesh(geo, mat);
     m.receiveShadow = true;
@@ -87,9 +125,34 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
       add(strip(run, false, (p) => [{ d: -hw(p) - CURB_WIDTH, h: lift(p, -hw(p)) + 0.045 }, { d: hw(p) + CURB_WIDTH, h: lift(p, hw(p)) + 0.045 }], 10), dirtMat);
     }
 
+    // The last stretch (run-up + kicker) stands alone beside the main road: no curbs or strips there, the terrain shows.
+    const endStart = Math.floor((b.length - END_BARE) / b.spacing);
+    // Kicker: the road surface already rises (the samples carry the height); close its sides and lip with solid dirt.
+    const kStart = b.kick.findIndex((h) => h > 0) - 1;
+    if (kStart >= 0) {
+      const KS = S.slice(kStart);
+      for (const side of [-1, 1]) {
+        add(strip(KS, false, (p) => {
+          const k = b.kick[S.indexOf(p)];
+          return [{ d: side * hw(p), h: lift(p, side * hw(p)) + 0.04 }, { d: side * hw(p), h: -k - 0.4 }];
+        }, 2), kickMat);
+      }
+      // Lip face: a vertical quad across the last sample.
+      const e = S[count - 1];
+      const topH = lift(e, hw(e)) + 0.04;
+      const bot = -b.kick[count - 1] - 0.4;
+      const q = new THREE.BufferGeometry();
+      const v = (d: number, h: number) => [e.x + e.rx * d, e.y + h, e.z + e.rz * d];
+      q.setAttribute('position', new THREE.Float32BufferAttribute([...v(-hw(e), topH), ...v(hw(e), topH), ...v(-hw(e), bot), ...v(hw(e), bot)], 3));
+      q.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2));
+      q.setIndex([0, 2, 1, 1, 2, 3]);
+      q.computeVertexNormals();
+      add(q, kickMat);
+    }
+
     // Curbs (tarmac only) and off-road strips, each side, only where they do not lie on the main road.
     for (const side of [-1, 1]) {
-      const curbOk = (i: number) => !isDirt(i) && clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH));
+      const curbOk = (i: number) => i < endStart && !isDirt(i) && clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH));
       for (const [a, c] of ranges(count, curbOk)) {
         add(
           strip(S.slice(a, c + 1), false, (p): [Edge, Edge] => {
@@ -102,7 +165,7 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
         );
       }
       const outerD = (p: TrackSample) => hw(p) + def.offroadWidth;
-      const stripOk = (i: number) => clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH)) && clearAt(S[i], side * outerD(S[i]));
+      const stripOk = (i: number) => i < endStart && clearAt(S[i], side * (hw(S[i]) + CURB_WIDTH)) && clearAt(S[i], side * outerD(S[i]));
       for (const [a, c] of ranges(count, stripOk)) {
         add(
           strip(S.slice(a, c + 1), false, (p): [Edge, Edge] => {

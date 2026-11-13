@@ -201,12 +201,13 @@ export const switchbackSummit: TrackDef = {
   ],
   shortcuts: [
     {
-      // Straight across the frozen lake, on dirt (it is slower than tarmac).
+      // Straight across the frozen lake, on dirt (it is slower than tarmac). It ends in a kicker beside the main road (see shortcuts.ts).
       from: 74,
       to: 99,
       points: [
-        [-300, 110],
-        [-256, 96],
+        // Peels off to the south-east at a shallow angle (the first two points fan away from the main road).
+        [-325, 82],
+        [-296, 62],
         [-266, 54],
         [-225, 38],
         [-250, 5],
