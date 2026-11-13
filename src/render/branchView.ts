@@ -117,6 +117,7 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
   // so it never z-fights with the strip or the terrain under it.
   const dirtMat = new THREE.MeshStandardMaterial({
     map: dirtTexture(),
+    color: '#e2d3bf', // a little less saturated than the raw texture
     vertexColors: true,
     transparent: true,
     depthWrite: false,

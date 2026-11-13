@@ -62,8 +62,8 @@ export interface PathLookup {
 }
 
 /** Dirt paths: the terrain is pulled to the path's level within this fraction of its half width, then eases out over GROOVE_FALLOFF metres. */
-const GROOVE_CORE = 0.7;
-export const GROOVE_FALLOFF = 3.5;
+const GROOVE_CORE = 0.6;
+export const GROOVE_FALLOFF = 6;
 /** A path's groove eases in over this many metres beyond the main road's off-road strip. */
 const PATH_EASE_IN = 3;
 

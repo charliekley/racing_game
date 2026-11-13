@@ -40,9 +40,9 @@ export const JOIN_ANGLE_DEG = 14;
 /** The path runs straight at that angle for this many metres at each end, so the entry and exit are clean. */
 const LEAD = 16;
 /** Steepest path grade (rise / run). Steeper natural ground is cut or filled to this. */
-export const MAX_GRADE = 0.14;
+export const MAX_GRADE = 0.18;
 /** Metres over which the path's ground height is smoothed (each side), so it does not follow every bump. */
-const SMOOTH_RADIUS = 10;
+const SMOOTH_RADIUS = 6;
 /** How far (m) the dirt surface is drawn above the terrain. The terrain itself is the physics ground. */
 export const DIRT_LIFT = 0.05;
 /** Junction zone: the kart may step from the main road onto the path this many samples after its start. */
