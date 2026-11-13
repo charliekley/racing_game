@@ -7,21 +7,20 @@
  *   2. CLIMB: leg 1 heads west as a string of S-bends, HAIRPIN 2 (right) turns it round, and
  *      leg 2 (S-bends again) climbs east, then sweeps left up the ramp to the crater rim.
  *      Walls line the facing sides of the legs so nobody can cut across from one to the next.
- *   3. THE CRATER: at the end of the ramp the choice is
- *        * the RIDGE ROAD (counter-clockwise round the rim): cliffs on the crater side and on
- *          the outer slope, a knife-edge stretch with a drop on BOTH sides, a hump on the crest;
- *        * the CANNON: drive straight on at the end of the ramp instead of turning onto the
- *          rim and it flings you across the crater onto the north rim. Miss the mouth and you
- *          simply take the ridge.
- *   4. DESCENT: a winding road down the west side, a straight with a boost pad, a KICKER over
+ *   3. THE CRATER: the road runs up to the crater rim and ENDS at a launch pad. The CANNON there is the
+ *      only way on: every kart is captured at the pad (the capture covers the whole road) and fired
+ *      about 170 m across the crater, with glowing lava far below, onto the far (north) rim. The old
+ *      road round the rim is gone; the stretch between pad and landing has no ground at all
+ *      (`cannons[].mandatory`, see docs/TRACKS.md).
+ *   4. DESCENT: from the landing a cliff-edged sweep and a winding road down the west side, a straight with a boost pad, a KICKER over
  *      a CHASM (void gap: too slow and you fall), a double kicker, and S-bends back to the line.
  *
  * LAVA GEYSERS (the `hazards` list at the bottom) sit on the road at five places. Each warns
  * (glowing crack, sparks, steam) for 1.5 s and then erupts for 1.2 s; touching the lava column
  * spins you out. They are staggered and never block the whole road: there is always a free lane.
  *
- * Every control point is [x, z, height] in metres. The crater centre is (30, 0); the rim road
- * circles it at a radius of about 85 m and a height of about 30 m. Rather than counting point
+ * Every control point is [x, z, height] in metres. The crater centre is (30, 0); the pad (south) and the
+ * landing (north) sit on the rim at a radius of about 92-98 m and a height of 27 m. Rather than counting point
  * numbers by hand, important points get a NAME in `route` and the features below refer to them
  * with `at('name')`; a position like `at('chicane') + 0.5` means "halfway to the next point".
  *
@@ -33,22 +32,8 @@
 import type { GeyserDef } from '../hazardTypes';
 import type { TrackDef } from '../types';
 
-/** Crater centre and rim radius (m); only used to build the rim points below. */
+/** Crater centre (m): the terrain features below (the volcano and its crater bowl) are centred on it. */
 const CRATER = { x: 30, z: 0 };
-
-/**
- * One rim control point. `angle` is measured counter-clockwise from due south
- * (0 = south, 90 = east, 180 = north), `radius` is the distance from the crater
- * centre. Varying the radius a little gives the ridge some wiggle.
- */
-function rim(angle: number, radius: number, height: number): [number, number, number] {
-  const a = (angle * Math.PI) / 180;
-  return [
-    Math.round(CRATER.x + radius * Math.sin(a)),
-    Math.round(CRATER.z - radius * Math.cos(a)),
-    height,
-  ];
-}
 
 /** A control point, optionally named so features can refer to it. */
 interface RoutePoint {
@@ -73,37 +58,36 @@ const route: RoutePoint[] = [
   pt(190, -246, 5),
   pt(158, -234, 6, 'leg1'),
   // ---- Climb, leg 1: west, as S-bends ----
-  pt(110, -241, 7),
-  pt(64, -227, 8.5),
-  pt(18, -241, 10),
-  pt(-28, -227, 11.5),
-  pt(-56, -236, 12.6, 'leg1End'),
+  pt(110, -241, 8),
+  pt(64, -227, 9.5),
+  pt(22, -238, 11, 'leg1End'),
   // ---- Hairpin 2 (right, west -> east) ----
-  pt(-82, -229, 13.2, 'hairpin2'),
-  pt(-103, -220, 13.7),
-  pt(-112, -199, 14.2),
-  pt(-103, -178, 14.7),
-  pt(-82, -169, 15, 'leg2'),
-  // ---- Climb, leg 2: east as S-bends, then a left sweeper north up the ramp ----
-  pt(-46, -180, 16.2),
-  pt(-8, -160, 17.8),
-  pt(10, -150, 19.5, 'sweeper'),
-  pt(22, -124, 22.5, 'ramp'), // the CANNON mouth sits just after this point
-  pt(31, -100, 26, 'rimStart'), // end of the straight, the ridge turns right here
-  // ---- The rim ridge (counter-clockwise) ----
-  { name: 'rim30', p: rim(30, 85, 30) },
-  { name: 'rim60', p: rim(60, 88, 31) }, // crater-side cliff starts
-  { name: 'rim90', p: rim(90, 80, 30) }, // hump on the crest
-  { name: 'rim120', p: rim(120, 90, 29) }, // knife edge (cliffs on both sides)
-  { name: 'rim150', p: rim(150, 84, 31) }, // outer-slope cliff
-  { name: 'rim180', p: rim(180, 85, 30) }, // north rim, the cannon lands here
-  { name: 'rim210', p: rim(210, 86, 29) },
-  // ---- Descent down the west side, winding ----
-  pt(-58, 84, 26.5),
-  pt(-100, 98, 24.5),
-  pt(-146, 80, 22.5),
-  pt(-190, 94, 20.5),
-  pt(-232, 68, 17.5),
+  pt(-10, -231, 12, 'hairpin2'),
+  pt(-34, -222, 12.6),
+  pt(-44, -199, 13.2),
+  pt(-34, -176, 13.8),
+  pt(-10, -167, 14.6, 'leg2'),
+  // ---- Climb, leg 2: a short run east, then a left sweeper north up the ramp ----
+  pt(10, -150, 18, 'sweeper'),
+  pt(22, -124, 22.5, 'ramp'),
+  // ---- The launch pad: the road ENDS here (the mouth of the cannon is at this point) ----
+  pt(29, -98, 27, 'pad'),
+  // ---- Across the crater: no road, no ground. These points are only a straight line from the pad to the
+  // landing (nobody drives them); the cannon flies along it. ----
+  pt(29.5, -50, 27),
+  pt(30, 0, 27),
+  pt(30.6, 50, 27),
+  // ---- The far rim: the landing, then a sweep west and the winding descent ----
+  pt(31, 92, 27, 'land'),
+  pt(28, 116, 26.5), // cliff on the crater side (left)
+  pt(10, 136, 25.8),
+  pt(-18, 144, 25),
+  pt(-52, 134, 24.2, 'sweep'), // cliff on the outer side (right)
+  pt(-88, 124, 23.4), // S-bends down the far slope
+  pt(-124, 97, 22.6),
+  pt(-158, 102, 21.6),
+  pt(-196, 77, 20.4),
+  pt(-232, 73, 17.5),
   pt(-262, 32, 14.5, 'descentEnd'),
   // ---- The chasm run: a straight with a boost pad, the chasm kicker and a double kicker ----
   pt(-284, -8, 11.5, 'chasmRun'),
@@ -142,7 +126,7 @@ const geyser = (position: number, offset: number, phase: number): GeyserDef => (
 
 export const emberPeaks: TrackDef = {
   name: 'Ember Peaks',
-  blurb: 'Climb a volcano, race the crater rim or fire across it with the cannon, leap the chasm and dodge the lava geysers.',
+  blurb: 'Climb a volcano, get fired across the crater by the cannon, leap the chasm and dodge the lava geysers.',
   points,
   width: 14,
   offroadWidth: 8,
@@ -157,19 +141,20 @@ export const emberPeaks: TrackDef = {
     { from: 0.5, to: at('hairpin1'), side: 'right' },
     { from: at('leg1') + 0.5, to: at('leg1End'), side: 'both' },
     { from: at('leg2') + 0.5, to: at('sweeper') - 0.3, side: 'left' },
+    // The funnel into the launch pad: walls both sides of the last stretch, ending where the road does.
+    { from: at('ramp') - 0.6, to: at('pad') + 0.25, side: 'both' },
     // Fence both sides of the chasm run so nobody drives around the gap.
     { from: at('doubleKicker') - 1.1, to: at('doubleKicker') - 0.1, side: 'both' },
   ],
   ramps: [
     { at: 2.5, length: 8, height: 1.0 }, // warm-up kicker on the start S-bends
     { at: 11.5, length: 8, height: 1.0 }, // small kicker on the first climbing leg
-    { at: at('rim90'), length: 8, height: 1.0 }, // small kicker on the ridge crest
     { at: at('doubleKicker') - 0.9, length: 10, height: 2.4, gap: 12, gapKind: 'void', shape: 'kicker' }, // the chasm
     { at: at('doubleKicker') + 0.3, length: 24, height: 1.4, shape: 'double' }, // double kicker after the chasm
   ],
   boostPads: [
     { at: at('chasmRun') + 0.5, offset: 0, length: 8, width: 5 }, // speed for the chasm
-    { at: at('rim210') + 0.3, offset: 0, length: 8, width: 5 }, // after the cannon landing / ridge: keep the speed up
+    { at: at('land') + 4.4, offset: 0, length: 8, width: 5 }, // down the far rim: keep the speed up
   ],
   laps: 3,
   checkpoints: 18,
@@ -181,16 +166,16 @@ export const emberPeaks: TrackDef = {
     hills: { amplitude: 4, wavelength: 70 },
     features: [
       { x: CRATER.x, z: CRATER.z, radius: 300, height: 34 }, // the volcano
-      { x: CRATER.x, z: CRATER.z, radius: 80, height: -36 }, // the crater bowl inside it
+      { x: CRATER.x, z: CRATER.z, radius: 90, height: -62 }, // the crater bowl inside it: about 35 m of air under the flight
     ],
     blend: 20,
   },
   cliffs: [
-    { from: at('rim60'), to: at('rim90') + 0.6, side: 'left', edge: 15 }, // crater side
-    { from: at('rim90') + 0.8, to: at('rim120') + 0.7, side: 'both', edge: 15 }, // knife edge
-    { from: at('rim120') + 0.9, to: at('rim180'), side: 'right', edge: 15 }, // outer slope
+    { from: at('land') + 0.4, to: at('land') + 2.4, side: 'left', edge: 15 }, // crater side of the far rim
+    { from: at('land') + 2.6, to: at('sweep') + 0.4, side: 'right', edge: 15 }, // outer slope
   ],
-  cannons: [{ at: at('ramp') + 0.6, offset: 0, target: { at: at('rim180'), offset: 0 }, flightTime: 3.8, apex: 18 }],
+  // THE CANNON: mandatory. The mouth is at the pad, the target is the far rim: 190 m apart, about 170 m of it air.
+  cannons: [{ at: at('pad'), offset: 0, target: { at: at('land'), offset: 0 }, flightTime: 4.4, apex: 16, mandatory: true }],
   // Five slalom pairs: two geysers about 30 m apart on opposite sides of the road, erupting at different
   // times, so you swing from one lane to the other. They sit on gentle parts of the road (never on an apex,
   // a jump or the knife-edge ridge) and every pair has a different phase.
@@ -198,12 +183,12 @@ export const emberPeaks: TrackDef = {
     // 1. Leg 1, in the S-bends.
     geyser(at('leg1') + 0.2, 0.5, 0),
     geyser(at('leg1') + 0.8, -0.5, 3.5),
-    // 2. The first stretch of the rim (the cannon skips it).
-    geyser(at('rimStart') + 0.9, -0.5, 1),
-    geyser(at('rim30') + 0.5, 0.5, 4.5),
+    // 2. The far rim sweep, past the cliffs.
+    geyser(at('land') + 4.9, -0.5, 1),
+    geyser(at('land') + 5.9, 0.5, 4.5),
     // 3. The descent from the rim.
-    geyser(at('rim210') + 0.65, 0.5, 2),
-    geyser(at('rim210') + 1.3, -0.5, 5.5),
+    geyser(at('land') + 6.9, -0.5, 2),
+    geyser(at('land') + 7.7, 0.5, 5.5),
     // 4. The bottom of the descent, before the chasm run.
     geyser(at('descentEnd') - 1.4, -0.5, 6),
     geyser(at('descentEnd') - 0.7, 0.5, 2.5),

@@ -12,7 +12,7 @@ import { ITEMS } from './config';
 import type { Ground, GroundHit, Surface } from './ground';
 import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
-import { resolveCannons, type ResolvedCannon } from './cannon';
+import { CANNON, resolveCannons, type ResolvedCannon } from './cannon';
 import { branchRoute, mainRoute, type RouteLine } from './routes';
 import { buildBranches, projectOnMain, projectWithBranches, sampleAhead, ROUTE_STRIDE, withBranchField, type Branch } from './shortcuts';
 import { LANDING_LENGTH, landingHeight, shapeHeight, type RampShape } from './jumps';
@@ -107,8 +107,11 @@ export interface Ramp {
 export interface Gap {
   s0: number;
   s1: number;
-  /** 'water' (default; drawn as a pond) or 'void' (a chasm: dark walls going down). */
-  kind: 'water' | 'void';
+  /**
+   * 'water' (default; drawn as a pond), 'void' (a chasm: dark walls going down) or 'sky' (the long gap of a
+   * mandatory cannon: no road mesh, no cut in the terrain, open air or a crater below).
+   */
+  kind: 'water' | 'void' | 'sky';
 }
 /** A bridge/viaduct section (distance along the track). */
 export interface BridgeRange {
@@ -279,6 +282,11 @@ export class Track implements Ground {
       const half = (h.gap ?? DRAWBRIDGE_GAP) / 2;
       this.gaps.push({ s0: mid - half, s1: mid + half, kind: 'water' });
     }
+    // A mandatory cannon turns the main route between its mouth and landing into a 'sky' gap: the road ends
+    // at the launch pad and starts again at the landing platform (see CannonDef.mandatory, sim/cannon.ts).
+    for (const c of def.cannons ?? []) {
+      if (c.mandatory) this.gaps.push({ s0: this.sAt(c.at) + CANNON.padAhead, s1: this.sAt(c.target.at) - CANNON.landBehind, kind: 'sky' });
+    }
     const reach = def.width / 2 + def.offroadWidth;
     for (const b of def.bridges ?? []) this.bridges.push({ s0: this.sAt(b.from), s1: this.sAt(b.to) });
     for (const c of def.cliffs ?? []) {
@@ -292,7 +300,9 @@ export class Track implements Ground {
     if (terrainOn) {
       // Segments touching a bridge are left out of the road blend: under a bridge the ground is natural.
       const onBridge = S.map((p) => this.onBridge(p.s));
-      const skip = onBridge.map((b, i) => b || onBridge[(i + 1) % count]);
+      // (Same for the sky gap of a mandatory cannon: the ground under the flight stays natural, a crater or open sky.)
+      const sky = S.map((p) => this.inSkyGap(p.s));
+      const skip = onBridge.map((b, i) => b || onBridge[(i + 1) % count] || sky[i] || sky[(i + 1) % count]);
       const influence = reach + TERRAIN_SKIRT + (def.terrain?.blend ?? TERRAIN_BLEND);
       field = new RoadField(S, skip, influence, spacing);
     }
@@ -449,6 +459,12 @@ export class Track implements Ground {
       const into = this.deltaS(g.s0, s);
       if (into >= 0 && into <= g.s1 - g.s0) return true;
     }
+    return false;
+  }
+
+  /** True if distance s is inside the 'sky' gap of a mandatory cannon (a flight, not a road). */
+  inSkyGap(s: number): boolean {
+    for (const g of this.gaps) if (g.kind === 'sky' && this.within(s, g.s0, g.s1)) return true;
     return false;
   }
 

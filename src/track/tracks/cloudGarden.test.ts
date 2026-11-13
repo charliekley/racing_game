@@ -10,18 +10,23 @@ describe('Cloud Garden', () => {
     expect(track.length).toBeLessThan(2000);
   });
 
-  it('has bridges, two void jumps and a cannon', () => {
+  it('has bridges, a void jump and a mandatory cannon', () => {
     expect(track.bridges.length).toBe(3);
-    expect(track.gaps.filter((g) => g.kind === 'void').length).toBe(2);
+    expect(track.gaps.filter((g) => g.kind === 'void').length).toBe(1);
     expect(track.cannons.length).toBe(1);
+    expect(track.cannons[0].mandatory).toBe(true);
   });
 
-  it('the cannon skips a whole island (lands > 150 m ahead of the mouth)', () => {
-    const c = track.cannons[0];
-    expect(c.landing.s - c.mouth.s).toBeGreaterThan(200);
+  it('the cannon crosses open sky: 120-250 m of road with no ground at all', () => {
+    const gap = track.gaps.find((g) => g.kind === 'sky')!;
+    expect(gap.s1 - gap.s0).toBeGreaterThan(120);
+    expect(gap.s1 - gap.s0).toBeLessThan(250);
   });
 
-  it('the cannon mouth is off the racing line (so only a deliberate kart is fired)', () => {
-    expect(Math.abs(track.cannons[0].lateral)).toBeGreaterThan(2.7);
+  it('the three wind-gust bridges are still bridges', () => {
+    for (const h of cloudGarden.hazards ?? []) {
+      if (h.kind !== 'gust') continue;
+      expect(track.bridges.some((b) => Math.abs(b.s0 - track.sAt(h.from)) < 1 && Math.abs(b.s1 - track.sAt(h.to)) < 1)).toBe(true);
+    }
   });
 });

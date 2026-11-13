@@ -45,6 +45,10 @@ export const CANNON = {
   /** Where the barrel ends, relative to the mouth: metres forward and up. Matches the 3D model. */
   muzzleForward: 4.8,
   muzzleUp: 4.6,
+  /** Mandatory cannon: the road ends this far (m) past the mouth (the launch pad's length)... */
+  padAhead: 7,
+  /** ...and the ground starts again this far (m) before the landing point (the landing platform). */
+  landBehind: 10,
 } as const;
 
 export interface CannonPoint {
@@ -71,6 +75,10 @@ export interface ResolvedCannon {
   turn: number;
   /** Lateral position of the mouth across the road (m, positive = right of travel); bots aim for it. */
   lateral: number;
+  /** true = every kart is captured (the road ends at the pad, see CannonDef.mandatory). */
+  mandatory: boolean;
+  /** Mandatory only: karts anywhere within this distance (m) of the road centre are captured at the pad. */
+  captureHalfWidth: number;
 }
 
 /** Events the cannon system reports (the host plays sounds, camera effects and haptics from them). */
@@ -115,6 +123,9 @@ export function resolveCannons(track: Track, defs: TrackDef['cannons']): Resolve
       triggerRadius: CANNON.triggerRadius,
       turn,
       lateral: ((def.offset ?? 0) * w) / 2,
+      mandatory: def.mandatory === true,
+      // The whole road AND the off-road strip beside it: nobody can slip past the capture line.
+      captureHalfWidth: w / 2 + track.def.offroadWidth,
     });
   }
   return out;
@@ -132,6 +143,21 @@ export function flightPoint(c: ResolvedCannon, u: number): { x: number; y: numbe
 /** Can this kart be swallowed by a cannon right now? */
 function capturable(k: KartState): boolean {
   return k.flight === null && k.grounded && k.spinTime <= 0 && k.respawnTime <= 0 && k.cannonCooldown <= 0 && k.speed > CANNON.minSpeed;
+}
+
+/**
+ * Mandatory cannon: is this kart on the launch pad? The capture is a LINE across the whole road, a little before
+ * the mouth, so it does not matter how fast or how sideways the kart arrives, whether it is spinning or hopping.
+ * (Only a kart that is being carried back after a fall, or is already inside a cannon, is left alone.)
+ */
+function onLaunchPad(c: ResolvedCannon, k: KartState): boolean {
+  if (k.flight !== null || k.respawnTime > 0 || k.cannonCooldown > 0 || Math.abs(k.pos.y - c.mouth.y) > 3) return false;
+  const f = forwardOf(c.mouth.heading);
+  const dx = k.pos.x - c.mouth.x;
+  const dz = k.pos.z - c.mouth.z;
+  const along = dx * f.x + dz * f.z; // metres past the mouth (negative = still on the road before it)
+  const side = Math.abs(dx * f.z - dz * f.x); // metres from the road centre line
+  return along >= -1.5 && along <= CANNON.padAhead + 1 && side <= c.captureHalfWidth;
 }
 
 /** Start the load phase: the kart loses control and everything it was doing (drift, hop, trick). */
@@ -161,9 +187,14 @@ export function stepCannons(track: Track, karts: Map<number, KartState>, dt: num
 
     // --- Capture ------------------------------------------------------------------
     if (!k.flight) {
-      if (!capturable(k)) continue;
       for (let i = 0; i < cannons.length; i++) {
         const c = cannons[i];
+        if (c.mandatory) {
+          if (onLaunchPad(c, k)) capture(k, i);
+          if (k.flight) break;
+          continue;
+        }
+        if (!capturable(k)) continue;
         const dx = k.pos.x - c.mouth.x;
         const dz = k.pos.z - c.mouth.z;
         if (dx * dx + dz * dz > c.triggerRadius * c.triggerRadius || Math.abs(k.pos.y - c.mouth.y) > 2.5) continue;

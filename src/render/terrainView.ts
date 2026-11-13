@@ -288,7 +288,8 @@ export class TerrainView {
         proj = { s: p.s, d: (x - p.x) * p.rx + (z - p.z) * p.rz, width: p.width };
       }
       if (track.isVoid(proj)) return 1;
-      if (track.gaps.length && Math.abs(proj.d) <= proj.width / 2 + def.offroadWidth + 1 && track.inGap(proj.s)) return 2;
+      // (The 'sky' gap of a mandatory cannon is NOT cut: the natural terrain, a crater or open sky, shows under the flight.)
+      if (track.gaps.length && Math.abs(proj.d) <= proj.width / 2 + def.offroadWidth + 1 && track.inGap(proj.s) && !track.inSkyGap(proj.s)) return 2;
       return 0;
     };
     const hasCut = track.cliffs.length > 0 || track.gaps.length > 0;

@@ -12,7 +12,7 @@ export const STRAIGHT_CURVATURE = 1 / 250;
 export const TIGHT_CURVATURE = 1 / 60;
 
 export interface LayoutStats {
-  /** Road length (m). */
+  /** Road length (m), including the flight gap of a mandatory cannon. */
   length: number;
   /** Lengths (m) of every straight run, longest first (the run that wraps over the lap line is joined). */
   straights: number[];
@@ -51,16 +51,21 @@ export function layoutStats(track: Track): LayoutStats {
   const n = S.length;
   const ds = track.spacing;
 
-  const straightFlags = S.map((p) => Math.abs(p.curvature) < STRAIGHT_CURVATURE);
+  // The flight gap of a mandatory cannon is not driven: it is left out of every measurement below
+  // (it is also never "straight" and it splits the straights on either side of it).
+  const driven = S.map((p) => !track.inSkyGap(p.s));
+  const drivenLength = driven.filter(Boolean).length * ds;
+
+  const straightFlags = S.map((p, i) => driven[i] && Math.abs(p.curvature) < STRAIGHT_CURVATURE);
   const straights = circularRuns(straightFlags)
     .map(([, count]) => count * ds)
     .sort((a, b) => b - a);
   const straightTotal = straightFlags.filter(Boolean).length * ds;
 
-  const turning = S.reduce((sum, p) => sum + Math.abs(p.curvature) * ds, 0);
+  const turning = S.reduce((sum, p, i) => sum + (driven[i] ? Math.abs(p.curvature) * ds : 0), 0);
 
   // Tight corners: runs of tight samples, merging runs separated by less than 10 m.
-  const tightFlags = S.map((p) => Math.abs(p.curvature) > TIGHT_CURVATURE);
+  const tightFlags = S.map((p, i) => driven[i] && Math.abs(p.curvature) > TIGHT_CURVATURE);
   const closeGap = Math.ceil(10 / ds);
   const merged = tightFlags.slice();
   for (const [start, count] of circularRuns(tightFlags.map((f) => !f))) {
@@ -73,11 +78,11 @@ export function layoutStats(track: Track): LayoutStats {
         return false;
       }).length;
 
-  const ys = S.map((p) => p.y);
+  const ys = S.filter((_, i) => driven[i]).map((p) => p.y);
   return {
     length: track.length,
     straights,
-    curvedShare: 1 - straightTotal / track.length,
+    curvedShare: 1 - straightTotal / drivenLength,
     turningDeg: (turning * 180) / Math.PI,
     tightCorners,
     heightRange: Math.max(...ys) - Math.min(...ys),

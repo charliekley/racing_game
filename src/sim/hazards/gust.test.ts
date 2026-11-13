@@ -16,7 +16,7 @@ const track = new Track({
   hazards: [
     { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 9, phase: 2 },
     { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 10, phase: 6 },
-    { kind: 'gust', from: 85.1, to: 89.9, dir: 1, strength: 42, period: 11, phase: 4 },
+    { kind: 'gust', from: 78.1, to: 82.9, dir: 1, strength: 42, period: 11, phase: 4 },
   ],
 });
 const system = new HazardSystem(track);

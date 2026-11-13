@@ -56,6 +56,14 @@ export interface CannonDef {
   /** Time in the air (s, default 2.2) and extra arc height above the straight line (m, default 14). */
   flightTime?: number;
   apex?: number;
+  /**
+   * true = EVERY kart goes through this cannon (it is not a shortcut). The main route between the mouth and the
+   * landing becomes a gap with no ground at all (a crater, open sky), so the road ends at a launch pad and the
+   * cannon is the only way across. The capture covers the full road width, bots always use it, and a kart that
+   * misses it falls and respawns before the pad. The control points across the gap are only a straight line
+   * (nobody drives them); keep them on the line from the mouth to the landing. Default false.
+   */
+  mandatory?: boolean;
 }
 
 /**

@@ -23,9 +23,13 @@ describe('Ember Peaks', () => {
     expect(track.boostPads.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('the cannon skips the rim ridge (lands well ahead of the mouth)', () => {
+  it('the cannon is mandatory and crosses the crater: 120-250 m of road with no ground at all', () => {
     const c = track.cannons[0];
-    expect(c.landing.s - c.mouth.s).toBeGreaterThan(250);
+    expect(c.mandatory).toBe(true);
+    const gap = track.gaps.find((g) => g.kind === 'sky')!;
+    expect(gap.s1 - gap.s0).toBeGreaterThan(120);
+    expect(gap.s1 - gap.s0).toBeLessThan(250);
+    expect(Math.hypot(c.landing.x - c.mouth.x, c.landing.z - c.mouth.z)).toBeGreaterThan(150);
   });
 });
 
@@ -33,43 +37,8 @@ describe('Ember Peaks layout rules (docs/TRACKS.md, wave 4)', () => {
   const track = new Track(emberPeaks);
   const S = track.samples;
   const n = S.length;
-  const sp = track.spacing;
-  const STRAIGHT = 1 / 250;
-
-  /** Lengths (m) of the circular runs of samples for which `inRun` is true. */
-  function runs(inRun: (i: number) => boolean): number[] {
-    let start = S.findIndex((_, i) => !inRun(i));
-    if (start < 0) start = 0;
-    const out: number[] = [];
-    let len = 0;
-    for (let k = 1; k <= n; k++) {
-      if (inRun((start + k) % n)) len++;
-      else if (len > 0) {
-        out.push(len * sp);
-        len = 0;
-      }
-    }
-    return out;
-  }
-
-  it('has no straight longer than 100 m, except one up to 150 m (the chasm run-up)', () => {
-    const straights = runs((i) => Math.abs(S[i].curvature) < STRAIGHT).sort((a, b) => b - a);
-    expect(straights[0]).toBeLessThanOrEqual(150);
-    expect(straights[1] ?? 0).toBeLessThanOrEqual(100);
-  });
-
-  it('is curved for at least 70 % of the lap and turns at least 1260 degrees', () => {
-    const curved = S.filter((p) => Math.abs(p.curvature) >= STRAIGHT).length / n;
-    const turning = S.reduce((a, p) => a + Math.abs(p.curvature) * sp, 0) * (180 / Math.PI);
-    expect(curved).toBeGreaterThanOrEqual(0.7);
-    expect(turning).toBeGreaterThanOrEqual(1260);
-  });
-
-  it('has at least 8 tight corners (radius under 60 m) and a 12 m height range', () => {
-    expect(runs((i) => Math.abs(S[i].curvature) > 1 / 60).length).toBeGreaterThanOrEqual(8);
-    const ys = S.map((p) => p.y);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThanOrEqual(12);
-  });
+  // (Straights, curved share, turning, tight corners and height range are checked for every track by src/track/layout.test.ts,
+  // which leaves the cannon's flight gap out: it is not driven.)
 
   it('keeps parallel legs apart: facing walls, or at least 7 m of height (hairpin bends excepted)', () => {
     /** True near a hairpin-like bend, where walls must stay off the inside (bots and class balance suffer otherwise). */
