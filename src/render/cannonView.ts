@@ -9,7 +9,11 @@
  *   - at the landing point: a bold painted ring with arrows and a faint light beam,
  *   - a muzzle flash + smoke puffs + sparks when it fires.
  *
- * Cost: 6 draw calls per cannon (body, funnel, flash, chevrons, pad, beam). Geometry and
+ * A MANDATORY cannon (every kart goes through it, see sim/cannon.ts) also gets a launch gate: two pylons
+ * and a glowing crossbar over the road and a glowing line on the road, marking the capture line that
+ * spans the whole road, so nobody doubts that the road ends here and the cannon is the way on.
+ *
+ * Cost: 6 draw calls per cannon (body, funnel, flash, chevrons, pad, beam), +2 for a mandatory gate. Geometry and
  * materials are shared by all cannons (built once, lazily); only the chevron strip is unique
  * because it follows the road height.
  *
@@ -95,6 +99,32 @@ function flatGeometry(tris: number[][], y = 0): THREE.BufferGeometry {
   return g;
 }
 
+/**
+ * The launch gate of a mandatory cannon, in the cannon's local frame (mouth at the origin, +Z along the road):
+ * `solid` = two pylons, a crossbar and a bar of stripes (vertex colours), `glow` = the capture line on the road
+ * and the light strip under the crossbar. `half` = how far from the road centre the capture reaches (m).
+ */
+function buildGate(half: number): { solid: THREE.BufferGeometry; glow: THREE.BufferGeometry } {
+  const Z = -1.5; // the capture line (see onLaunchPad in sim/cannon.ts)
+  const H = 7.5; // height of the crossbar
+  const solid = mergeGeometries([
+    tint(new THREE.BoxGeometry(1.4, H + 1, 1.4).translate(-half + 0.2, (H + 1) / 2, Z), STEEL),
+    tint(new THREE.BoxGeometry(1.4, H + 1, 1.4).translate(half - 0.2, (H + 1) / 2, Z), STEEL),
+    tint(new THREE.BoxGeometry(2 * half, 1.0, 1.0).translate(0, H + 0.5, Z), STEEL),
+    // Orange caps on the pylons and a band along the crossbar.
+    tint(new THREE.BoxGeometry(1.7, 0.7, 1.7).translate(-half + 0.2, H + 1, Z), BAND_ORANGE),
+    tint(new THREE.BoxGeometry(1.7, 0.7, 1.7).translate(half - 0.2, H + 1, Z), BAND_ORANGE),
+    tint(new THREE.BoxGeometry(2 * half, 0.25, 1.05).translate(0, H + 0.95, Z), BAND_ORANGE),
+  ])!;
+  // Glow: a flat line across the road and a strip hanging under the crossbar.
+  const line = new THREE.PlaneGeometry(2 * half, 0.9).rotateX(-Math.PI / 2).translate(0, 0.14, Z);
+  const strip = new THREE.PlaneGeometry(2 * half - 3, 0.45).translate(0, H - 0.15, Z);
+  const glow = mergeGeometries([line, strip])!;
+  line.dispose();
+  strip.dispose();
+  return { solid, glow };
+}
+
 interface Shared {
   body: THREE.BufferGeometry;
   funnel: THREE.BufferGeometry;
@@ -108,6 +138,7 @@ interface Shared {
   chevronMat: THREE.Material;
   padMat: THREE.Material;
   beamMat: THREE.MeshBasicMaterial;
+  gateMat: THREE.MeshBasicMaterial;
 }
 let shared: Shared | null = null;
 
@@ -198,6 +229,14 @@ function getShared(): Shared {
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
+    }),
+    gateMat: new THREE.MeshBasicMaterial({
+      color: new THREE.Color(GLOW).multiplyScalar(2.5),
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
     }),
     beamMat: new THREE.MeshBasicMaterial({
       color: PAD,
@@ -324,6 +363,16 @@ export class CannonView {
       cannon.add(flash);
       group.add(cannon);
 
+      // Mandatory cannon: the launch gate across the whole road.
+      if (c.mandatory) {
+        const gate = buildGate(c.captureHalfWidth);
+        ownGeometry.push(gate.solid, gate.glow);
+        const g1 = new THREE.Mesh(gate.solid, sh.bodyMat);
+        const g2 = new THREE.Mesh(gate.glow, sh.gateMat);
+        g1.castShadow = true;
+        cannon.add(g1, g2);
+      }
+
       // Warning chevrons on the road before the mouth (in world space so they follow the road height).
       const chev = this.buildChevrons(c, track);
       ownGeometry.push(chev);
@@ -348,7 +397,9 @@ export class CannonView {
     const f = forwardOf(c.mouth.heading);
     const r = rightOf(c.mouth.heading);
     const pos: number[] = [];
-    const tris = [0, 1, 2, 3, 4].flatMap((i) => chevronTriangles(2.8, 1.8, 0.65, -(4.5 + i * 2.6)));
+    // A mandatory cannon takes the whole road, so its chevrons are as wide as the road.
+    const half = c.mandatory ? Math.max(2.8, c.captureHalfWidth - (track?.def.offroadWidth ?? 0) - 0.5) : 2.8;
+    const tris = [0, 1, 2, 3, 4].flatMap((i) => chevronTriangles(half, c.mandatory ? 3.2 : 1.8, c.mandatory ? 1.1 : 0.65, -(4.5 + i * 2.6 + (c.mandatory ? 3 : 0))));
     for (const t of tris) {
       for (let i = 0; i < 3; i++) {
         const lx = t[i * 2];
@@ -397,6 +448,7 @@ export class CannonView {
     const sh = getShared();
     // The mouth pulses so it reads as "drive in here".
     sh.funnelMat.opacity = 0.45 + 0.25 * Math.sin(time * 5);
+    sh.gateMat.opacity = 0.55 + 0.25 * Math.sin(time * 5);
     sh.beamMat.opacity = 0.11 + 0.05 * Math.sin(time * 2.5);
     for (const part of this.parts) {
       // Recoil: a damped spring pulls the body back to rest along the barrel axis (local -Z/-Y direction).

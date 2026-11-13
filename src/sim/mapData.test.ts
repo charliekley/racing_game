@@ -38,7 +38,7 @@ describe.each(all)('mapDataFromTrack: %s', (_name, def) => {
   it('carries the track features', () => {
     expect(data.bridges).toHaveLength(track.bridges.length);
     expect(data.cannons).toHaveLength(track.cannons.length);
-    expect(data.voidGaps).toHaveLength(track.gaps.length);
+    expect(data.voidGaps).toHaveLength(track.gaps.filter((g) => g.kind !== 'sky').length); // a cannon's flight gap is not drawn as a notch
     const cliffSides = track.cliffs.reduce((n, c) => n + (c.side === 'both' ? 2 : 1), 0);
     expect(data.cliffs).toHaveLength(cliffSides);
     for (const b of data.bridges) expect(b.points.length).toBeGreaterThanOrEqual(2);

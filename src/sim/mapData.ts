@@ -43,6 +43,23 @@ export function mapDataFromTrack(track: Track): MapData {
     points: thin(r.points, r.closed),
   }));
 
+  // A mandatory cannon's flight gap is not road: the main loop is drawn as an OPEN line that starts at the
+  // landing and ends at the launch pad (the cannon arc below shows the way across).
+  const sky = track.gaps.find((g) => g.kind === 'sky');
+  if (sky && routes[0]?.kind === 'main') {
+    const S = track.samples;
+    const first = S.findIndex((p) => track.deltaS(sky.s1, p.s) >= 0 && track.deltaS(sky.s1, p.s) < track.spacing); // just after the gap
+    const pts: MapPoint3[] = [];
+    for (let k = 0; k < S.length; k++) {
+      const p = S[(first + k) % S.length];
+      if (track.inSkyGap(p.s)) break; // reached the next gap = the pad
+      pts.push({ x: p.x, y: p.y, z: p.z });
+    }
+    // Every 4th sample (about 8 m), keeping the last one: the pad end.
+    const every = pts.filter((_, i) => i % 4 === 0 || i === pts.length - 1);
+    routes[0] = { ...routes[0], closed: false, points: thin(every, false) };
+  }
+
   const bridges: MapBridge[] = track.bridges.map((b) => ({
     points: sRange(track, b.s0, b.s1, BRIDGE_STEP).map((s) => {
       const p = track.pointAt(s);
@@ -71,10 +88,10 @@ export function mapDataFromTrack(track: Track): MapData {
   }));
 
   // Water and chasm gaps: marked at their middle.
-  const voidGaps: MapGap[] = track.gaps.map((g) => {
+  const voidGaps: MapGap[] = track.gaps.filter((g) => g.kind !== 'sky').map((g) => {
     const len = (((g.s1 - g.s0) % track.length) + track.length) % track.length;
     const mid = track.pointAt(g.s0 + len / 2);
-    return { x: r1(mid.x), z: r1(mid.z), heading: r2(mid.heading), width: r1(track.def.width), length: r1(len), kind: g.kind };
+    return { x: r1(mid.x), z: r1(mid.z), heading: r2(mid.heading), width: r1(track.def.width), length: r1(len), kind: g.kind === 'void' ? 'void' : 'water' };
   });
 
   const s0 = track.samples[0];
