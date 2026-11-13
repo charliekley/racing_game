@@ -41,6 +41,7 @@ import { ItemView } from './itemView';
 import { Picker } from './picker';
 import { PhoneMap } from './phoneMap';
 import { SeriesMenu } from './seriesMenu';
+import { forcedChoice } from '../shared/forcedChoice';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
 import { uiRotationDeg } from './steering';
@@ -101,8 +102,6 @@ let lobby: LobbyPlayerInfo[] = [];
 let series: SeriesInfo | null = null;
 let trackCards: TrackCard[] | null = null;
 let cardsRequestedAt = 0;
-/** The race count we already auto-opened the Loser-picks menu for, so closing it keeps it closed. */
-let pickOpenedFor = -1;
 let lastHostMsgAt = 0;
 let rttMs: number | null = null;
 let pingId = 1;
@@ -319,6 +318,7 @@ const seriesMenu = new SeriesMenu({
   setTrack: (track) => link?.sendEvent({ t: 'setup', track }),
   pick: (track) => link?.sendEvent({ t: 'pick', track }),
   stop: () => link?.sendEvent({ t: 'series', act: 'stop' }),
+  finish: (track) => link?.sendEvent({ t: 'setup', ...(track !== undefined ? { track } : {}), done: true }),
 });
 $('stage').appendChild(seriesMenu.root);
 
@@ -350,7 +350,8 @@ function updateSeriesUi() {
   };
 
   // Ask the host for the track pictures when we get a say in the track choice.
-  const mayChoose = (isOwner && s.stage === 'menu') || (isPicker && s.stage === 'between');
+  const forced = forcedChoice(s, mySlot);
+  const mayChoose = (isOwner && s.stage === 'menu') || (isPicker && s.stage === 'between') || forced !== null;
   // (Retried at most every 1.5 s while we still have none: the host only answers whoever may choose right now.)
   if (mayChoose && !trackCards && performance.now() - cardsRequestedAt > 1500) {
     cardsRequestedAt = performance.now();
@@ -358,6 +359,8 @@ function updateSeriesUi() {
   }
   const canStop = isOwner && s.mode === 'loser' && s.stage === 'between';
   seriesMenu.update(s, trackCards, canStop);
+  // The forced pop-up: shown whenever the host is waiting for THIS phone (join, reconnect, after a race, Loser picks).
+  seriesMenu.sync(forced);
 
   const at = s.standings.findIndex((v, i) => i % 2 === 0 && v === mySlot);
   const myRank = at >= 0 ? at / 2 + 1 : null;
@@ -369,16 +372,12 @@ function updateSeriesUi() {
       text.textContent = '';
       addBtn(`${MODE_SHORT[s.mode]}${s.mode !== 'gp' && trackName ? ` · ${trackName}` : ''}  ▸`, () => seriesMenu.open('setup'));
     } else {
-      text.textContent = `${MODE_SHORT[s.mode]} · ${nameOfSlot(s.owner)} chooses`;
+      text.textContent = s.pending ? `${nameOfSlot(s.owner)} is choosing…` : `${MODE_SHORT[s.mode]} · ${nameOfSlot(s.owner)} chooses`;
     }
   } else if (s.stage === 'between') {
     const race = s.raceTotal ? `Race ${s.racesDone}/${s.raceTotal}` : '';
     if (s.mode === 'loser') {
       text.textContent = isPicker ? `${standing} · your pick` : `${standing} · ${nameOfSlot(s.picker)} is choosing…`;
-      if (isPicker && pickOpenedFor !== s.racesDone) {
-        pickOpenedFor = s.racesDone;
-        seriesMenu.open('pick');
-      }
     } else {
       text.textContent = [race, standing].filter(Boolean).join(' · ');
     }
@@ -391,7 +390,7 @@ function updateSeriesUi() {
   }
   // (The series message can arrive just before the 'phase' message, so only the series stage closes the menu.)
   if (s.stage === 'racing') seriesMenu.close();
-  if (s.stage === 'menu' && !isOwner) seriesMenu.close();
+  if (s.stage === 'menu' && !isOwner) seriesMenu.close(); // (a no-op while forced; sync() above decides that)
   updateReadyButton();
 }
 

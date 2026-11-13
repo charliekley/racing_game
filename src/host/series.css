@@ -25,7 +25,7 @@
 .mode-pill.on { background: #ffd23f; color: #2a1a00; border-color: #fff3b0; }
 .mode-note { color: var(--muted); font-size: clamp(11px, 1.8vh, 16px); }
 /* Grand Prix plays every track, so the single-track picker is dimmed. */
-.track-panel.gp #track-map, .track-panel.gp .track-name { opacity: 0.45; }
+.track-panel.gp #track-map, .track-panel.gp #track-shot, .track-panel.gp .track-name { opacity: 0.45; }
 
 /* --- Results: points column + running standings --- */
 .res-list.with-pts .res-row { grid-template-columns: 4.2em 1.2em 1fr auto auto auto; }

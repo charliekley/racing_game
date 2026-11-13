@@ -129,6 +129,11 @@ export interface SeriesInfo {
   raceTotal: number | null;
   /** Ranked standings, flat [slot, points, slot, points, ...]; empty in single races. */
   standings: number[];
+  /**
+   * Stage 'menu' only: nobody has made this round's mode / track choice yet, so the owner's phone shows
+   * its forced pop-up (see src/shared/forcedChoice.ts). Optional: hosts from before the pop-up leave it out (= false).
+   */
+  pending?: boolean;
 }
 
 /** One track card for the phone menu. `img` is a small PNG data URL drawn by the host. */
@@ -176,7 +181,8 @@ export function parseSeriesInfo(m: unknown, trackCount: number): SeriesInfo | nu
   const racesDone = typeof o.racesDone === 'number' && Number.isInteger(o.racesDone) ? o.racesDone : null;
   const raceTotal = o.raceTotal === null ? null : typeof o.raceTotal === 'number' && Number.isInteger(o.raceTotal) ? o.raceTotal : undefined;
   if (racesDone === null || raceTotal === undefined) return null;
-  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: o.standings as number[] };
+  if (o.pending !== undefined && typeof o.pending !== 'boolean') return null;
+  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: o.standings as number[], ...(o.pending ? { pending: true } : {}) };
 }
 
 export type ControllerToHost =
@@ -185,7 +191,8 @@ export type ControllerToHost =
   | { t: 'profile'; name: string; color: number; loadout?: Loadout }
   | { t: 'ready'; ready: boolean }
   /** Menu owner only (lobby): choose the mode and/or the track. The host validates both fields. */
-  | { t: 'setup'; mode?: SeriesMode; track?: number }
+  /** `done: true` = the owner finished the forced pop-up (mode and, where it matters, track): the host then stops waiting for them. */
+  | { t: 'setup'; mode?: SeriesMode; track?: number; done?: boolean }
   /** Loser picks: the chosen player names the next track. Ignored from anybody else. */
   | { t: 'pick'; track: number }
   /** Menu owner only: back to the menu after a race ('menu'), or finish a series now ('stop'). Anyone who may choose a track asks for the preview cards with 'cards'. */
@@ -228,12 +235,13 @@ const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'setup', 'pick', 
 const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'series', 'tracks', 'drift', 'ping', 'pong']);
 
 /** Validate a phone's `setup` message. Bad fields are dropped; returns null if nothing valid is left. */
-export function parseSetup(m: unknown, trackCount: number): { mode?: SeriesMode; track?: number } | null {
+export function parseSetup(m: unknown, trackCount: number): { mode?: SeriesMode; track?: number; done?: true } | null {
   if (typeof m !== 'object' || m === null) return null;
   const mode = sanitizeMode((m as { mode?: unknown }).mode);
   const track = sanitizeTrackIndex((m as { track?: unknown }).track, trackCount);
-  if (!mode && track === null) return null;
-  return { ...(mode ? { mode } : {}), ...(track !== null ? { track } : {}) };
+  const done = (m as { done?: unknown }).done === true;
+  if (!mode && track === null && !done) return null;
+  return { ...(mode ? { mode } : {}), ...(track !== null ? { track } : {}), ...(done ? { done: true as const } : {}) };
 }
 
 /** Validate a phone's `series` action. */
