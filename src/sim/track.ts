@@ -516,10 +516,19 @@ export class Track implements Ground {
 
   /** Road/strip level at a nearest-segment hit (what the terrain blends toward). */
   private roadLevel(hit: RoadHit): number {
+    let level = this.roadLevelOf(hit);
+    // Overlapping roads (shortcut fork / lip): never rise above any of them.
+    if (hit.others) for (const o of hit.others) level = Math.min(level, this.roadLevelOf(o));
+    return level;
+  }
+
+  private roadLevelOf(hit: RoadHit): number {
     const S = hit.route ? this.branches[hit.route - 1].samples : this.samples; // shortcut branches have their own samples
     const a = S[hit.i];
     const b = S[(hit.i + 1) % S.length];
-    const y = a.y + (b.y - a.y) * hit.u;
+    let y = a.y + (b.y - a.y) * hit.u;
+    // A branch's kicker is built ON the ground: the terrain follows the ground level under it, not its top.
+    if (hit.route) y -= this.branches[hit.route - 1].kickAt((hit.i + hit.u) * this.branches[hit.route - 1].spacing);
     const bank = a.bank + (b.bank - a.bank) * hit.u;
     const half = hit.route ? (a.width + (b.width - a.width) * hit.u) / 2 : this.def.width / 2;
     return Track.groundLevel(y, bank, half, hit.d, this.def.offroadWidth);
@@ -567,14 +576,15 @@ export class Track implements Ground {
   private branchSurfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
     const hw = p.width / 2;
     const ad = Math.abs(p.d);
+    const br = this.branches[p.route - 1];
     if (ad <= hw + CURB_WIDTH) {
-      const dirt = this.branches[p.route - 1].isDirt(p.i);
+      const dirt = br.isDirt(p.i);
       return { height: p.y + Track.bankLift(p.bank, hw, p.d), surface: dirt ? 'offroad' : 'road' };
     }
     const height =
       this.terrain.enabled && x !== undefined && z !== undefined && ad > hw + this.def.offroadWidth
         ? this.terrain.height(x, z)
-        : Track.groundLevel(p.y, p.bank, hw, p.d, this.def.offroadWidth);
+        : Track.groundLevel(p.y - br.kickAt(((p.s - br.s0 + this.length) % this.length) * (br.length / br.span)), p.bank, hw, p.d, this.def.offroadWidth);
     return { height, surface: 'offroad' };
   }
 

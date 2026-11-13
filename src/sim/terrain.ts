@@ -41,6 +41,8 @@ export interface RoadHit {
   d: number;
   /** Which road the segment belongs to: 0 / undefined = main loop, 1+ = shortcut branch (see shortcuts.ts). */
   route?: number;
+  /** Other roads (with a shortcut branch) that are also within flat reach of the point: the ground must not rise above any of them. */
+  others?: RoadHit[];
 }
 
 /** Anything that can answer "which road segment is nearest?" (the main road alone, or main + shortcut branches). */
