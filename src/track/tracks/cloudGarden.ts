@@ -185,12 +185,12 @@ export const cloudGarden: TrackDef = {
     { from: 85.1, to: 89.9 }, // E -> A (bridge 3)
   ],
   hazards: [
-    // WIND GUSTS on the three exposed bridges (no walls): every ~10 s a gust pushes karts sideways for 1.5 s,
+    // WIND GUSTS on the three exposed bridges (no walls): every 5-6 s a gust pushes karts sideways for 1.5 s,
     // after 1.5 s of warning (streaks, whistle). Alternating directions and different periods/phases, so
     // the three bridges do not gust in step. Strength 42 m/s^2: see sim/hazards/gust.ts for what it does.
-    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 9, phase: 2 },
-    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 10, phase: 6 },
-    { kind: 'gust', from: 85.1, to: 89.9, dir: 1, strength: 42, period: 11, phase: 4 },
+    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 5, phase: 2 },
+    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 5.5, phase: 4 },
+    { kind: 'gust', from: 85.1, to: 89.9, dir: 1, strength: 42, period: 6, phase: 1 },
   ],
   cannons: [{ at: 46.8, offset: 0.6, target: { at: 64.5, offset: 0 }, flightTime: 3.4, apex: 24 }],
 };

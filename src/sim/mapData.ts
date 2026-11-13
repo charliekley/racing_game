@@ -35,7 +35,8 @@ function sRange(track: Track, s0: number, s1: number, step: number): number[] {
 }
 
 export function mapDataFromTrack(track: Track): MapData {
-  const routes: MapRoute[] = track.routes.map((r) => ({
+  // Shortcuts are left OFF the maps on purpose: they are secrets for players to discover.
+  const routes: MapRoute[] = track.routes.filter((r) => r.kind !== 'shortcut').map((r) => ({
     kind: r.kind,
     surface: r.surface,
     width: r1(r.width),

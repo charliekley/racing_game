@@ -9,7 +9,16 @@ import { cyclePose } from './cycle';
 import { Gust, gustEnvelope } from './gust';
 import { HazardSystem } from './system';
 
-const track = new Track(cloudGarden);
+// The unit tests below use fixed gust timings (period 9/10/11) so they test the mechanism, not the
+// track's current tuning (cloudGarden.ts may change its periods freely).
+const track = new Track({
+  ...cloudGarden,
+  hazards: [
+    { kind: 'gust', from: 11.2, to: 14.9, dir: 1, strength: 42, period: 9, phase: 2 },
+    { kind: 'gust', from: 49.2, to: 53.8, dir: -1, strength: 42, period: 10, phase: 6 },
+    { kind: 'gust', from: 85.1, to: 89.9, dir: 1, strength: 42, period: 11, phase: 4 },
+  ],
+});
 const system = new HazardSystem(track);
 const gusts = system.list as Gust[];
 const ground = system.wrapGround(track);

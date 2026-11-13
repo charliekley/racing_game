@@ -74,13 +74,12 @@ describe('specific tracks', () => {
     expect(findCrossings(data.routes)).toHaveLength(0);
   });
 
-  it('shortcut routes on a track are passed through', () => {
+  it('shortcut routes are left off the map (secrets)', () => {
     const track = new Track(meadowRing);
     const main = track.routes[0];
     const fake = { ...main, kind: 'shortcut' as const, surface: 'dirt' as const, closed: false, points: main.points.slice(0, 8) };
     Object.defineProperty(track, 'routes', { get: () => [main, fake] });
     const data = mapDataFromTrack(track);
-    expect(data.routes.map((r) => r.kind)).toEqual(['main', 'shortcut']);
-    expect(data.routes[1].surface).toBe('dirt');
+    expect(data.routes.map((r) => r.kind)).toEqual(['main']);
   });
 });
