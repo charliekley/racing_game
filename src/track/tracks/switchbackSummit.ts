@@ -186,11 +186,12 @@ export const switchbackSummit: TrackDef = {
     hills: { amplitude: 3, wavelength: 90 },
     features: [
       { x: 70, z: 110, radius: 200, height: 26 }, // the mountain behind the climb
+      { x: -250, z: 20, radius: 230, height: 19 }, // a high bench round the lake, so the road and the lake shortcut meet natural ground (no cliff under the road)
       { x: -240, z: 35, radius: 55, height: -4 }, // the frozen lake basin between the shortcut and the main road
       { x: -140, z: 262, radius: 105, height: 58 }, // an open snow slope rising on the left of the downhill (points 59-72): the snowballs roll down it
       { x: -240, z: 235, radius: 100, height: 52 }, // ...continuing along the road
     ],
-    blend: 18,
+    blend: 70,
   },
   hazards: [
     // period 9 s, staggered: a ball crosses somewhere every ~2.3 s. Each warns ~1.5 s up the slope first.
@@ -201,20 +202,20 @@ export const switchbackSummit: TrackDef = {
   ],
   shortcuts: [
     {
-      // Straight across the frozen lake, on dirt (it is slower than tarmac). It ends in a kicker beside the main road (see shortcuts.ts).
-      from: 74,
+      // Across the frozen lake, on a dirt path: it leaves the west road's outer edge, wanders down the slope onto the high lake
+      // bench, crosses the ice and climbs gently to the south road, merging into its edge at a shallow angle (see sim/shortcuts.ts).
+      from: 76,
       to: 99,
       points: [
-        // Peels off to the south-east at a shallow angle (the first two points fan away from the main road).
-        [-325, 82],
-        [-296, 62],
-        [-266, 54],
-        [-225, 38],
-        [-250, 5],
-        [-205, -22],
-        [-172, -48],
+        [-322, 66],
+        [-294, 56],
+        [-262, 50],
+        [-228, 38],
+        [-244, 8],
+        [-236, -26],
+        [-218, -48],
+        [-198, -50],
       ],
-      surface: 'dirt',
       width: 12,
     },
   ],

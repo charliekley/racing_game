@@ -7,7 +7,7 @@ import { collideWalls } from './collision';
 import { SIM_DT } from './config';
 import { COUNTDOWN_SECONDS, Race } from './race';
 import { CURB_WIDTH, Track, type Projection } from './track';
-import { APPROACH_DEG, KICK_HEIGHT, END_WIDTH, ROUTE_STRIDE } from './shortcuts';
+import { DIRT_LIFT, JOIN_ANGLE_DEG, MAX_GRADE } from './shortcuts';
 import { docksideLoop } from '../track/tracks/docksideLoop';
 import { switchbackSummit } from '../track/tracks/switchbackSummit';
 import { World } from './world';
@@ -83,27 +83,28 @@ describe('branch geometry', () => {
     expect(track.branches.map((b) => b.route)).toEqual([1, 2, 3]);
   });
 
-  it('starts exactly on the main centerline; ends in a kicker lip beside the main road, at the junction (foot)', () => {
+  it("starts and ends at the main road's outer edge, at ground level, at a shallow angle", () => {
     for (const b of track.branches) {
-      // Start: on the main centerline, same height, heading and width.
-      const a = b.samples[0];
-      const m0 = track.projectOnMain(a.x, a.z);
-      expect(Math.abs(m0.d)).toBeLessThan(0.3);
-      expect(Math.abs(m0.y - a.y)).toBeLessThan(0.15);
-      expect(Math.abs(track.deltaS(m0.s, b.s0))).toBeLessThan(0.5);
-      expect(Math.abs(Math.atan2(Math.sin(a.heading - track.samples[m0.i].heading), Math.cos(a.heading - track.samples[m0.i].heading)))).toBeLessThan(0.3);
-      expect(a.width).toBeCloseTo(shortcutTest.width, 6);
-      // End: the lip's foot on the main road is the junction `to`; it lies beside the road (clear of the kerb),
-      // points at the road by APPROACH_DEG, is narrowed and stands KICK_HEIGHT above the ground there.
-      const e = b.samples[b.samples.length - 1];
-      const m1 = track.projectOnMain(e.x, e.z);
-      expect(Math.abs(track.deltaS(m1.s, b.s1))).toBeLessThan(1);
-      expect(Math.abs(m1.d)).toBeGreaterThan(shortcutTest.width / 2 + CURB_WIDTH);
-      const mainHeading = track.samples[m1.i].heading;
-      const turn = Math.abs(Math.atan2(Math.sin(e.heading - mainHeading), Math.cos(e.heading - mainHeading)));
-      expect(turn).toBeCloseTo((APPROACH_DEG * Math.PI) / 180, 1);
-      expect(e.width).toBeCloseTo(Math.min(END_WIDTH, b.samples[Math.floor(b.samples.length / 2)].width), 6);
-      expect(b.kick[b.kick.length - 1]).toBeCloseTo(KICK_HEIGHT, 6);
+      const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+      const first = b.samples[0];
+      const last = b.samples[b.samples.length - 1];
+      for (const [p, junctionS, side] of [[first, b.s0, b.startSide], [last, b.s1, b.endSide]] as const) {
+        const m = track.projectOnMain(p.x, p.z);
+        // On the outside edge of the kerb, on the side the path comes from, at the junction's distance.
+        expect(Math.abs(Math.abs(m.d) - (shortcutTest.width / 2 + CURB_WIDTH))).toBeLessThan(0.3);
+        expect(Math.sign(m.d)).toBe(side);
+        expect(Math.abs(track.deltaS(m.s, junctionS))).toBeLessThan(1);
+        // At ground level: the path's height is the terrain's, which here is the main road's own verge level.
+        const ground = Track.groundLevel(m.y, m.bank, m.width / 2, m.d, shortcutTest.offroadWidth);
+        expect(Math.abs(p.y - ground)).toBeLessThan(0.3);
+        expect(Math.abs(track.terrain.height(p.x, p.z) - p.y)).toBeLessThan(0.05);
+        // Shallow angle to the main road (and about the join angle).
+        const turn = Math.abs(wrap(p.heading - track.samples[m.i].heading));
+        expect(turn).toBeLessThan((35 * Math.PI) / 180);
+        expect(turn).toBeCloseTo((JOIN_ANGLE_DEG * Math.PI) / 180, 1);
+      }
+      expect(first.width).toBeCloseTo(shortcutTest.width * 0.7, 6);
+      expect(b.surface).toBe('dirt');
     }
   });
 
@@ -118,8 +119,7 @@ describe('branch geometry', () => {
         expect(chord).toBeLessThanOrEqual(b.spacing * 1.001);
       }
       for (const p of b.samples) expect(Math.abs(p.curvature)).toBeLessThan(0.3);
-      const mid = b.samples[Math.floor(b.samples.length / 2)];
-      expect(mid.width).toBeCloseTo(shortcutTest.width * 0.7, 6); // default branch width
+      expect(b.samples[Math.floor(b.samples.length / 2)].width).toBeCloseTo(shortcutTest.width * 0.7, 6); // default branch width
     }
   });
 
@@ -223,38 +223,43 @@ describe('project() with branches', () => {
 // ---------------------------------------------------------------------------
 
 describe('sample() on branches', () => {
-  it('is road on a road branch and counts dirt as off-road (but not at the road-like ends)', () => {
-    const rMid = R.samples[Math.floor(R.samples.length / 2)];
-    expect(track.sample(rMid.x, rMid.z, R.route * 2 ** 20 + Math.floor(R.samples.length / 2))?.surface).toBe('road');
-    const dMid = Math.floor(D.samples.length / 2);
-    const d = D.samples[dMid];
-    const hit = track.sample(d.x, d.z, D.route * 2 ** 20 + dMid);
-    expect(hit?.surface).toBe('offroad');
-    expect(hit?.height).toBeCloseTo(d.y + Track.bankLift(d.bank, d.width / 2, 0), 3);
-    // Near the fork the dirt branch is still tarmac.
-    const s3 = D.samples[3];
-    expect(track.sample(s3.x, s3.z, D.route * 2 ** 20 + 3)?.surface).toBe('road');
-    // Beside the road: off-road strip, like the main road.
-    const side = track.sample(rMid.x + rMid.rx * (rMid.width / 2 + 4), rMid.z + rMid.rz * (rMid.width / 2 + 4), R.route * 2 ** 20 + Math.floor(R.samples.length / 2));
-    expect(side?.surface).toBe('offroad');
+  it('is plain off-road terrain on a dirt path, with no step to the verge beside it', () => {
+    for (const b of track.branches) {
+      const mid = Math.floor(b.samples.length / 2);
+      const p = b.samples[mid];
+      const hint = b.route * 2 ** 20 + mid;
+      const hit = track.sample(p.x, p.z, hint)!;
+      expect(hit.surface).toBe('offroad');
+      expect(hit.height).toBeCloseTo(track.terrain.height(p.x, p.z), 6);
+      // The surface is continuous across the path and its edge (no kerb, no strip, no step).
+      let prev = hit.height;
+      for (let d = 0.5; d <= p.width / 2 + 6; d += 0.5) {
+        const h = track.sample(p.x + p.rx * d, p.z + p.rz * d, hint)!;
+        expect(h.surface).toBe('offroad');
+        expect(Math.abs(h.height - prev)).toBeLessThan(0.6);
+        prev = h.height;
+      }
+    }
   });
 
-  it('blends the terrain toward branch roads too', () => {
+  it('lightly flattens the terrain under a path on hilly ground (a worn track, not an embankment)', () => {
     const hilly: TrackDef = {
       ...shortcutTest,
       terrain: { seed: 3, hills: { amplitude: 8, wavelength: 90 } },
       bridges: [],
       points: shortcutTest.points.map((p) => [p[0], p[1]] as [number, number]),
-      shortcuts: [{ from: 6, to: 9, points: [[95, 290, 6], [180, 300, 6]] }],
+      shortcuts: [{ from: 6, to: 9, points: [[95, 290], [180, 300]] }],
     };
     const t = new Track(hilly);
     const b = t.branches[0];
-    const k = Math.floor(b.samples.length / 2);
-    const p = b.samples[k];
-    // 3 m outside the off-road strip the ground still follows the road level (the flat skirt of the blend).
-    const out = p.width / 2 + hilly.offroadWidth + 1;
-    const h = t.terrain.height(p.x + p.rx * out, p.z + p.rz * out);
-    expect(Math.abs(h - p.y)).toBeLessThan(0.6);
+    const plain = new Track({ ...hilly, shortcuts: undefined });
+    let maxChange = 0;
+    for (const p of b.samples) {
+      // The centerline ground is the path's own level, and it is never far from the natural ground.
+      expect(Math.abs(t.terrain.height(p.x, p.z) - p.y)).toBeLessThan(0.05);
+      maxChange = Math.max(maxChange, Math.abs(t.terrain.height(p.x, p.z) - plain.terrain.height(p.x, p.z)));
+    }
+    expect(maxChange).toBeLessThan(2.5);
   });
 });
 
@@ -288,7 +293,7 @@ describe('routes', () => {
   it('lists the main loop and one shortcut line per branch', () => {
     const rs = track.routes;
     expect(rs.map((r) => r.kind)).toEqual(['main', 'shortcut', 'shortcut', 'shortcut']);
-    expect(rs.map((r) => r.surface)).toEqual(['road', 'road', 'dirt', 'road']);
+    expect(rs.map((r) => r.surface)).toEqual(['road', 'dirt', 'dirt', 'dirt']);
     expect(rs.map((r) => r.closed)).toEqual([true, false, false, false]);
     track.branches.forEach((b, k) => {
       const line = rs[k + 1];
@@ -302,7 +307,7 @@ describe('routes', () => {
       }
     });
     // X carries its height (the underpass is at ground level).
-    expect(Math.max(...rs[3].points.map((p) => p.y))).toBeLessThan(1.5 + KICK_HEIGHT);
+    expect(Math.max(...rs[3].points.map((p) => p.y))).toBeLessThan(2);
   });
 });
 
@@ -390,7 +395,7 @@ describe('race credit', () => {
     let cutterMaxNext = 0;
     let respawned = false;
     const startSeg = world.race!.segmentOf(r.s0);
-    for (let i = 0; i < 60 * 70; i++) {
+    for (let i = 0; i < 60 * 110; i++) {
       const ev = world.tick((slot) => {
         const k = world.karts.get(slot)!;
         if (slot === 1) return autopilot(k, trackR, racerStyle);
@@ -421,7 +426,7 @@ describe('bots', () => {
     expect([0, 1, 2, 3].map((s) => (botStyleFor(s).shortcutBias ?? 0) > 0.5)).toEqual([true, false, true, false]);
   });
 
-  it('a shortcut-loving bot beats a main-road bot on a track where the shortcut is clearly shorter', () => {
+  it('a shortcut-loving bot and a main-road bot lap in similar times (dirt is slower but shorter)', () => {
     const onlyR = trackR;
     const lapTime = (bias: number) => {
       const w = new World(onlyR, onlyR);
@@ -432,9 +437,10 @@ describe('bots', () => {
       expect(times.length).toBe(2);
       return times[1]; // second lap: both are up to speed
     };
+    // The path is dirt (slower), so it is a trade-off, not a free win: both lap times are close to each other.
     const fast = lapTime(1);
     const slow = lapTime(0);
-    expect(fast).toBeLessThan(slow - 1);
+    expect(Math.abs(fast - slow)).toBeLessThan(6);
   });
 
   it('4 bots finish a 3-lap race on the test track, some of them through the shortcuts', () => {
@@ -474,115 +480,120 @@ describe('bots', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Junction polish: clean fork, kicker rejoin
+// The shipped tracks: dirt paths merging with the unmodified main road
 // ---------------------------------------------------------------------------
 
 /** Every track that ships with shortcuts, plus the dev test track. */
-const withShortcuts: [string, Track][] = [
-  ['shortcut test', track],
-  ['Dockside Loop', new Track(docksideLoop)],
-  ['Switchback Summit', new Track(switchbackSummit)],
+const withShortcuts: [string, TrackDef][] = [
+  ['shortcut test', shortcutTest],
+  ['Dockside Loop', docksideLoop],
+  ['Switchback Summit', switchbackSummit],
 ];
 
 describe('shortcut junctions', () => {
-  it('has no terrain above the branch road surface (within the road width), along the whole branch', () => {
-    for (const [name, trk] of withShortcuts) {
+  it('leaves the main road untouched: same samples and the same ground out to the edge of the strip', () => {
+    for (const [name, def] of withShortcuts) {
+      const trk = new Track(def);
+      const plain = new Track({ ...def, shortcuts: undefined });
+      expect(trk.samples.length, name).toBe(plain.samples.length);
+      const reach = def.width / 2 + def.offroadWidth;
+      for (const b of trk.branches) {
+        for (const idx of [b.fromIdx, b.toIdx]) {
+          for (let o = -30; o <= 30; o += 3) {
+            const i = (idx + o + trk.samples.length) % trk.samples.length;
+            const q = trk.samples[i];
+            const r = plain.samples[i];
+            expect([q.x, q.y, q.z, q.bank, q.width, q.wallLeft, q.wallRight], name).toEqual([r.x, r.y, r.z, r.bank, r.width, r.wallLeft, r.wallRight]);
+            for (let d = -reach; d <= reach; d += 2) {
+              expect(trk.terrain.height(q.x + q.rx * d, q.z + q.rz * d), name).toBeCloseTo(plain.terrain.height(q.x + q.rx * d, q.z + q.rz * d), 9);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('has no terrain above the dirt surface across the path, and a drivable grade along it', () => {
+    for (const [name, def] of withShortcuts) {
+      const trk = new Track(def);
       for (const b of trk.branches) {
         let worst = -Infinity;
         for (const p of b.samples) {
           // Skip stretches that pass over the main road (a bridge): the ground there belongs to the lower road.
           if (trk.samples.some((q) => p.y - q.y >= 3 && (p.x - q.x) ** 2 + (p.z - q.z) ** 2 < 20 * 20)) continue;
           for (let d = -p.width / 2; d <= p.width / 2 + 1e-9; d += p.width / 8) {
-            const x = p.x + p.rx * d;
-            const z = p.z + p.rz * d;
-            const road = p.y + Track.bankLift(p.bank, p.width / 2, d);
-            worst = Math.max(worst, trk.terrain.height(x, z) - road);
+            // The dirt is drawn DIRT_LIFT above the terrain, so the terrain can never poke through it. The path's own
+            // level must also be close to the ground across its width (no trench, no ridge).
+            const ground = trk.terrain.height(p.x + p.rx * d, p.z + p.rz * d);
+            worst = Math.max(worst, ground - (p.y + DIRT_LIFT));
           }
         }
-        // (The renderer also dips the terrain mesh a few cm under road strips.)
-        expect(worst, `${name} branch ${b.route}`).toBeLessThan(0.3);
-      }
-    }
-  });
-
-  it('peels off at a shallow angle: on the shipped tracks the branch heading stays within 40 degrees of the main road for the first 30 m', () => {
-    for (const [name, trk] of withShortcuts.slice(1)) {
-      for (const b of trk.branches) {
-        for (const p of b.samples.slice(0, Math.round(30 / b.spacing))) {
-          const m = trk.projectOnMain(p.x, p.z);
-          const mh = trk.samples[m.i].heading;
-          const diff = Math.abs(Math.atan2(Math.sin(p.heading - mh), Math.cos(p.heading - mh)));
-          expect(diff, name).toBeLessThan((40 * Math.PI) / 180);
+        expect(worst, `${name} branch ${b.route}`).toBeLessThan(1.2);
+        for (let k = 1; k < b.samples.length; k++) {
+          const grade = Math.abs(b.samples[k].y - b.samples[k - 1].y) / b.spacing;
+          expect(grade, `${name} branch ${b.route} sample ${k}`).toBeLessThan(MAX_GRADE + 0.04);
         }
       }
     }
   });
 
-  it('ends on a straight, level kicker: lip 1-3 m above the ground, then a gap to the main road', () => {
-    for (const [name, trk] of withShortcuts) {
+  it('meets the main road edge at ground level, within 0.3 m, at a shallow angle (< 35 deg), at both ends', () => {
+    for (const [name, def] of withShortcuts) {
+      const trk = new Track(def);
       for (const b of trk.branches) {
-        const e = b.samples[b.samples.length - 1];
-        const m = trk.projectOnMain(e.x, e.z);
-        const ground = trk.surfaceAt(m, e.x, e.z)!.height; // the ground right below the lip
-        expect(e.y - ground, name).toBeGreaterThan(1);
-        expect(e.y - ground, name).toBeLessThan(3);
-        // The lip is beside the road (not on it): a real gap to fly over.
-        expect(Math.abs(m.d) - e.width / 2, name).toBeGreaterThan(m.width / 2 - 0.5);
-        // The last 10 m before the lip are straight.
-        const k0 = b.samples.length - 1 - Math.round(10 / b.spacing);
-        expect(Math.abs(e.heading - b.samples[k0].heading), name).toBeLessThan(0.06);
+        for (const p of [b.samples[0], b.samples[b.samples.length - 1]]) {
+          const m = trk.projectOnMain(p.x, p.z);
+          expect(Math.abs(Math.abs(m.d) - (def.width / 2 + CURB_WIDTH)), name).toBeLessThan(0.3);
+          const ground = Track.groundLevel(m.y, m.bank, m.width / 2, m.d, def.offroadWidth);
+          expect(Math.abs(p.y - ground), name).toBeLessThan(0.3);
+          const turn = Math.abs(Math.atan2(Math.sin(p.heading - trk.samples[m.i].heading), Math.cos(p.heading - trk.samples[m.i].heading)));
+          expect(turn, name).toBeLessThan((35 * Math.PI) / 180);
+        }
       }
     }
   });
 
-  it('a kart driving each branch flies off the lip, lands on the main road and keeps correct checkpoint credit', () => {
-    for (const [name, trk] of withShortcuts) {
+  it('a kart drives from the main road onto the path and back with correct credit and no respawn', () => {
+    for (const [name, def] of withShortcuts) {
+      const trk = new Track(def);
       trk.branches.forEach((b) => {
         const w = new World(trk, trk);
         w.startRace([0], 3);
         const race = w.race!;
-        // Skip the countdown and put the kart on the branch, 60 m before the lip, at speed.
         while (race.phase === 'countdown') w.tick(() => ({ steer: 0, buttons: 0 }));
-        const k0 = b.samples.length - 1 - Math.round(60 / b.spacing);
-        const p0 = b.samples[k0];
+        // Start on the main road 50 m before the fork, at speed, with credit for the road before it.
+        const N = trk.samples.length;
+        const i0 = (b.fromIdx - Math.round(50 / trk.spacing) + N) % N;
+        const p0 = trk.samples[i0];
         const kart = w.karts.get(0)!;
         Object.assign(kart.pos, { x: p0.x, y: p0.y, z: p0.z });
         kart.heading = p0.heading;
         kart.speed = 18;
         kart.vel.x = Math.sin(p0.heading) * 18;
         kart.vel.z = Math.cos(p0.heading) * 18;
-        kart.trackIndex = b.route * ROUTE_STRIDE + k0;
-        // Credit for the road before the branch, as a driver arriving here would have.
+        kart.trackIndex = i0;
         race.grantProgress(0, p0.s);
-        const style = { ...botStyleFor(0), pace: 1 };
-        let flew = false;
-        let landed = false;
+        const style = { ...botStyleFor(0), shortcutBias: 1 };
+        const routes: number[] = [0];
         let respawned = false;
-        let prev = { x: kart.pos.x, z: kart.pos.z };
-        let maxJump = 0;
-        for (let i = 0; i < 60 * 8 && !landed; i++) {
-          const ev = w.tick(() => autopilot(kart, trk, style));
-          if (ev.some((e) => e.kind === 'respawn')) respawned = true;
-          maxJump = Math.max(maxJump, Math.hypot(kart.pos.x - prev.x, kart.pos.z - prev.z));
-          prev = { x: kart.pos.x, z: kart.pos.z };
-          if (!kart.grounded) flew = true;
+        let prevS = p0.s;
+        let maxBack = 0;
+        for (let i = 0; i < 60 * 70; i++) {
+          if (w.tick(() => autopilot(kart, trk, style)).some((e) => e.kind === 'respawn')) respawned = true;
+          const r = trk.onRoute(kart);
+          if (r !== routes[routes.length - 1]) routes.push(r);
           const pr = trk.project(kart.pos.x, kart.pos.z, kart.trackIndex);
-          if (flew && kart.grounded && pr.route === 0) landed = true;
+          maxBack = Math.max(maxBack, -trk.deltaS(prevS, pr.s));
+          prevS = pr.s;
+          if (routes.length >= 3 && trk.deltaS(b.s1, pr.s) > 40) break; // back on the main road, well past the rejoin
         }
         const label = `${name} branch ${b.route}`;
+        expect(routes, label).toEqual([0, b.route, 0]);
         expect(respawned, label).toBe(false);
-        expect(maxJump, label).toBeLessThan(2);
-        expect(flew, label).toBe(true);
-        expect(landed, label).toBe(true);
-        // On the main road (its tarmac or kerb), on the route-0 hint, no off-course trouble.
-        const pr = trk.project(kart.pos.x, kart.pos.z, kart.trackIndex);
-        expect(trk.onRoute(kart), label).toBe(0);
-        expect(Math.abs(pr.d), label).toBeLessThan(trk.def.width / 2 + CURB_WIDTH + 0.5);
-        // The mapped distance is past the junction, never before the branch's start: credit is consistent.
-        expect(trk.deltaS(b.s1, pr.s), label).toBeGreaterThan(-1);
-        // Keep driving the main road for a few seconds: no off-course respawn for the skipped checkpoints.
-        for (let i = 0; i < 60 * 4; i++) if (w.tick(() => autopilot(kart, trk, style)).some((e) => e.kind === 'respawn')) respawned = true;
-        expect(respawned, label + ' (after landing)').toBe(false);
+        expect(maxBack, label).toBeLessThan(15); // the mapped distance never jumps back by much
+        // Credit: the race never saw a jump it did not believe (no off-course timer running), and the kart is
+        // still being tracked as racing on the main road (the detailed credit rules are tested in 'race credit').
+        expect(race.racers.get(0)!.offCourseTime, label).toBe(0);
       });
     }
   });

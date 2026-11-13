@@ -106,9 +106,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
     const past = r.s1 - r.s0 + r.gap + 6; // stay on the gas through the ramp, the gap and the landing
     return d > -past && d < lookAhead;
   });
-  // A shortcut ends in a kicker: stay on the gas over its last stretch (like for a ramp) so we clear the gap to the main road.
-  const kickerAhead = route > 0 && track.branches[route - 1].samples.length - 1 - at < 30;
-  const target = jumpAhead || kickerAhead ? Infinity : c.maxSpeed * style.pace * (sharp > (style.cornerCurvature ?? 0.03) || atFork ? (style.cornerSpeed ?? 0.75) : 1);
+  const target = jumpAhead ? Infinity : c.maxSpeed * style.pace * (sharp > (style.cornerCurvature ?? 0.03) || atFork ? (style.cornerSpeed ?? 0.75) : 1);
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

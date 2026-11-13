@@ -39,15 +39,41 @@ export interface RoadHit {
   dist: number;
   /** Signed lateral offset (m), positive = right of the direction of travel. */
   d: number;
-  /** Which road the segment belongs to: 0 / undefined = main loop, 1+ = shortcut branch (see shortcuts.ts). */
-  route?: number;
-  /** Other roads (with a shortcut branch) that are also within flat reach of the point: the ground must not rise above any of them. */
-  others?: RoadHit[];
 }
 
-/** Anything that can answer "which road segment is nearest?" (the main road alone, or main + shortcut branches). */
+/** Anything that can answer "which road segment is nearest?" (the main road). */
 export interface RoadLookup {
   nearest(x: number, z: number): RoadHit | null;
+}
+
+/** The nearest dirt shortcut path to a point (see shortcuts.ts `PathField`). */
+export interface PathHit {
+  /** Horizontal distance to the path's centerline (m). */
+  dist: number;
+  /** The path's smoothed ground level at that point (m). */
+  level: number;
+  /** Half the path's width (m). */
+  halfWidth: number;
+}
+
+/** Anything that can answer "which dirt path is nearest?". */
+export interface PathLookup {
+  nearest(x: number, z: number): PathHit | null;
+}
+
+/** Dirt paths: the terrain is pulled to the path's level within this fraction of its half width, then eases out over GROOVE_FALLOFF metres. */
+const GROOVE_CORE = 0.6;
+export const GROOVE_FALLOFF = 6;
+/** A path's groove eases in over this many metres beyond the main road's off-road strip. */
+const PATH_EASE_IN = 3;
+
+/** Weight (0..1) of a dirt path's level at distance `dist` from its centerline, for a path of the given half width. */
+export function grooveWeight(dist: number, halfWidth: number): number {
+  const core = halfWidth * GROOVE_CORE;
+  if (dist <= core) return 1;
+  const t = (dist - core) / (halfWidth - core + GROOVE_FALLOFF);
+  if (t >= 1) return 0;
+  return 1 - t * t * (3 - 2 * t);
 }
 
 /**
@@ -221,15 +247,32 @@ export class Terrain {
     return hit ? hit.dist : Infinity;
   }
 
-  /** Ground height at (x, z): natural terrain blended into the road level near the road. */
+  /** Dirt shortcut paths lightly shape the ground too (set once the paths are built, see shortcuts.ts). */
+  setPaths(paths: PathLookup): void {
+    this.paths = paths;
+  }
+  private paths: PathLookup | null = null;
+
+  /**
+   * Ground height at (x, z): natural terrain blended into the road level near the road, then nudged
+   * toward the level of a dirt path if one is close. The main road and its strip are never changed by a
+   * path: the groove only starts beyond the strip (`reach`) and eases in over a few metres.
+   */
   height(x: number, z: number): number {
     const nat = this.natural(x, z);
-    if (!this.field) return nat;
-    const hit = this.field.nearest(x, z);
-    if (!hit) return nat;
-    const w = this.roadWeight(hit.dist);
-    if (w <= 0) return nat;
-    const road = this.levelAt(hit);
-    return nat + (road - nat) * w;
+    let h = nat;
+    let gate = 1; // how much a path may reshape the ground here (0 on and beside the main road)
+    const hit = this.field?.nearest(x, z);
+    if (hit) {
+      const w = this.roadWeight(hit.dist);
+      if (w > 0) h = nat + (this.levelAt(hit) - nat) * w;
+      const t = Math.max(0, Math.min(1, (hit.dist - this.reach) / PATH_EASE_IN));
+      gate = t * t * (3 - 2 * t);
+    }
+    if (this.paths && gate > 0) {
+      const p = this.paths.nearest(x, z);
+      if (p) h += (p.level - h) * gate * grooveWeight(p.dist, p.halfWidth);
+    }
+    return h;
   }
 }

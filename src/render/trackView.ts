@@ -14,7 +14,7 @@ import { asphaltMaps, boostTexture, checkerTexture, concreteMaps, grassMaps, ker
 import { ENV_TIME, buildGantry, buildScenery } from './scenery';
 import { buildRamps } from './rampView';
 import { FLOOR_Y, TerrainView } from './terrainView';
-import { buildBranchViews, mainKerbCovered } from './branchView';
+import { buildBranchViews } from './branchView';
 import { fluidMaterial } from './env/fluids';
 import { merge, paint, scratch, tubeGeo } from './env/geo';
 
@@ -157,10 +157,7 @@ export class TrackView {
     const kerb = kerbMaps();
     for (const t of [kerb.map, kerb.normalMap, kerb.roughnessMap]) t.repeat.set(1, 1);
     const kerbMat = new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
-    // Where a shortcut branch road opens through the verge, the main kerb is left out (it would poke through the branch road).
-    const kerbCover = mainKerbCovered(track);
     for (const side of [-1, 1]) {
-      const covered = kerbCover(side);
       alongTrack(
         (p) => {
           // From the road edge outward (inner edge first), mirrored so the left side runs outer -> inner.
@@ -169,7 +166,6 @@ export class TrackView {
         },
         3,
         kerbMat,
-        covered.size > 0 ? runs(track.samples, (p) => !track.inGap(p.s) && !covered.has(p)) : solidRuns,
       );
     }
 

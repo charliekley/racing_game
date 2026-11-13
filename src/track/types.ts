@@ -81,7 +81,7 @@ export interface ShortcutDef {
   points: ([number, number] | [number, number, number])[];
   /** Branch road width (m, default 0.7 × main width). */
   width?: number;
-  /** 'dirt' slows you like off-road (a risk/reward shortcut); default 'road'. */
+  /** Ignored: every shortcut is a dirt path (slows you like off-road). */
   surface?: 'road' | 'dirt';
   /**
    * Barriers along the branch. Same shape as the main `walls`, but `from`/`to` are in
