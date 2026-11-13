@@ -15,8 +15,13 @@ import {
   PROTOCOL_VERSION,
   encodeInput,
   isHostMessage,
+  MAX_TRACKS,
+  parseSeriesInfo,
+  parseTrackCards,
   sanitizeName,
   type GamePhase,
+  type SeriesInfo,
+  type TrackCard,
   type HostToController,
   type LobbyPlayerInfo,
 } from '../shared/protocol';
@@ -35,6 +40,7 @@ import {
 import { ItemView } from './itemView';
 import { Picker } from './picker';
 import { PhoneMap } from './phoneMap';
+import { SeriesMenu } from './seriesMenu';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
 import { uiRotationDeg } from './steering';
@@ -91,6 +97,12 @@ let phase: GamePhase = 'lobby';
 /** True during the race countdown: the steering keeps re-zeroing to the current pose. */
 let recentering = false;
 let lobby: LobbyPlayerInfo[] = [];
+/** Race mode state from the host (menu / between races / podium) and the track pictures, once we are allowed to choose. */
+let series: SeriesInfo | null = null;
+let trackCards: TrackCard[] | null = null;
+let cardsRequestedAt = 0;
+/** The race count we already auto-opened the Loser-picks menu for, so closing it keeps it closed. */
+let pickOpenedFor = -1;
 let lastHostMsgAt = 0;
 let rttMs: number | null = null;
 let pingId = 1;
@@ -288,10 +300,99 @@ $('ready-btn').addEventListener('click', () => {
 
 function updateReadyButton() {
   const btn = $('ready-btn');
-  const label = phase === 'results' ? 'RACE AGAIN' : 'READY';
-  btn.classList.toggle('hidden', phase !== 'lobby' && phase !== 'results');
+  // Between races the button means "go on": next Grand Prix race, race again, or back to the menu after the podium.
+  let label = phase === 'results' ? 'RACE AGAIN' : 'READY';
+  let hidden = phase !== 'lobby' && phase !== 'results';
+  if (phase === 'results' && series) {
+    if (series.stage === 'over') label = 'MENU';
+    else if (series.mode === 'gp') label = series.racesDone >= (series.raceTotal ?? 0) ? 'FINISH' : 'NEXT RACE';
+    else if (series.mode === 'loser') hidden = true; // the pick starts the next race
+  }
+  btn.classList.toggle('hidden', hidden);
   btn.classList.toggle('is-ready', ready);
   btn.textContent = ready ? `${label} ✓` : label;
+}
+
+// --- Race modes: mode/track menu, Loser-picks choice, place + points line ----------------------
+const seriesMenu = new SeriesMenu({
+  setMode: (mode) => link?.sendEvent({ t: 'setup', mode }),
+  setTrack: (track) => link?.sendEvent({ t: 'setup', track }),
+  pick: (track) => link?.sendEvent({ t: 'pick', track }),
+  stop: () => link?.sendEvent({ t: 'series', act: 'stop' }),
+});
+$('stage').appendChild(seriesMenu.root);
+
+const MODE_SHORT = { single: 'Single race', gp: 'Grand Prix', loser: 'Loser picks' } as const;
+
+function nameOfSlot(slot: number | null): string {
+  return lobby.find((p) => p.slot === slot)?.name ?? 'Someone';
+}
+
+/** Rebuild the race-mode line, the READY label and the menu from the latest `series` + `phase`. */
+function updateSeriesUi() {
+  const bar = $('series-bar');
+  const s = series;
+  const choosing = phase === 'lobby' || phase === 'results';
+  bar.classList.toggle('hidden', !choosing || !s);
+  if (!s) return;
+  const isOwner = s.owner !== null && s.owner === mySlot;
+  const isPicker = s.picker !== null && s.picker === mySlot;
+  const text = $('series-text');
+  const btns = $('series-btns');
+  btns.replaceChildren();
+  const addBtn = (label: string, fn: () => void) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'series-btn';
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    btns.appendChild(b);
+  };
+
+  // Ask the host for the track pictures when we get a say in the track choice.
+  const mayChoose = (isOwner && s.stage === 'menu') || (isPicker && s.stage === 'between');
+  // (Retried at most every 1.5 s while we still have none: the host only answers whoever may choose right now.)
+  if (mayChoose && !trackCards && performance.now() - cardsRequestedAt > 1500) {
+    cardsRequestedAt = performance.now();
+    link?.sendEvent({ t: 'series', act: 'cards' });
+  }
+  const canStop = isOwner && s.mode === 'loser' && s.stage === 'between';
+  seriesMenu.update(s, trackCards, canStop);
+
+  const at = s.standings.findIndex((v, i) => i % 2 === 0 && v === mySlot);
+  const myRank = at >= 0 ? at / 2 + 1 : null;
+  const standing = myRank ? `${ordinal(myRank)} · ${s.standings[at + 1]} pts` : '';
+
+  if (s.stage === 'menu') {
+    const trackName = trackCards?.[s.track]?.name;
+    if (isOwner) {
+      text.textContent = '';
+      addBtn(`${MODE_SHORT[s.mode]}${s.mode !== 'gp' && trackName ? ` · ${trackName}` : ''}  ▸`, () => seriesMenu.open('setup'));
+    } else {
+      text.textContent = `${MODE_SHORT[s.mode]} · ${nameOfSlot(s.owner)} chooses`;
+    }
+  } else if (s.stage === 'between') {
+    const race = s.raceTotal ? `Race ${s.racesDone}/${s.raceTotal}` : '';
+    if (s.mode === 'loser') {
+      text.textContent = isPicker ? `${standing} · your pick` : `${standing} · ${nameOfSlot(s.picker)} is choosing…`;
+      if (isPicker && pickOpenedFor !== s.racesDone) {
+        pickOpenedFor = s.racesDone;
+        seriesMenu.open('pick');
+      }
+    } else {
+      text.textContent = [race, standing].filter(Boolean).join(' · ');
+    }
+    if (isOwner) addBtn('MENU', () => link?.sendEvent({ t: 'series', act: 'menu' }));
+    if (canStop) addBtn('STOP', () => link?.sendEvent({ t: 'series', act: 'stop' }));
+  } else if (s.stage === 'over') {
+    text.textContent = myRank ? `FINAL ${standing}` : 'FINAL';
+  } else {
+    text.textContent = '';
+  }
+  // (The series message can arrive just before the 'phase' message, so only the series stage closes the menu.)
+  if (s.stage === 'racing') seriesMenu.close();
+  if (s.stage === 'menu' && !isOwner) seriesMenu.close();
+  updateReadyButton();
 }
 
 // Pause: release all buttons when the app is backgrounded.
@@ -328,6 +429,8 @@ async function connectLoop() {
 function attachLink(l: Link) {
   link = l;
   welcomed = false;
+  trackCards = null; // a fresh link: ask for the pictures again if we need them
+  cardsRequestedAt = 0;
   lastHostMsgAt = performance.now();
   showConn('Joining…');
   l.onEvent.add((msg) => {
@@ -363,6 +466,7 @@ function handleHostMessage(msg: HostToController) {
       phase = msg.phase;
       recentering = phase === 'countdown';
       updatePickerVisibility();
+      updateSeriesUi();
       $('player-name').textContent = `P${msg.slot + 1} · ${msg.name}`;
       applyPlayerColor();
       updateReadyButton();
@@ -390,6 +494,7 @@ function handleHostMessage(msg: HostToController) {
         applyPlayerColor();
         updateReadyButton();
       }
+      updateSeriesUi(); // names may have changed ("Dana is choosing")
       break;
     }
     case 'phase':
@@ -401,7 +506,28 @@ function handleHostMessage(msg: HostToController) {
       if (phase === 'lobby' || phase === 'results') ready = false;
       updateReadyButton();
       updatePickerVisibility();
+      updateSeriesUi();
       break;
+    case 'series': {
+      const info = parseSeriesInfo(msg, MAX_TRACKS); // untrusted: ignore anything malformed
+      if (info) {
+        series = info;
+        updateSeriesUi();
+      }
+      break;
+    }
+    case 'tracks': {
+      // Cards arrive one per message; collect them by position (clamped, the host is not fully trusted either).
+      const list = parseTrackCards(msg.list);
+      const total = Number.isInteger(msg.total) ? Math.max(1, Math.min(MAX_TRACKS, msg.total)) : 0;
+      if (list && total && Number.isInteger(msg.from) && msg.from >= 0 && msg.from + list.length <= total) {
+        const next: TrackCard[] = trackCards && trackCards.length === total ? [...trackCards] : new Array<TrackCard>(total);
+        list.forEach((c, i) => (next[msg.from + i] = c));
+        trackCards = next;
+        updateSeriesUi();
+      }
+      break;
+    }
     case 'track':
       phoneMap.setTrack(msg.pts, msg.w, msg.map);
       break;

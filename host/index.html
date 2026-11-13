@@ -33,15 +33,20 @@
         </section>
 
         <div class="right-col">
+          <section class="mode-panel" aria-label="Race mode">
+            <div class="mode-label">MODE <kbd>&uarr;</kbd><kbd>&darr;</kbd></div>
+            <div id="mode-pills" class="mode-pills"></div>
+            <div id="mode-note" class="mode-note"></div>
+          </section>
           <section class="track-panel" aria-label="Track">
-            <button id="track-prev" class="arrow" title="Previous track">&#9664;</button>
+            <button id="track-prev" class="arrow" tabindex="-1" title="Previous track (left arrow)">&#9664;</button>
             <canvas id="track-map" width="220" height="130"></canvas>
             <div class="track-info">
               <div class="track-label">TRACK <kbd>T</kbd></div>
               <div id="track-name" class="track-name"></div>
               <div id="track-meta" class="track-meta"></div>
             </div>
-            <button id="track-next" class="arrow" title="Next track">&#9654;</button>
+            <button id="track-next" class="arrow" tabindex="-1" title="Next track (right arrow)">&#9654;</button>
           </section>
           <section id="slots" class="slots"></section>
         </div>
@@ -55,7 +60,8 @@
         <span><kbd>2</kbd> add/remove arrow-keys player</span>
         <span>Gamepad: press <kbd>A</kbd>/<kbd>Start</kbd> to join</span>
         <span><kbd>B</kbd> add a computer driver</span>
-        <span><kbd>G</kbd> start now</span>
+        <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> track &nbsp; <kbd>&uarr;</kbd><kbd>&darr;</kbd> mode</span>
+        <span><kbd>Enter</kbd>/<kbd>G</kbd> start now</span>
         <span><kbd>T</kbd> track: <b id="track"></b></span>
         <span><kbd>Q</kbd> graphics: <b id="quality"></b></span>
         <span><kbd>M</kbd> mute</span>

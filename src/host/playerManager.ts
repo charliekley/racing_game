@@ -122,6 +122,17 @@ export class PlayerManager {
     if (msg) this.broadcast(msg);
   }
 
+  /** Menu / series messages from phones (setup, pick, series). The sender's slot is attached; SeriesHost validates and decides. */
+  readonly onMenuMessage = new Signal<{ slot: number; msg: ControllerToHost }>();
+
+  /** Latest series state for phones, re-sent to phones that (re)join. */
+  private seriesMsg: HostToController | null = null;
+
+  setSeriesMessage(msg: HostToController): void {
+    this.seriesMsg = msg;
+    this.broadcast(msg);
+  }
+
   setPhase(phase: GamePhase): void {
     this.slots.phase = phase;
     if (phase === 'lobby') {
@@ -135,6 +146,9 @@ export class PlayerManager {
     this.lobbyChanged();
   }
 
+  /** A player was removed from their slot (kicked / left). */
+  readonly onRemoved = new Signal<number>();
+
   kick(slotIndex: number): void {
     const s = this.sessionBySlot.get(slotIndex);
     this.sessionBySlot.delete(slotIndex);
@@ -147,6 +161,7 @@ export class PlayerManager {
     if (slot?.owner.kind === 'keyboard') this.keyboards[slot.owner.scheme] = null;
     this.slots.remove(slotIndex);
     this.localInputs.delete(slotIndex);
+    this.onRemoved.emit(slotIndex);
     this.lobbyChanged();
   }
 
@@ -327,6 +342,7 @@ export class PlayerManager {
         if (!result.rejoined) this.slots.setProfile(slot.index, msg.name, msg.color, msg.loadout);
         session.link.sendEvent(this.welcomeFor(slot));
         if (this.trackMsg && this.slots.phase !== 'lobby') session.link.sendEvent(this.trackMsg);
+        if (this.seriesMsg) session.link.sendEvent(this.seriesMsg);
         this.lobbyChanged();
         return;
       }
@@ -340,6 +356,12 @@ export class PlayerManager {
         if (session.slotIndex === null || (this.slots.phase !== 'lobby' && this.slots.phase !== 'results')) return;
         this.slots.setReady(session.slotIndex, !!msg.ready);
         this.lobbyChanged();
+        return;
+      case 'setup':
+      case 'pick':
+      case 'series':
+        // Only phones that already joined can send these; SeriesHost checks the sender's role and the values.
+        if (session.slotIndex !== null) this.onMenuMessage.emit({ slot: session.slotIndex, msg });
         return;
       case 'ping':
         session.link.sendEvent({ t: 'pong', id: msg.id, sentAt: msg.sentAt });
