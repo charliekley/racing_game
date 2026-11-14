@@ -116,10 +116,11 @@ describe.each([...TRACKS, ...DEV_TRACKS].map((t) => [t.name, t] as const))('bots
     for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
   });
 
-  it('every plan collider is also in the world colliders (what you see is what you hit)', () => {
+  it('every plan collider (scenery and bridge piers) is also in the world colliders (what you see is what you hit)', () => {
     const track = new Track(def);
     const world = new World(track, track);
     world.startRace([0], 1);
-    expect(world.colliders!.list.length).toBe(planScenery(track).colliders.length);
+    const plan = planScenery(track);
+    expect(world.colliders!.list.length).toBe(plan.colliders.length + plan.pierColliders.length);
   });
 });

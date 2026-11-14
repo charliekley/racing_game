@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { bridgePiers, PILLAR_RADIUS } from '../sim/bridgePillars';
 import { TRACKS } from '.';
 import { Track } from '../sim/track';
 import { planScenery, type Collider } from './sceneryPlan';
@@ -47,6 +48,16 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('scenery plan for %s', (_
     for (const c of plan.colliders) {
       for (const g of spots) expect(distanceTo(c, g.x, g.z)).toBeGreaterThan(3);
       for (const b of track.itemBoxes) expect(distanceTo(c, b.x, b.z)).toBeGreaterThan(3);
+    }
+  });
+
+  it('bridge piers never stand on another road at their own level (e.g. a road passing under an overpass)', () => {
+    for (const pier of bridgePiers(track)) {
+      for (const p of track.samples) {
+        if (Math.abs(track.deltaS(pier.sample.s, p.s)) < 40) continue; // the bridge's own deck and ramps
+        if (p.y > pier.deckBottom || p.y < pier.ground - 4) continue; // a road above the pier or far below
+        expect(Math.hypot(p.x - pier.sample.x, p.z - pier.sample.z)).toBeGreaterThan(p.width / 2 + PILLAR_RADIUS + 0.5);
+      }
     }
   });
 

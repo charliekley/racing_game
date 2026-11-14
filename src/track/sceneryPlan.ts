@@ -14,6 +14,7 @@
  * in radians where local +z points to (sin r, cos r) and local +x to (cos r, -sin r).
  */
 import type { Track, TrackSample } from '../sim/track';
+import { bridgePiers, PILLAR_RADIUS } from '../sim/bridgePillars';
 import type { TrackDef } from './types';
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,11 @@ export interface SceneryPlan {
   reserved: { x: number; z: number; r: number }[];
   /** Every solid collider of every item above (what the simulation uses). */
   colliders: Collider[];
+  /**
+   * Bridge piers (solid), kept apart from `colliders` because they stand UNDER a road deck: in a top-down
+   * view they overlap the road above them. The world adds them to its colliders (World.startRace).
+   */
+  pierColliders: Collider[];
   /** Ground height lookup used for `y` (also used by the renderer for ground detail). */
   heightAt: (x: number, z: number) => number;
 }
@@ -328,6 +334,7 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
     gantryPosts: [],
     reserved: site.reserved,
     colliders: [],
+    pierColliders: [],
     heightAt: h,
   };
   const solidOf = (c: Collider | null): void => {
@@ -353,6 +360,19 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
   planGantry(site, plan, h, solidOf);
 
   if (!heightAt) planCache.set(track, plan);
+  // Bridge piers are solid: a column is a circle, an end wall a box across the road's width.
+  // They reach up to the deck's underside, so karts ON the bridge (higher up) pass over them.
+  for (const pier of bridgePiers(track)) {
+    const p = pier.sample;
+    const height = pier.deckBottom - pier.ground;
+    if (pier.abutment) {
+      plan.pierColliders.push({ shape: 'box', x: p.x, z: p.z, y: pier.ground, hw: pier.half + 0.5, hd: 1.5, rotY: p.heading, height, solid: true });
+    } else {
+      // Radius a little over the column's base radius: the drawn column flares out at its foot.
+      plan.pierColliders.push({ shape: 'circle', x: p.x, z: p.z, y: pier.ground, r: PILLAR_RADIUS + 0.2, height, solid: true });
+    }
+  }
+
   return plan;
 }
 

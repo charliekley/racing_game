@@ -122,7 +122,8 @@ export class World {
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
     this.items.configOf = (slot) => this.configOf(slot);
     // Solid scenery: same plan the renderer draws from, so what you see is what you hit.
-    this.colliders ??= new Colliders(planScenery(this.track).colliders);
+    const plan = planScenery(this.track);
+    this.colliders ??= new Colliders([...plan.colliders, ...plan.pierColliders]); // scenery + bridge piers
     this.items.setColliders(this.colliders);
   }
 

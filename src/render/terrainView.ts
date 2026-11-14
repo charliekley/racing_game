@@ -19,6 +19,7 @@
  * polygon is then triangulated, and its cut side becomes the top of a rock wall.
  */
 import * as THREE from 'three';
+import { BRIDGE_DECK, bridgePiers, PILLAR_RADIUS, type BridgePier } from '../sim/bridgePillars';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
 import { concreteMaps, grassMaps, rockMaps } from './textures';
@@ -535,7 +536,7 @@ export class TerrainView {
     const def = track.def;
     const hw = def.width / 2;
     const half = hw + CURB_WIDTH;
-    const DECK = 1.5;
+    const DECK = BRIDGE_DECK;
     const concrete = new THREE.Color('#aeb0b6');
     const shade = new THREE.Color('#70737b');
     const pos: number[] = [];
@@ -586,10 +587,9 @@ export class TerrainView {
         }
       }
 
-      const pillarEvery = Math.max(1, Math.round(14 / track.spacing));
-      for (let k = 0; k < ss.length; k += pillarEvery) this.addPillar(solids, ss[k], k === 0, DECK, half);
-      this.addPillar(solids, ss[ss.length - 1], true, DECK, half);
     }
+    // Piers: the same list the simulation turns into colliders (sim/bridgePillars.ts).
+    for (const pier of bridgePiers(track)) this.addPillar(solids, pier);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -610,14 +610,10 @@ export class TerrainView {
     }
   }
 
-  /** One round pier (flared column + cap beam) under the deck at sample `p`; ends get a wide abutment. */
-  private addPillar(out: THREE.BufferGeometry[], p: TrackSample, abutment: boolean, deck: number, half: number): void {
-    const track = this.track;
-    const hw = track.def.width / 2;
-    const deckBottom = p.y + Track.bankLift(p.bank, hw, 0) - deck;
-    const ground = track.terrain.height(p.x, p.z) - 0.5;
+  /** One round pier (flared column + cap beam) under the deck; bridge ends get a wide abutment. */
+  private addPillar(out: THREE.BufferGeometry[], pier: BridgePier): void {
+    const { sample: p, abutment, ground, deckBottom, half } = pier;
     const h = deckBottom - ground;
-    if (h < 0.5) return;
     const col = new THREE.Color('#9a9ca3');
     const shadeFn = (c: THREE.Color) => (q: THREE.Vector3) => scratch.copy(c).multiplyScalar(0.7 + 0.3 * THREE.MathUtils.clamp((q.y + 3) / (h + 3), 0, 1));
     const place = (g: THREE.BufferGeometry) => out.push(g.applyMatrix4(matrix(p.x, 0, p.z, 1, 1, 1, p.heading)));
@@ -627,7 +623,7 @@ export class TerrainView {
     }
     // Flared round column: wider at the foot and under the beam.
     const prof: [number, number][] = [];
-    const R = 1.25;
+    const R = PILLAR_RADIUS;
     for (let i = 0; i <= 8; i++) {
       const t = i / 8;
       prof.push([R * (1 + 0.45 * Math.pow(1 - t, 6) + 0.25 * Math.pow(t, 6)), ground + h * t]);
