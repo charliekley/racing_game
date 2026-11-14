@@ -41,6 +41,8 @@ const PIT_DEPTH = 3.2;
 const GRID_REACH = 900;
 const MAX_INNER_CELLS = 230;
 const MIN_CELL = 2.6;
+/** How far (m) the terrain mesh is lowered under the middle of a dirt shortcut path (visual only). */
+const PATH_DIP = 0.7;
 /** Edge length (m) of the culling tiles the ground and the rock walls are cut into (see env/tiles.ts). */
 const TERRAIN_TILE = 300;
 const WALL_TILE = 200;
@@ -300,6 +302,16 @@ export class TerrainView {
       const dist = terrain.roadDistance(x, z);
       // Dip a little under the road strips so the flat road ribbons are never poked through.
       if (dist < outer) h -= 0.03 + 0.4 * (1 - smooth((dist - (hw + CURB_WIDTH)) / (outer - hw - CURB_WIDTH)));
+      // Dip under dirt shortcut paths too (away from the main road). The dirt is draped on the EXACT ground height,
+      // but this mesh is a grid of 3-4 m flat triangles: where the ground curves up (the groove under the path,
+      // a hollow), a flat triangle sits above the true surface and would poke through the dirt.
+      else {
+        const path = terrain.nearestPath(x, z);
+        if (path) {
+          const edge = path.halfWidth + 3.5; // the dirt's soft edge reaches about 2.6 m past its half width
+          if (path.dist < edge) h -= PATH_DIP * (1 - smooth((path.dist - path.halfWidth * 0.6) / (edge - path.halfWidth * 0.6)));
+        }
+      }
       return h;
     };
 
@@ -669,7 +681,15 @@ export class TerrainView {
         this.group.add(lake);
         this.stats.meshes++;
       } else if (this.style === 'alpine') {
-        const y = nat + Math.abs(f.height) * 0.55;
+        let y = nat + Math.abs(f.height) * 0.55;
+        // A dirt shortcut crossing the frozen lake must run ON the ice, not under it: keep the ice just below
+        // the lowest point of any path inside the lake (the path's ground is the physics' ground).
+        const R = f.radius * 1.1;
+        for (const b of this.track.branches) {
+          for (const p of b.samples) {
+            if ((p.x - f.x) ** 2 + (p.z - f.z) ** 2 < R * R) y = Math.min(y, this.track.terrain.height(p.x, p.z) - 0.12);
+          }
+        }
         const lake = new THREE.Mesh(discGeo(f.x, f.z, f.radius * 1.1, y), fluidMaterial('ice', { ...colors, deep: new THREE.Color('#7fb8dc'), shallow: new THREE.Color('#b9e2f4') }));
         lake.receiveShadow = true;
         this.group.add(lake);

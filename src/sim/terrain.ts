@@ -253,6 +253,11 @@ export class Terrain {
   }
   private paths: PathLookup | null = null;
 
+  /** The nearest dirt path (distance to its centerline and its half width), or null (for the renderer). */
+  nearestPath(x: number, z: number): { dist: number; halfWidth: number } | null {
+    return this.paths?.nearest(x, z) ?? null;
+  }
+
   /**
    * Ground height at (x, z): natural terrain blended into the road level near the road, then nudged
    * toward the level of a dirt path if one is close. The main road and its strip are never changed by a
