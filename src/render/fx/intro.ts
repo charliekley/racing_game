@@ -34,9 +34,15 @@ export class Flyover {
   private readonly chasePos = new THREE.Vector3();
   private readonly chaseQuat = new THREE.Quaternion();
   private readonly flyQuat = new THREE.Quaternion();
+  /** Smoothed camera position and look target (a low-pass filter removes any sample-to-sample wobble). */
+  private readonly smoothPos = new THREE.Vector3();
+  private readonly smoothLook = new THREE.Vector3();
+  /** Intro time at the last `apply` (to know how much time passed), or null on the first frame. */
+  private lastT: number | null = null;
 
   start(): void {
     this.t = 0;
+    this.lastT = null;
   }
 
   skip(): void {
@@ -83,21 +89,40 @@ export class Flyover {
     const f = fi - Math.floor(fi);
     const a = S[i0];
     const b = S[i1];
-    const x = a.x + (b.x - a.x) * f;
-    const y = a.y + (b.y - a.y) * f;
-    const z = a.z + (b.z - a.z) * f;
-    // Sideways offset (the road's right vector rx/rz) and height depend on the variant.
+    const lerp = (p: number, q: number) => p + (q - p) * f;
+    // Everything is interpolated between two samples (position AND sideways direction), so the path is smooth.
+    const x = lerp(a.x, b.x);
+    const y = lerp(a.y, b.y);
+    const z = lerp(a.z, b.z);
+    const rx = lerp(a.rx, b.rx);
+    const rz = lerp(a.rz, b.rz);
+    // Sideways offset and height depend on the variant.
     const side = (variant % 2 === 0 ? 1 : -1) * (7 + 3 * (variant >> 1));
-    const height = 10 + 3 * Math.sin(u * 3 + variant) + (variant >> 1) * 4 - 5 * smooth((u - 0.7) / 0.3);
-    this.pos.set(x + a.rx * side, y + height, z + a.rz * side);
-    const ahead = S[(i0 + 14) % n];
-    this.look.set(ahead.x, ahead.y + 1, ahead.z);
+    const height = 10 + 2 * Math.sin(u * 2 + variant) + (variant >> 1) * 4 - 5 * smooth((u - 0.7) / 0.3);
+    this.pos.set(x + rx * side, y + height, z + rz * side);
+    // Look ~30 m down the road, also interpolated (jumping from sample to sample made the view shake).
+    const ahead = (k: number) => S[(i0 + 15 + k) % n];
+    const p0 = ahead(0);
+    const p1 = ahead(1);
+    this.look.set(lerp(p0.x, p1.x), lerp(p0.y, p1.y) + 1, lerp(p0.z, p1.z));
+
+    // Low-pass filter (exponential smoothing, time constant 0.35 s): the camera glides like it is on a crane.
+    const dt = this.lastT === null ? 0 : Math.max(0, this.t - this.lastT);
+    this.lastT = this.t;
+    if (dt === 0) {
+      this.smoothPos.copy(this.pos);
+      this.smoothLook.copy(this.look);
+    } else {
+      const k = 1 - Math.exp(-dt / 0.35);
+      this.smoothPos.lerp(this.pos, k);
+      this.smoothLook.lerp(this.look, k);
+    }
 
     // Remember the chase pose, build the flyover pose, blend over the last 0.9 s.
     this.chasePos.copy(camera.position);
     this.chaseQuat.copy(camera.quaternion);
-    camera.position.copy(this.pos);
-    camera.lookAt(this.look);
+    camera.position.copy(this.smoothPos);
+    camera.lookAt(this.smoothLook);
     this.flyQuat.copy(camera.quaternion);
     const w = blend ? smooth((this.t - (T - 0.9)) / 0.9) : 0;
     camera.position.lerp(this.chasePos, w);

@@ -233,8 +233,9 @@ export const BOTS = {
 
 /** Camera feel (render-only, doesn't affect the sim). */
 export const CAMERA = {
-  distance: 6.2,
-  height: 2.6,
+  /** Behind and above the kart (m): close and low, so the kart and driver fill the view. */
+  distance: 5.0,
+  height: 2.2,
   /** How far ahead of the kart the camera looks (m). */
   lookAhead: 4,
   /** Extra sideways look into turns (m per rad/s of yaw rate). */
@@ -261,7 +262,7 @@ export const CAMERA = {
   headingLag: 0.2,
   headingLagDrift: 0.38,
   /** Camera roll into corners (rad, at full yaw rate and speed). */
-  rollMax: 0.055,
+  rollMax: 0.03,
   /** Camera shake: how fast trauma fades (1/s) and the biggest shake (m). */
   shakeDecay: 1.6,
   shakeMax: 0.28,

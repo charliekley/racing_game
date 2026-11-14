@@ -644,7 +644,8 @@ function layoutStage() {
 
 function frame() {
   layoutStage();
-  wheel.style.transform = `rotate(${(motion.steer * 90).toFixed(1)}deg)`;
+  // The wheel graphic turns a little with the steering (40 deg at full lock: enough to read, not dizzying).
+  wheel.style.transform = `rotate(${(motion.steer * 40).toFixed(1)}deg)`;
   if (prefs.showDebug) {
     debugEl.textContent =
       `ping ${rttMs === null ? '–' : rttMs.toFixed(0)} ms  send ${sendRate} Hz  motion ${motion.eventRateHz.toFixed(0)} Hz\n` +
