@@ -133,12 +133,16 @@ export class ChaseCamera {
       this.orbiting = false;
       // Pull back at speed, in boosts, in the air and (a lot) during cannon flight.
       const dist =
-        CAMERA.distance * (1 + 0.15 * speedFrac) +
+        CAMERA.distance * (1 + CAMERA.speedPull * speedFrac) +
         CAMERA.boostPull * this.boostBlend +
         CAMERA.airPull * this.airBlend +
         CAMERA.cannonPull * this.cannonBlend;
       const height = CAMERA.height + 0.9 * this.cannonBlend + 0.4 * this.airBlend;
       desired = this.tmp.set(k.x - fx * dist, k.y + height, k.z - fz * dist);
+      // Aim a little ahead along the kart's motion to cancel part of the smoothing's trail (see CAMERA.lagLead).
+      const lead = k.speed * CAMERA.followLag * CAMERA.lagLead;
+      desired.x += kfx * lead;
+      desired.z += kfz * lead;
       // Look ahead, and into the turn (yawRate < 0 = turning right). Uses the kart's own heading.
       const side = -k.yawRate * CAMERA.turnLookAhead;
       const ahead = CAMERA.lookAhead + 2 * this.cannonBlend;

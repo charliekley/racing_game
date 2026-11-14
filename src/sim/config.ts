@@ -242,6 +242,13 @@ export const CAMERA = {
   turnLookAhead: 2.2,
   /** Position smoothing time constant (s). Smaller = stiffer. */
   followLag: 0.12,
+  /**
+   * Smoothing makes the camera trail its target by about speed x followLag (3.4 m at top speed). This share of
+   * that trail is cancelled by aiming ahead, so the camera stays closer at speed but still drifts back a bit.
+   */
+  lagLead: 0.55,
+  /** Extra distance at top speed, as a share of `distance` (the "speed zoom-out"). */
+  speedPull: 0.1,
   fovBase: 68,
   /** Extra FOV at top speed (deg) – boosts later push past this. */
   fovSpeedBonus: 8,
@@ -249,7 +256,7 @@ export const CAMERA = {
   // --- Game-feel camera work (render only; tuned by eye) ---
   /** Extra FOV (deg) and extra distance (m) while boosting: the "kick". */
   fovBoost: 12,
-  boostPull: 1.2,
+  boostPull: 0.9,
   /** Extra FOV (deg) and distance (m) while airborne high above the ground (big jumps). */
   fovAir: 9,
   airPull: 1.4,
