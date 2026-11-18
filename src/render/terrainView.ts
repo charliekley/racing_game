@@ -29,6 +29,7 @@ import { groundMaterial } from './env/materials';
 import { latheGeo, merge, paint, scratch, tubeGeo, matrix } from './env/geo';
 import { boxPart } from './env/parts';
 import { tiledGroup } from './env/tiles';
+import { axisGroups, buildLodTriangles, LOD_STRIDES, selectLod, type AxisGroup, type LodGrid, type LodNodeLike, type LodRange } from './env/terrainLod';
 import { envQuality } from './env/batch';
 import { styleFor } from './scenery';
 import { biomeFor } from '../track/sceneryPlan';
@@ -43,15 +44,28 @@ const MAX_INNER_CELLS = 230;
 const MIN_CELL = 2.6;
 /** How far (m) the terrain mesh is lowered under the middle of a dirt shortcut path (visual only). */
 const PATH_DIP = 0.7;
-/** Edge length (m) of the culling tiles the ground and the rock walls are cut into (see env/tiles.ts). */
-const TERRAIN_TILE = 300;
+/** Edge length (m) of the culling tiles the rock walls are cut into (see env/tiles.ts; the ground uses LOD_TILE). */
 const WALL_TILE = 200;
-/**
- * Medium/Low use bigger tiles: the grid is coarse there, so a tile holds few triangles and the draw CALL is what
- * costs (CPU work in the browser), not the triangles. Bigger tiles = fewer calls, a little less culling.
- */
-const CHEAP_TERRAIN_TILE = 520;
+/** Medium/Low use bigger rock-wall tiles: fewer draw calls (CPU work in the browser), a little less culling. */
 const CHEAP_WALL_TILE = 360;
+/**
+ * Ground level of detail (see env/terrainLod.ts). The ground is a tree of rectangular pieces: 130 m pieces drawn at
+ * full detail, 260 m pieces drawn with every 2nd grid vertex and 520 m pieces with every 4th. A piece switches to its
+ * coarser version when its NEAREST point is farther from the camera than `LOD_DISTANCE[level - 1]` metres
+ * (multiplied by `envQuality.lod`, which is smaller on Medium/Low and in split-screen). Beyond ~120-250 m the fog
+ * already softens the ground, so the swap is hard to notice.
+ */
+const LOD_TILE = 180;
+const LOD_DISTANCE = [200, 400];
+
+/** One rectangular piece of ground in the LOD tree: `mesh` is the piece drawn at its own level of detail. */
+interface GroundNode extends LodNodeLike {
+  level: number; // 0 = full detail ... 2 = every 4th vertex
+  rect: [number, number, number, number]; // minX, maxX, minZ, maxZ
+  mesh: THREE.Mesh | null; // null when the piece has no cheaper version than its kids
+  kids: GroundNode[]; // the smaller pieces it is made of (drawn instead when the camera is close)
+  cx: number; cy: number; cz: number; r: number; // bounding sphere of `mesh` (for the fog test)
+}
 
 interface V3 {
   x: number;
@@ -212,7 +226,9 @@ class WallSink {
 export class TerrainView {
   readonly group = new THREE.Group();
   /** For performance reports. */
-  readonly stats = { terrainTriangles: 0, faceTriangles: 0, meshes: 0 };
+  readonly stats = { terrainTriangles: 0, faceTriangles: 0, meshes: 0, /** triangles stored per LOD level (0 = full detail) */ lodTriangles: [0, 0, 0], /** cells kept at full detail / simplified, per level */ lodFineCells: [0, 0, 0], lodCoarseCells: [0, 0, 0] };
+  /** The ground LOD tree (top level pieces; see buildGroundTiles). */
+  private readonly groundTree: GroundNode[] = [];
 
   private readonly style: ReturnType<typeof styleFor>;
   private readonly pal: Palette;
@@ -269,11 +285,39 @@ export class TerrainView {
       const depth = (t.cx - p.x) * f.x + (t.cy - p.y) * f.y + (t.cz - p.z) * f.z;
       t.mesh.visible = depth - t.r < fogFar;
     }
+    // Ground: hide every piece, then walk the tree and show the right ones for this camera.
+    const scale = envQuality.lod; // smaller on Medium/Low and in split-screen: switch to coarser levels sooner
+    this.drawP.copy(p);
+    this.drawF.copy(f);
+    this.drawFogFar = fogFar;
+    for (const n of this.groundTree) this.hideGround(n);
+    for (const n of this.groundTree) selectLod(n, p.x, p.z, LOD_DISTANCE, scale, this.drawGround);
   }
+
+  private hideGround(n: GroundNode): void {
+    if (n.mesh) n.mesh.visible = false;
+    for (const k of n.kids) this.hideGround(k);
+  }
+
+  // State for the LOD walk of the current camera (fields so that no closure is allocated per frame).
+  private drawP = new THREE.Vector3();
+  private drawF = new THREE.Vector3();
+  private drawFogFar = 0;
+  /** Show one chosen piece unless it lies completely beyond the fog (same depth test as the other tiles). */
+  private readonly drawGround = (n: GroundNode): void => {
+    const p = this.drawP, f = this.drawF;
+    n.mesh!.visible = (n.cx - p.x) * f.x + (n.cy - p.y) * f.y + (n.cz - p.z) * f.z - n.r < this.drawFogFar;
+  };
 
   /** Show every tile again (for cameras that do not use the fog cull, e.g. the lobby picture). */
   showAllTiles(): void {
     if (this.tiles) for (const t of this.tiles) t.mesh.visible = true;
+    for (const n of this.groundTree) this.showFineGround(n);
+  }
+
+  private showFineGround(n: GroundNode): void {
+    if (n.mesh) n.mesh.visible = n.level === 0;
+    for (const k of n.kids) this.showFineGround(k);
   }
 
   /** The old look: one flat grass plane (tracks without a terrain def). */
@@ -338,9 +382,12 @@ export class TerrainView {
     };
     const hasCut = track.cliffs.length > 0 || track.gaps.length > 0;
 
+    // Set by heightAt: is the last point asked about on/near a road or dirt path? (Those places never get simplified.)
+    let nearRoad = false;
     const heightAt = (x: number, z: number): number => {
       let h = terrain.height(x, z);
       const dist = terrain.roadDistance(x, z);
+      nearRoad = dist < outer;
       // Dip a little under the road strips so the flat road ribbons are never poked through.
       if (dist < outer) h -= 0.03 + 0.4 * (1 - smooth((dist - (hw + CURB_WIDTH)) / (outer - hw - CURB_WIDTH)));
       // Dip under dirt shortcut paths too (away from the main road). The dirt is draped on the EXACT ground height,
@@ -351,6 +398,7 @@ export class TerrainView {
         if (path) {
           const edge = path.halfWidth + 3.5; // the dirt's soft edge reaches about 2.6 m past its half width
           if (path.dist < edge) h -= PATH_DIP * (1 - smooth((path.dist - path.halfWidth * 0.6) / (edge - path.halfWidth * 0.6)));
+          if (path.dist < edge) nearRoad = true;
         }
       }
       return h;
@@ -358,10 +406,12 @@ export class TerrainView {
 
     const heights = new Float32Array(nx * nz);
     const cut = new Uint8Array(nx * nz);
+    const near = new Uint8Array(nx * nz); // 1 = on/near a road (LOD never simplifies there)
     for (let iz = 0; iz < nz; iz++) {
       for (let ix = 0; ix < nx; ix++) {
         const k = iz * nx + ix;
         heights[k] = heightAt(xs[ix], zs[iz]);
+        near[k] = nearRoad ? 1 : 0;
         if (hasCut) cut[k] = cutAt(xs[ix], zs[iz]);
       }
     }
@@ -449,8 +499,11 @@ export class TerrainView {
     const wallLip: THREE.Color[][] = [];
     const wallKind: number[] = [];
 
+    // Where each cell's full-detail triangles start in `index` (cells are emitted in order): the LOD builder reuses them.
+    const cellStart = new Uint32Array((nx - 1) * (nz - 1) + 1);
     for (let iz = 0; iz < nz - 1; iz++) {
       for (let ix = 0; ix < nx - 1; ix++) {
+        cellStart[iz * (nx - 1) + ix] = index.length;
         const a = iz * nx + ix; // (x, z)
         const cc = a + nx; // (x, z+)
         const d = cc + 1; // (x+, z+)
@@ -505,6 +558,8 @@ export class TerrainView {
       }
     }
 
+    cellStart[(nx - 1) * (nz - 1)] = index.length;
+
     // Rock walls from the clipped edges. Cliffs next to the road are drawn from the road strip
     // (see buildCliffWalls), so here only the segments that are away from the road, plus water pits.
     for (let i = 0; i < wallTop.length; i++) {
@@ -518,13 +573,76 @@ export class TerrainView {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(index);
-    geo.computeVertexNormals(); // shared vertices -> smooth shading, no facets
-    // One mesh per ~300 m tile instead of one huge mesh: tiles outside the camera view (or outside the
-    // shadow box) are skipped, which cuts the terrain triangles per view to a fraction.
-    const tiles = tiledGroup(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }), envQuality.cheap ? CHEAP_TERRAIN_TILE : TERRAIN_TILE, false, true);
-    this.group.add(tiles);
+    geo.computeVertexNormals(); // shared vertices -> smooth shading, no facets (and every LOD reuses these normals)
+    const lodGrid: LodGrid = {
+      xs,
+      zs,
+      heights,
+      near,
+      keepCell: (ix, iz) => cut[iz * nx + ix] + cut[iz * nx + ix + 1] + cut[(iz + 1) * nx + ix] + cut[(iz + 1) * nx + ix + 1] > 0, // clipped by a cliff/pit
+      vertexId: (k) => gridId[k],
+      cellTriangles: (ix, iz) => index.slice(cellStart[iz * (nx - 1) + ix], cellStart[iz * (nx - 1) + ix + 1]),
+    };
+    this.buildGroundTiles(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }), lodGrid, xs, zs);
     this.stats.terrainTriangles = index.length / 3;
-    this.stats.meshes += tiles.children.length;
+  }
+
+  /**
+   * Cut the ground into the tree of LOD pieces (see LOD_TILE) and make one mesh per piece. Every mesh shares the
+   * vertex buffers of `geo`; only its triangle list differs. Ground never casts shadows, so the shadow passes
+   * skip it completely (it only receives them): the LOD only has to serve the camera passes.
+   */
+  private buildGroundTiles(geo: THREE.BufferGeometry, material: THREE.Material, grid: LodGrid, xs: number[], zs: number[]): void {
+    const pos = geo.getAttribute('position');
+    const makeMesh = (list: ArrayLike<number>): THREE.Mesh => {
+      const g = new THREE.BufferGeometry();
+      for (const name of Object.keys(geo.attributes)) g.setAttribute(name, geo.attributes[name]);
+      g.setIndex(new THREE.BufferAttribute(Uint32Array.from(list as ArrayLike<number>), 1));
+      // Bounding box of only the vertices this list uses (computeBoundingSphere would scan the whole shared buffer).
+      const box = new THREE.Box3().makeEmpty();
+      const v = new THREE.Vector3();
+      for (let i = 0; i < list.length; i++) box.expandByPoint(v.fromBufferAttribute(pos, list[i]));
+      g.boundingBox = box;
+      g.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+      const m = new THREE.Mesh(g, material);
+      m.receiveShadow = true;
+      return m;
+    };
+    const ground = new THREE.Group();
+    const buildNode = (gx: AxisGroup, gz: AxisGroup, level: number): GroundNode | null => {
+      const range: LodRange = { ix0: gx.a, ix1: gx.b, iz0: gz.a, iz1: gz.b };
+      const kids: GroundNode[] = [];
+      if (level > 0) {
+        for (const kx of gx.kids) for (const kz of gz.kids) {
+          const kid = buildNode(kx, kz, level - 1);
+          if (kid) kids.push(kid);
+        }
+      }
+      const { triangles, fineCells, coarseCells } = buildLodTriangles(grid, range, LOD_STRIDES[level]);
+      this.stats.lodFineCells[level] += fineCells;
+      this.stats.lodCoarseCells[level] += coarseCells;
+      const node: GroundNode = { level, rect: [xs[range.ix0], xs[range.ix1], zs[range.iz0], zs[range.iz1]], mesh: null, kids, cx: 0, cy: 0, cz: 0, r: 0 };
+      // Every piece gets a mesh at its own level (even when little could be simplified, it is still ONE draw call instead of up to four).
+      if (triangles.length > 0) {
+        const mesh = makeMesh(triangles);
+        const s = mesh.geometry.boundingSphere!;
+        Object.assign(node, { mesh, cx: s.center.x, cy: s.center.y, cz: s.center.z, r: s.radius });
+        this.stats.lodTriangles[level] += triangles.length / 3;
+        this.stats.meshes++;
+        mesh.visible = level === 0; // until cullToFog runs for a camera, only the full-detail pieces show
+        ground.add(mesh);
+      } else if (kids.length === 0) return null;
+      return node;
+    };
+    const topLevel = LOD_STRIDES.length - 1;
+    const zGroups = axisGroups(zs, LOD_TILE, LOD_STRIDES.length);
+    for (const gx of axisGroups(xs, LOD_TILE, LOD_STRIDES.length)) {
+      for (const gz of zGroups) {
+        const node = buildNode(gx, gz, topLevel);
+        if (node) this.groundTree.push(node);
+      }
+    }
+    this.group.add(ground);
   }
 
   // -------------------------------------------------------------------------
