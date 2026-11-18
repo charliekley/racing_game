@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NEUTRAL_INPUT, type ControlInput } from '../shared/protocol';
 import { TRACKS } from '../track';
-import { BotPack, DIFFICULTIES, nextDifficulty, rubberBand, sanitizeDifficulty, type Difficulty } from './bots';
+import { BotPack, DIFFICULTIES, RIVAL_HUMAN_BIAS, nextDifficulty, pickRival, rubberBand, sanitizeDifficulty, type Difficulty } from './bots';
 import { botLoadoutFor } from './classes';
 import { BOTS } from './config';
 import { Track } from './track';
@@ -139,4 +139,52 @@ describe('bots drive with style', () => {
     expect(events).toEqual([{ kind: 'combo', slot: 0 }]);
     expect(k.boostTime).toBeGreaterThan(1.9);
   });
+});
+
+describe('bot character: rivals and moods', () => {
+  const others = [
+    { slot: 0, progress: 100, human: true },
+    { slot: 1, progress: 480, human: false },
+    { slot: 2, progress: 560, human: true },
+  ];
+
+  it('picks the nearest human most of the time, the nearest kart otherwise', () => {
+    // Always "human" when the random number is below the bias, always "anyone" above it.
+    expect(pickRival(500, others, () => 0)).toBe(2);
+    expect(pickRival(500, others, () => RIVAL_HUMAN_BIAS + 0.01)).toBe(1);
+    expect(pickRival(150, others, () => 0)).toBe(0);
+  });
+
+  it('works with no humans, no one at all, and breaks distance ties by slot', () => {
+    expect(pickRival(0, [{ slot: 3, progress: 50, human: false }], () => 0)).toBe(3);
+    expect(pickRival(0, [], () => 0)).toBeNull();
+    expect(pickRival(100, [{ slot: 5, progress: 110, human: true }, { slot: 4, progress: 90, human: true }], () => 0)).toBe(4);
+  });
+
+  it('over many draws about three quarters of the picks are the nearest human', () => {
+    let seed = 1;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    let human = 0;
+    for (let i = 0; i < 2000; i++) if (pickRival(500, others, rnd) === 2) human++;
+    expect(human / 2000).toBeGreaterThan(0.68);
+    expect(human / 2000).toBeLessThan(0.82);
+  });
+
+  it('a bot next to a human chooses a rival in a real race, and the bots show moods', () => {
+    const track = tracks[0][1];
+    const world = new World(track, track);
+    const slots = [0, 1, 2, 3];
+    world.startRace(slots, 2, new Map(slots.map((s) => [s, botLoadoutFor(s)])));
+    const pack = new BotPack('hard', (slot) => slot === 0);
+    const moods = new Set<string>();
+    let ticks = 0;
+    while (world.race!.phase !== 'done' && ticks < 60 * 420) {
+      world.tick((slot) => (slot === 0 ? NEUTRAL_INPUT : pack.input(world, slot)));
+      for (const e of pack.drainEvents()) moods.add(e.mood);
+      ticks++;
+    }
+    for (const bot of [1, 2, 3]) expect(pack.rivalOf(bot)).not.toBeNull();
+    expect(moods.size).toBeGreaterThan(0);
+    expect(world.race!.racers.get(1)!.finished).toBe(true);
+  }, 120_000);
 });

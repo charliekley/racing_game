@@ -18,12 +18,27 @@ describe('points table', () => {
 });
 
 describe('modes', () => {
-  it('cycles through the three modes both ways', () => {
+  it('cycles through all modes both ways', () => {
     expect(nextMode('single')).toBe('gp');
     expect(nextMode('gp')).toBe('loser');
-    expect(nextMode('loser')).toBe('single');
-    expect(nextMode('single', -1)).toBe('loser');
-    expect(Object.keys(MODE_NAMES)).toHaveLength(3);
+    expect(nextMode('loser')).toBe('knockout');
+    expect(nextMode('knockout')).toBe('single');
+    expect(nextMode('single', -1)).toBe('knockout');
+    expect(Object.keys(MODE_NAMES)).toHaveLength(4);
+  });
+});
+
+describe('knockout', () => {
+  it('is one race on the chosen track with no points, and can be repeated', () => {
+    const s = new Series('knockout', 4, 3);
+    expect(s.trackIndex).toBe(3);
+    expect(s.scoring).toBe(false);
+    expect(s.raceTotal).toBeNull();
+    s.recordRace(race([2, 0, 1]));
+    expect(s.gainOf(2)).toBe(0); // Grand Prix points do not apply
+    expect(s.stage).toBe('between');
+    expect(s.advance()).toBe(true);
+    expect(s.trackIndex).toBe(3);
   });
 });
 

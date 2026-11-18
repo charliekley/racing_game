@@ -195,6 +195,16 @@ export class ViewHud {
     ctx.restore();
   }
 
+  /** Knockout: this kart is out. The view greys out and shows the final place until the race ends. */
+  knockedOut(place: number): void {
+    this.root.classList.add('knocked-out');
+    const el = document.createElement('div');
+    el.className = 'hud-out';
+    el.innerHTML = '<b>OUT</b><span></span>';
+    el.querySelector('span')!.textContent = `${place}${ordinalSuffix(place)} place`;
+    this.root.appendChild(el);
+  }
+
   /** Splat ink over this player's screen for `seconds` (they were hit by a Jumble). */
   showInk(seconds: number): void {
     this.ink.show(seconds);

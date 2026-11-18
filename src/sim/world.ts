@@ -16,6 +16,7 @@ import { HazardSystem } from './hazards/system';
 import type { HazardEvent } from './hazards/types';
 import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
+import type { BotMoodEvent } from './bots';
 import { Race, type RaceEvent } from './race';
 import { ComboTracker, SlipstreamSystem, applyComboBonus, type StyleEvent } from './style';
 import type { Track } from './track';
@@ -34,6 +35,7 @@ export type WorldEvent =
   | { kind: 'respawn'; slot: number }
   | ItemEvent
   | CannonEvent
+  | BotMoodEvent
   | HazardEvent
   | StyleEvent
   | (KartEvent & { slot: number });
@@ -42,6 +44,9 @@ export type WorldEvent =
 const WALL_EVENT_MIN_IMPACT = 3;
 /** The carrier starts this high above the drop point (m). */
 export const CARRIER_HEIGHT = 7;
+/** Knockout: how high (m) the carrier lifts a knocked-out kart, and how long (s) the lift takes. */
+export const KNOCKOUT_LIFT_HEIGHT = 30;
+export const KNOCKOUT_LIFT_SECONDS = 2.5;
 /** Falling rule: respawn when this far (m) below the road surface at the kart's nearest track point... */
 export const FALL_BELOW_ROAD = 5;
 /** ...or below this absolute height (m), whatever the road does. */
@@ -69,6 +74,8 @@ export class World {
   private readonly configs = new Map<number, KartConfig>();
   /** Where each respawning kart is being lowered to. */
   private respawnTargets = new Map<number, { x: number; y: number; z: number }>();
+  /** Knockout: karts being carried away, with the height they were lifted from and the seconds since. */
+  private lifts = new Map<number, { y0: number; t: number }>();
 
   constructor(
     readonly ground: Ground,
@@ -107,7 +114,7 @@ export class World {
    * `loadouts` (optional) says which character + kart body each slot drives; slots missing
    * from it get the default loadout, which behaves exactly like the original single kart.
    */
-  startRace(slots: number[], laps: number, loadouts?: ReadonlyMap<number, Loadout>): void {
+  startRace(slots: number[], laps: number, loadouts?: ReadonlyMap<number, Loadout>, options: { knockout?: boolean } = {}): void {
     if (!this.track) throw new Error('startRace needs a track');
     this.loadouts.clear();
     this.configs.clear();
@@ -115,8 +122,9 @@ export class World {
     this.karts.clear();
     this.prevKarts.clear();
     this.respawnTargets.clear();
+    this.lifts.clear();
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
-    this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots);
+    this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots, options);
     this.hazards = this.track.def.hazards?.length ? new HazardSystem(this.track) : null;
     this.slip = new SlipstreamSystem();
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
@@ -138,6 +146,10 @@ export class World {
     for (const [slot, kart] of this.karts) {
       this.prevKarts.set(slot, cloneKart(kart));
       if (frozen) continue; // everyone waits on the grid during the countdown
+      if (this.lifts.has(slot)) {
+        this.liftAway(slot, kart); // Knockout: out of the race, carried up and away
+        continue;
+      }
       if (kart.respawnTime > 0) {
         this.lowerByCarrier(slot, kart);
         continue;
@@ -182,7 +194,10 @@ export class World {
 
     // Slipstream: karts in each other's wake charge a boost.
     if (this.slip && this.race?.phase === 'racing') {
-      for (const e of this.slip.tick(this.karts, (slot) => !this.race!.racers.get(slot)?.finished)) {
+      for (const e of this.slip.tick(this.karts, (slot) => {
+        const r = this.race!.racers.get(slot);
+        return !r?.finished && !r?.out;
+      })) {
         events.push(e);
         if (e.kind === 'slipBoost') this.noteStyle(e.slot, 'slipstream', this.karts.get(e.slot)!, events);
       }
@@ -190,7 +205,8 @@ export class World {
 
     // Items run while the race is on.
     if (this.items && this.race?.phase === 'racing') {
-      const finished = new Set([...this.race.racers.values()].filter((r) => r.finished).map((r) => r.slot));
+      // (a knocked-out kart is done with items too, like a finished one)
+      const finished = new Set([...this.race.racers.values()].filter((r) => r.finished || r.out).map((r) => r.slot));
       events.push(...this.items.tick(this.karts, inputs, this.race.standings(), finished));
       this.items.novaCollisions(this.karts, events as ItemEvent[]);
     }
@@ -204,6 +220,7 @@ export class World {
       for (const e of this.race.tick(SIM_DT, positions, inputs)) {
         if (e.kind === 'startBoost') applyBoost(this.karts.get(e.slot)!, KART.startBoostTime * (e.perfect ? START.perfectBoostFactor : 1));
         if (e.kind === 'stall') this.karts.get(e.slot)!.stallTime = KART.startStallTime;
+        if (e.kind === 'knockout') this.startLift(e.slot);
         if (e.kind === 'offCourse') {
           // Cut across and skipped checkpoints: the carrier drone takes it back to its last checkpoint.
           const k = this.karts.get(e.slot)!;
@@ -281,6 +298,28 @@ export class World {
       respawnTime: KART.respawnTime,
     });
     this.respawnTargets.set(slot, { x: p.x, y, z: p.z });
+  }
+
+  /** Knockout: the carrier takes this kart away (it keeps its place in the sky until the race ends). */
+  private startLift(slot: number): void {
+    const k = this.karts.get(slot);
+    if (!k) return;
+    this.respawnTargets.delete(slot);
+    k.flight = null; // (a kart knocked out inside a cannon just drops out of it)
+    this.lifts.set(slot, { y0: k.pos.y, t: 0 });
+  }
+
+  /** Knockout: raise a knocked-out kart on the carrier (ease-out), still and untouchable. */
+  private liftAway(slot: number, k: KartState): void {
+    const l = this.lifts.get(slot)!;
+    l.t = Math.min(KNOCKOUT_LIFT_SECONDS, l.t + SIM_DT);
+    const u = l.t / KNOCKOUT_LIFT_SECONDS;
+    k.respawnTime = KART.respawnTime; // "being carried": no collisions, no items, the drone is drawn
+    k.speed = 0;
+    k.vel.x = k.vel.y = k.vel.z = 0;
+    k.grounded = false;
+    k.driftDir = 0;
+    k.pos.y = l.y0 + KNOCKOUT_LIFT_HEIGHT * (1 - (1 - u) * (1 - u));
   }
 
   /** Carrier phase: ease the kart down onto the track, then hand back control. */

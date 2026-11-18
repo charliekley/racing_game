@@ -277,7 +277,7 @@ function updateModeUi() {
   SERIES_MODES.forEach((mode, i) => modeBtns[i].classList.toggle('on', mode === m));
   $('mode-note').textContent = seriesHost.choosing
     ? `${seriesHost.ownerName()} is choosing on their phone…`
-    : m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : 'Last place picks the next track';
+    : m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : m === 'knockout' ? 'Last kart is out after every lap' : 'Last place picks the next track';
   document.querySelector('.track-panel')!.classList.toggle('gp', m === 'gp');
   if (m === 'gp') $('track-meta').textContent = `Grand Prix: all ${TRACKS.length} tracks in order`;
   else trackPreview.show(track);
@@ -353,6 +353,7 @@ function startDriving() {
   game.audio = audio; // AUDIO
   game.setTrack(seriesHost.currentTrack()); // the lobby's track, or the series' next one
   game.botDifficulty = botDifficulty;
+  game.knockout = seriesHost.series?.mode === 'knockout'; // Knockout: more laps, the last kart is out after every lap
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
   // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, magnet, bumper, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');

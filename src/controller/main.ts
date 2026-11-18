@@ -322,7 +322,7 @@ const seriesMenu = new SeriesMenu({
 });
 $('stage').appendChild(seriesMenu.root);
 
-const MODE_SHORT = { single: 'Single race', gp: 'Grand Prix', loser: 'Loser picks' } as const;
+const MODE_SHORT = { single: 'Single race', gp: 'Grand Prix', loser: 'Loser picks', knockout: 'Knockout' } as const;
 
 function nameOfSlot(slot: number | null): string {
   return lobby.find((p) => p.slot === slot)?.name ?? 'Someone';

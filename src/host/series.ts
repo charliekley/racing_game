@@ -6,6 +6,9 @@
  * Three modes (picked on the first player's phone, or with the arrow keys on the host):
  *   single - one race on a chosen track, then back to the menu.
  *   gp     - Grand Prix: all tracks in order, points by finishing place, final podium.
+
+ *   knockout - one longer race: after every lap (from lap 2) the last kart is knocked out; the last one
+ *            standing wins (rules in sim/knockout.ts). No points, like a single race.
  *   loser  - after each race the last-place HUMAN picks the next track; the menu
  *            owner (P1) ends the series with STOP. Points are kept like in a GP.
  */
@@ -19,6 +22,7 @@ export const MODE_NAMES: Record<SeriesMode, string> = {
   single: 'Single race',
   gp: 'Grand Prix',
   loser: 'Loser picks',
+  knockout: 'Knockout',
 };
 
 /**
@@ -82,9 +86,9 @@ export class Series {
     return this.mode === 'gp' ? this.trackCount : null;
   }
 
-  /** Points are kept in Grand Prix and Loser-picks (a single race has no standings). */
+  /** Points are kept in Grand Prix and Loser-picks (a single race or a Knockout has no standings). */
   get scoring(): boolean {
-    return this.mode !== 'single';
+    return this.mode === 'gp' || this.mode === 'loser';
   }
 
   /** Points a slot earned in the last race. */

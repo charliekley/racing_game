@@ -97,10 +97,10 @@ export interface LobbyPlayerInfo {
 
 // --- Race modes (see src/host/series.ts) ---------------------------------------
 
-export type SeriesMode = 'single' | 'gp' | 'loser';
-export const SERIES_MODES: readonly SeriesMode[] = ['single', 'gp', 'loser'];
+export type SeriesMode = 'single' | 'gp' | 'loser' | 'knockout';
+export const SERIES_MODES: readonly SeriesMode[] = ['single', 'gp', 'loser', 'knockout'];
 
-/** Phone input is untrusted: only these three words are modes. */
+/** Phone input is untrusted: only the words in SERIES_MODES are modes. */
 export function sanitizeMode(x: unknown): SeriesMode | null {
   return typeof x === 'string' && (SERIES_MODES as readonly string[]).includes(x) ? (x as SeriesMode) : null;
 }

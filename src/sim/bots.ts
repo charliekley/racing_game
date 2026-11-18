@@ -8,7 +8,11 @@
  *  - personality from the character's weight class (light bots drift a lot, heavy bots are pushy);
  *  - hop-drift through long corners and release the mini-turbo, tricks off ramps;
  *  - items used with some sense (dash on straights, shots when someone is in front, shield items held while leading);
- *  - dodging karts and slicks, getting unstuck, gentle rubber-banding against the best human.
+ *  - dodging karts and slicks, getting unstuck, gentle rubber-banding against the best human;
+ *  - a visible character: each bot picks a rival (usually the nearest human) and fights harder near them
+ *    (blocks the line, uses items on them sooner), makes bold moves (a late-braking dive down the inside,
+ *    a risky shortcut when behind), recovers with a burst after being hit, and shows its mood
+ *    (`botMood` events: celebrating a lead or a win, despairing after a hit or at the back).
  *
  * Deterministic: all "randomness" comes from a small seeded generator per bot, so the same race always plays out
  * the same way (and tests are repeatable). Pure TypeScript, no DOM.
@@ -21,7 +25,17 @@ import type { ItemState } from './items/items';
 import type { KartState } from './kart';
 import { forwardOf, rightOf } from './kart';
 import type { Track } from './track';
+import type { Race, Racer } from './race';
 import type { World } from './world';
+
+/** What a bot feels: the host can turn these into driver faces. */
+export type BotMood = 'celebrate' | 'despair' | 'angry' | 'smug';
+/** Emitted (see `BotPack.drainEvents`) when a bot's mood changes; rides along with the world's events. */
+export interface BotMoodEvent {
+  kind: 'botMood';
+  slot: number;
+  mood: BotMood;
+}
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export const DIFFICULTIES: readonly Difficulty[] = ['easy', 'normal', 'hard'];
@@ -92,6 +106,12 @@ export interface Skill {
    * Easy bots suffer most, hard bots least, but everybody loses real time.
    */
   jumble: { reaction: number; overshoot: number; wobble: number; caution: number };
+  /** 0..1: how hard the bot fights its rival (blocking, items). */
+  rivalry: number;
+  /** 0..1: how often it tries a late-braking dive on the inside, and takes a risky shortcut when behind. */
+  boldness: number;
+  /** 0..1: chance of a burst (full gas, dash used at once) after being hit or put back on the track. */
+  recovery: number;
 }
 
 export const SKILLS: Record<Difficulty, Skill> = {
@@ -99,16 +119,19 @@ export const SKILLS: Record<Difficulty, Skill> = {
     pace: BOTS.pace.easy, driftCurvature: 0, trickChance: 0.3, rocketEarly: -1.2, rocketLate: 0.15, stallChance: 0.2,
     mistakeEvery: 16, mistakeLength: 0.4, itemDelay: 2.5, holdShields: false, dodge: 0.5, skillful: false, steerGain: 2.4, cornerBonus: -0.06,
     jumble: { reaction: 1.3, overshoot: 0.7, wobble: 0.8, caution: 0.65 },
+    rivalry: 0.25, boldness: 0, recovery: 0.35,
   },
   normal: {
     pace: BOTS.pace.normal, driftCurvature: 0.032, trickChance: 0.8, rocketEarly: -0.75, rocketLate: -0.08, stallChance: 0.04,
     mistakeEvery: 25, mistakeLength: 0.3, itemDelay: 1.0, holdShields: true, dodge: 0.85, skillful: true, steerGain: 3, cornerBonus: 0,
     jumble: { reaction: 0.85, overshoot: 0.5, wobble: 0.55, caution: 0.5 },
+    rivalry: 0.6, boldness: 0.5, recovery: 0.7,
   },
   hard: {
     pace: BOTS.pace.hard, driftCurvature: 0.028, trickChance: 1, rocketEarly: -0.28, rocketLate: -0.03, stallChance: 0,
     mistakeEvery: 0, mistakeLength: 0, itemDelay: 0.35, holdShields: true, dodge: 1, skillful: true, steerGain: 3.4, cornerBonus: 0.06,
     jumble: { reaction: 0.6, overshoot: 0.35, wobble: 0.42, caution: 0.55 },
+    rivalry: 1, boldness: 1, recovery: 1,
   },
 };
 
@@ -127,6 +150,40 @@ const PERSONALITY: Record<WeightClass, Personality> = {
   medium: { driftEager: 1, aggression: 0.7, cornerSpeed: 0.76 },
   heavy: { driftEager: 0.8, aggression: 1, cornerSpeed: 0.72 },
 };
+
+// ---------------------------------------------------------------------------
+// Rivals
+// ---------------------------------------------------------------------------
+
+/** How a rival is chosen: the nearest HUMAN with this chance (else the nearest kart of any kind). */
+export const RIVAL_HUMAN_BIAS = 0.75;
+/** A bot re-considers its rival this often (s), so rivalries shift during a race. */
+const RIVAL_REPICK_SECONDS = 9;
+
+export interface RivalCandidate {
+  slot: number;
+  /** Distance raced (m). */
+  progress: number;
+  human: boolean;
+}
+
+/**
+ * Who a bot picks as its rival: usually (RIVAL_HUMAN_BIAS) the human closest to it on the track,
+ * otherwise the closest kart of any kind. `rnd` is the bot's seeded generator (0..1).
+ * `others` must not contain the bot itself; returns null when there is nobody.
+ */
+export function pickRival(myProgress: number, others: RivalCandidate[], rnd: () => number): number | null {
+  const nearest = (list: RivalCandidate[]) =>
+    list.reduce<RivalCandidate | null>((best, c) => {
+      if (!best) return c;
+      const d = Math.abs(c.progress - myProgress);
+      const bd = Math.abs(best.progress - myProgress);
+      return d < bd || (d === bd && c.slot < best.slot) ? c : best;
+    }, null);
+  const humans = others.filter((c) => c.human);
+  const wantHuman = humans.length > 0 && rnd() < RIVAL_HUMAN_BIAS;
+  return nearest(wantHuman ? humans : others)?.slot ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // Seeded random numbers
@@ -191,6 +248,34 @@ export class Bot {
   /** Jumble bookkeeping: seconds since the steering was last flipped on us, and last tick's invertTime (to spot a new hit). */
   private jumbleAge = 0;
   private lastInvert = 0;
+  // --- Character: rival, bold moves, recovery, mood ---
+  /** Mood events waiting to be collected by `BotPack.drainEvents`. */
+  readonly events: BotMoodEvent[] = [];
+  /** The slot this bot is fighting (null = none yet) and when (own clock) it was chosen. */
+  rival: number | null = null;
+  private rivalAt = -Infinity;
+  /** Smoothed sideways shift (m) from blocking the rival or diving down the inside. */
+  private fightShift = 0;
+  /** Late-braking dive: until when, which side (+1 right), earliest next try, and who it is aimed at. */
+  private diveUntil = 0;
+  private diveSide = 0;
+  private nextDive = 8;
+  private diveTarget: number | null = null;
+  /** Burst after a hit: gas flat down and the dash used at once, until this time. */
+  private recoverUntil = 0;
+  private wasHit = false;
+  private wasCarried = false;
+  /** Mood bookkeeping: last mood time, current rank and since when, and which "said it" flags are set. */
+  private moodAt = -Infinity;
+  private rank = 0;
+  private rankSince = 0;
+  private rankChecked = 0;
+  private saidLead = false;
+  private saidLast = false;
+  private saidFinish = false;
+  private saidOut = false;
+  /** A bold bot that is behind takes the shortcuts too (only changed away from junctions). */
+  private riskShortcut = false;
 
   constructor(
     readonly slot: number,
@@ -218,7 +303,7 @@ export class Bot {
   }
 
   /** The controls for this tick. */
-  drive(world: World, humanAhead: number | null): ControlInput {
+  drive(world: World, humanAhead: number | null, isHuman: (slot: number) => boolean = () => false): ControlInput {
     const k = world.karts.get(this.slot);
     const race = world.race;
     if (!k || !race) return { steer: 0, buttons: 0 };
@@ -227,6 +312,18 @@ export class Bot {
 
     // --- Countdown: rocket start timing -----------------------------------------------------
     if (race.phase === 'countdown') return { steer: 0, buttons: race.time >= this.rocketAt ? Buttons.GAS : 0 };
+
+    // --- Knocked out (Knockout mode): the carrier has us; all that is left is to sulk ---------
+    const me = race.racers.get(this.slot);
+    if (me?.out) {
+      if (!this.saidOut) {
+        this.saidOut = true;
+        this.mood('despair', 0);
+      }
+      return { steer: 0, buttons: Buttons.BRAKE };
+    }
+    this.watchMood(k, me, race);
+    const recovering = this.clock < this.recoverUntil;
 
     // --- Rubber band: smooth towards the wanted multiplier ----------------------------------
     const wantRubber = humanAhead === null ? 1 : rubberBand(humanAhead);
@@ -238,6 +335,10 @@ export class Bot {
     const nearFork = sNow.route > 0 || track.branches.some((b) => track.deltaS(sNow.s, b.s0) > -15 && track.deltaS(sNow.s, b.s0) < 70);
     let lane = this.style.lane + (nearFork ? 0 : this.dodge(world, k) * this.skill.dodge);
     const half = track.def.width / 2 - 2.2;
+    // --- Fighting: block the rival's line, dive down the inside (never near a junction) ---
+    this.fightShift += ((nearFork ? 0 : this.fightTarget(world, k, track, sNow, lane, half, isHuman)) - this.fightShift) * 0.06;
+    lane += this.fightShift;
+    if (!nearFork && sNow.route === 0) this.riskShortcut = this.skill.boldness > 0.4 && this.skill.skillful && (me?.progress ?? 0) < this.leaderProgress(race) - 40;
     // --- Hazards (lava geysers...): swing to a free lane, or lift when every lane is blocked ---
     // The advice is a function of the race clock, so bots "see" the same eruptions as the players.
     // Easy bots react only partly (care 0.75), so they are sometimes caught; hard bots almost never.
@@ -246,7 +347,15 @@ export class Bot {
     const hazardTarget = hazard.steer !== 0 ? sNow.d + hazard.steer * care - lane : 0;
     this.hazardShift += (hazardTarget - this.hazardShift) * 0.25;
     lane += this.hazardShift;
-    const style: BotStyle = { ...this.style, pace: this.skill.pace * this.rubber, lane: clamp(lane, -half, half) };
+    const diving = this.clock < this.diveUntil;
+    const style: BotStyle = {
+      ...this.style,
+      pace: this.skill.pace * this.rubber,
+      lane: clamp(lane, -half, half),
+      // Bold moves: brake later for the dive; and a bold bot that has fallen behind goes for the shortcuts.
+      cornerSpeed: (this.style.cornerSpeed ?? 0.75) + (diving ? 0.1 : 0),
+      shortcutBias: this.riskShortcut ? Math.max(this.style.shortcutBias ?? 0, 0.6) : this.style.shortcutBias,
+    };
 
     // --- Base driving ---------------------------------------------------------------------
     // While sliding in a drift the kart travels along its VELOCITY, not its nose: steer by where we are really going.
@@ -259,6 +368,8 @@ export class Bot {
       buttons &= ~Buttons.GAS;
       if (hazard.brake * care >= 0.85 && k.speed > 12) buttons |= Buttons.BRAKE;
     }
+    // Recovering from a hit: gas flat down for a moment (unless a hazard needs us to wait).
+    if (recovering && k.grounded && hazard.brake * care < 0.5) buttons |= Buttons.GAS;
     const p =track.project(k.pos.x, k.pos.z, k.trackIndex);
     const ahead = (o: number) => track.sampleAhead(p.route, p.i, o).curvature;
 
@@ -287,7 +398,7 @@ export class Bot {
 
     // --- Mistakes (easy / normal only) --------------------------------------------------------
     if (this.mistake && this.clock > this.mistake.until) this.mistake = null;
-    if (!this.mistake && this.clock > this.nextMistake && k.grounded) {
+    if (!this.mistake && this.clock > this.nextMistake && k.grounded && !recovering) {
       const len = this.skill.mistakeLength * (0.7 + 0.6 * this.rnd());
       this.mistake = { kind: this.rnd() < 0.5 ? 'wobble' : 'lift', dir: this.rnd() < 0.5 ? -1 : 1, until: this.clock + len };
       this.nextMistake = this.clock + this.skill.mistakeEvery * (0.6 + 0.8 * this.rnd());
@@ -315,7 +426,7 @@ export class Bot {
     if (!k.grounded && k.trickable && !k.trickDone && this.wantsTrick && this.airTime > 0.12) buttons |= Buttons.TRICK;
 
     // --- Items ----------------------------------------------------------------------------------------
-    buttons |= this.itemLogic(world, k, ahead);
+    buttons |= this.itemLogic(world, k, ahead, recovering);
 
     // --- Stuck: back up and turn around ---------------------------------------------------------------
     const stuckable = k.grounded && k.spinTime <= 0 && k.respawnTime <= 0 && k.stallTime <= 0 && !k.flight;
@@ -327,6 +438,138 @@ export class Bot {
     if (this.clock < this.reverseUntil) return { steer: -steer, buttons: Buttons.BRAKE };
 
     return { steer, buttons };
+  }
+
+  // -------------------------------------------------------------------------
+  // Character: rival, bold moves, recovery, mood
+  // -------------------------------------------------------------------------
+
+  /** Distance raced by the kart in front (m). */
+  private leaderProgress(race: Race): number {
+    let best = -Infinity;
+    for (const r of race.racers.values()) if (!r.out) best = Math.max(best, r.progress);
+    return best;
+  }
+
+  /** Choose (or re-choose) the rival: see `pickRival`. A rival that is out or finished no longer counts. */
+  private updateRival(race: Race, isHuman: (slot: number) => boolean): void {
+    const current = this.rival !== null ? race.racers.get(this.rival) : undefined;
+    if (current && !current.out && !current.finished && this.clock - this.rivalAt < RIVAL_REPICK_SECONDS) return;
+    const me = race.racers.get(this.slot);
+    if (!me) return;
+    const others: RivalCandidate[] = [];
+    for (const r of race.racers.values()) if (r.slot !== this.slot && !r.out && !r.finished) others.push({ slot: r.slot, progress: r.progress, human: isHuman(r.slot) });
+    this.rival = pickRival(me.progress, others, this.rnd);
+    this.rivalAt = this.clock;
+  }
+
+  /**
+   * The sideways shift (m) the fight asks for this tick:
+   *  - block: when ahead of the rival (4..30 m) slide towards the rival's lateral position, so they cannot pass on that side;
+   *  - dive: when a kart is just ahead before a corner, brake late and take the inside line for a moment.
+   * Both are limited by the difficulty (rivalry, boldness) and the class (aggression); easy bots barely do either.
+   */
+  private fightTarget(
+    world: World,
+    k: KartState,
+    track: Track,
+    p: { route: number; i: number; d: number },
+    lane: number,
+    half: number,
+    isHuman: (slot: number) => boolean,
+  ): number {
+    const race = world.race!;
+    const me = race.racers.get(this.slot);
+    if (!me || p.route !== 0) return 0;
+    this.updateRival(race, isHuman);
+    // Keep the line exactly where it is before jumps and cannons (they need a straight run-up).
+    const s = track.project(k.pos.x, k.pos.z, k.trackIndex).s;
+    if (track.ramps.some((r) => track.deltaS(s, r.s0) > -(r.s1 - r.s0 + r.gap + 8) && track.deltaS(s, r.s0) < 90)) return 0;
+    if (track.cannons.some((c) => track.deltaS(s, c.mouth.s) > -8 && track.deltaS(s, c.mouth.s) < 90)) return 0;
+    let target = 0;
+
+    // Block.
+    const rk = this.rival !== null ? world.karts.get(this.rival) : undefined;
+    const rr = this.rival !== null ? race.racers.get(this.rival) : undefined;
+    if (rk && rr && rk.respawnTime <= 0 && !rk.flight) {
+      const gap = me.progress - rr.progress; // > 0: we lead
+      if (gap > 4 && gap < 30) {
+        const rp = track.project(rk.pos.x, rk.pos.z, rk.trackIndex);
+        if (rp.route === 0) target += (clamp(rp.d, -half, half) - lane) * clamp(this.skill.rivalry * this.personality.aggression * 0.7, 0, 0.7);
+      }
+    }
+
+    // Dive: end of the move (did it work?), or start a new one.
+    if (this.diveTarget !== null && this.clock >= this.diveUntil) {
+      const t = race.racers.get(this.diveTarget);
+      if (t && me.progress > t.progress) this.mood('smug', 4);
+      this.diveTarget = null;
+    }
+    if (this.clock < this.diveUntil) {
+      target += this.diveSide * 2.2;
+    } else if (this.skill.boldness > 0 && this.clock >= this.nextDive && k.grounded && k.speed > 14) {
+      const curv = track.sampleAhead(p.route, p.i, 14).curvature;
+      if (Math.abs(curv) > 0.012) {
+        for (const o of race.racers.values()) {
+          if (o.slot === this.slot || o.out || o.finished) continue;
+          const ok = world.karts.get(o.slot);
+          const gap = o.progress - me.progress; // > 0: they are ahead
+          if (!ok || gap < 3 || gap > 14 || ok.respawnTime > 0) continue;
+          if (Math.abs(track.project(ok.pos.x, ok.pos.z, ok.trackIndex).d - p.d) > 3.5) continue;
+          this.nextDive = this.clock + 7 + 6 * this.rnd();
+          if (this.rnd() < this.skill.boldness * 0.6) {
+            this.diveUntil = this.clock + 1.5;
+            this.diveSide = -Math.sign(curv); // curvature < 0 = right turn: the inside is on the right (+)
+            this.diveTarget = o.slot;
+          }
+          break;
+        }
+      }
+    }
+    return target;
+  }
+
+  /** Emit a mood (at most one every `cooldown` seconds). */
+  private mood(mood: BotMood, cooldown = 5): void {
+    if (this.clock - this.moodAt < cooldown) return;
+    this.moodAt = this.clock;
+    this.events.push({ kind: 'botMood', slot: this.slot, mood });
+  }
+
+  /** Moods and recovery: notices hits, a new lead, sinking to the back and the finish. */
+  private watchMood(k: KartState, me: Racer | undefined, race: Race): void {
+    if (!me) return;
+    const hit = k.spinTime > 0 || k.invertTime > 0;
+    if (hit && !this.wasHit) this.mood(this.personality.aggression > 0.6 ? 'angry' : 'despair', 3);
+    const carried = k.respawnTime > 0;
+    // Back in control after a hit or a carry: sometimes a burst (full gas, dash at once).
+    if (((this.wasHit && !hit) || (this.wasCarried && !carried)) && this.rnd() < this.skill.recovery) this.recoverUntil = this.clock + 1.6;
+    this.wasHit = hit;
+    this.wasCarried = carried;
+
+    if (me.finished && !this.saidFinish) {
+      this.saidFinish = true;
+      if (me.place === 1) this.mood('celebrate', 0);
+      else if (race.racers.size >= 3 && me.place === race.racers.size) this.mood('despair', 0);
+    }
+    if (this.clock - this.rankChecked < 0.25) return;
+    this.rankChecked = this.clock;
+    const r = race.positionOf(this.slot);
+    const n = race.racers.size;
+    if (r !== this.rank) {
+      this.rank = r;
+      this.rankSince = this.clock;
+      this.saidLead = r === 1 ? this.saidLead : false;
+      this.saidLast = r === n ? this.saidLast : false;
+    }
+    if (n >= 2 && r === 1 && !this.saidLead && this.clock - this.rankSince > 1.5) {
+      this.saidLead = true;
+      this.mood('celebrate');
+    }
+    if (n >= 3 && r === n && !this.saidLast && this.clock - this.rankSince > 2.5) {
+      this.saidLast = true;
+      this.mood('despair');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -423,7 +666,7 @@ export class Bot {
   // -------------------------------------------------------------------------
 
   /** ITEM / BRAKE bits for this tick. Decides when to fire the held item. */
-  private itemLogic(world: World, k: KartState, ahead: (o: number) => number): number {
+  private itemLogic(world: World, k: KartState, ahead: (o: number) => number, recovering = false): number {
     const st: ItemState | undefined = world.items?.states.get(this.slot);
     // A pulse in progress: ITEM is down for a few ticks (a "tap"), then released (with BRAKE for a backward shot).
     if (this.tapLeft > 0) {
@@ -447,6 +690,8 @@ export class Bot {
     // Nearest racer in front / behind, in metres along my heading, with their sideways offset.
     let front: { d: number; side: number } | null = null;
     let back: { d: number; side: number } | null = null;
+    /** Where the rival is relative to us (m along our heading, m sideways), null when it is not on the track. */
+    let rivalRel: { d: number; side: number } | null = null;
     for (const [slot, o] of world.karts) {
       if (slot === this.slot || o.respawnTime > 0 || o.flight) continue;
       const dx = o.pos.x - k.pos.x;
@@ -455,8 +700,14 @@ export class Bot {
       const side = dx * r.x + dz * r.z;
       if (d > 0 && (!front || d < front.d)) front = { d, side };
       if (d < 0 && (!back || -d < back.d)) back = { d: -d, side };
+      if (slot === this.rival) rivalRel = { d, side };
     }
-    const wait = this.skill.itemDelay + (this.slot % 3) * 0.2;
+    // Fighting the rival: items come out sooner when it is close, and shots at it are taken more readily.
+    const rv = rivalRel as { d: number; side: number } | null;
+    const hot = rv !== null && Math.abs(rv.d) < 45;
+    const rivalFront = rv !== null && rv.d > 0 && front !== null && Math.abs(front.d - rv.d) < 1.5;
+    const rivalBack = rv !== null && rv.d < 0 && back !== null && Math.abs(back.d + rv.d) < 1.5;
+    const wait = (this.skill.itemDelay + (this.slot % 3) * 0.2) * (hot ? 1 - 0.5 * this.skill.rivalry : 1);
     const ready = st.heldFor >= wait;
     const straight = Math.abs(ahead(10)) < 0.008 && Math.abs(ahead(25)) < 0.012 && k.grounded;
     const tap = (backward = false) => {
@@ -475,13 +726,13 @@ export class Bot {
     switch (st.held.id) {
       case 'dash': {
         const stuckOffroad = k.surface === 'offroad';
-        if (k.boostTime < 0.3 && ready && (straight || stuckOffroad || st.heldFor > 6)) return tap();
+        if (k.boostTime < 0.3 && (ready || recovering) && (straight || stuckOffroad || recovering || st.heldFor > 6)) return tap();
         return 0;
       }
       case 'nova':
-        return ready && (rank > 0 || st.heldFor > 3) ? tap() : 0;
+        return ready && (rank > 0 || st.heldFor > 3 || hot) ? tap() : 0;
       case 'jumble':
-        return ready && rank > 0 ? tap() : 0;
+        return ready && (rank > 0 || rivalFront) ? tap() : 0;
       case 'magnet': {
         // Worth it when a kart is a decent way ahead (inside the tow range, not already next to us).
         const target = front !== null && front.d > ITEMS.magnetMinDist + 4 && front.d < ITEMS.magnetRange - 5 && Math.abs(front.side) < 6;
@@ -490,24 +741,24 @@ export class Bot {
       }
       case 'bumper': {
         // Use it when somebody is close alongside, ahead or behind (the orb needs company to be useful).
-        const near = (o: { d: number; side: number } | null) => o !== null && o.d < 10 && Math.abs(o.side) < 7;
+        const near = (o: { d: number; side: number } | null, reach = 10) => o !== null && o.d < reach && Math.abs(o.side) < 7;
         if (!ready) return 0;
-        return near(front) || near(back) || st.heldFor > 10 ? tap() : 0;
+        return near(front, rivalFront ? 16 : 10) || near(back, rivalBack ? 16 : 10) || st.heldFor > 10 ? tap() : 0;
       }
       case 'seeker':
-        return ready && rank > 0 ? tap() : ready && st.heldFor > 8 ? tap() : 0;
+        return ready && (rank > 0 || rivalFront) ? tap() : ready && st.heldFor > 8 ? tap() : 0;
       case 'ricochet': {
-        const inLineFront = front !== null && front.d > 4 && front.d < 45 && Math.abs(front.side) < 3.2;
-        const inLineBack = back !== null && back.d > 3 && back.d < 28 && Math.abs(back.side) < 2.8;
+        const inLineFront = front !== null && front.d > 4 && front.d < 45 && Math.abs(front.side) < (rivalFront ? 4.4 : 3.2);
+        const inLineBack = back !== null && back.d > 3 && back.d < 28 && Math.abs(back.side) < (rivalBack ? 3.8 : 2.8);
         if (this.holding) {
           if (inLineFront && rank > 0) return release();
-          if (inLineBack && this.personality.aggression > 0.5) return release(true);
+          if (inLineBack && (this.personality.aggression > 0.5 || rivalBack)) return release(true);
           if (st.heldFor > 20) return release();
           return Buttons.ITEM;
         }
         if (!ready) return 0;
         if (inLineFront) return tap();
-        if (inLineBack && this.personality.aggression > 0.5) return tap(true);
+        if (inLineBack && (this.personality.aggression > 0.5 || rivalBack)) return tap(true);
         // Nothing to shoot at: when leading keep it as a shield, otherwise wait for a target (fire blind after a while).
         if (rank === 0 && this.skill.holdShields) {
           this.holding = true;
@@ -555,7 +806,19 @@ export class BotPack {
       bot = new Bot(slot, this.difficulty, CHARACTERS[loadout.character]?.weightClass ?? 'medium');
       this.bots.set(slot, bot);
     }
-    return bot.drive(world, this.humanAhead(world, slot));
+    return bot.drive(world, this.humanAhead(world, slot), this.isHuman);
+  }
+
+  /** The mood events the bots produced since the last call (the host passes them on with the world's events). */
+  drainEvents(): BotMoodEvent[] {
+    const out: BotMoodEvent[] = [];
+    for (const bot of this.bots.values()) if (bot.events.length) out.push(...bot.events.splice(0));
+    return out;
+  }
+
+  /** The rival of a bot slot (null before it has one); for tests and debugging. */
+  rivalOf(slot: number): number | null {
+    return this.bots.get(slot)?.rival ?? null;
   }
 
   /** How many metres this bot is ahead of the best unfinished human (negative = behind); null when there is no such human. */
@@ -565,7 +828,7 @@ export class BotPack {
     if (!race || !me) return null;
     let best: number | null = null;
     for (const r of race.racers.values()) {
-      if (r.slot === slot || !this.isHuman(r.slot) || r.finished) continue;
+      if (r.slot === slot || !this.isHuman(r.slot) || r.finished || r.out) continue;
       best = best === null ? r.progress : Math.max(best, r.progress);
     }
     return best === null ? null : me.progress - best;
