@@ -18,6 +18,8 @@ export const SOUND_IDS = [
   'lap', 'finalLap', 'finishWin', 'finish', 'resultsJingle',
   // Track hazards (wave 4). Only ever append to this list.
   'hazardWarn', 'geyser', 'bridgeBell', 'bridgeMove', 'gust', 'roller', 'hazardHit',
+  // Items added later (Magnet, Bumper). Only ever append to this list.
+  'useMagnet', 'useBumper', 'bumped',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -98,6 +100,7 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
     case 'itemUse': {
       const map: Record<string, SoundId> = {
         dash: 'useDash', slick: 'useSlick', ricochet: 'useRicochet', seeker: 'useSeeker', nova: 'useNova', jumble: 'useJumble',
+        magnet: 'useMagnet', bumper: 'useBumper',
       };
       const id = map[String(ev.id)];
       return id ? [cue(id)] : [];
@@ -108,6 +111,8 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [cue('blocked')];
     case 'jumbled':
       return [cue('jumbled')];
+    case 'bumped':
+      return [cue('bumped')];
     case 'itemDestroyed':
       return [{ id: 'itemDestroyed', gain: 0.6, rate: 1 }];
     case 'cannonFire':

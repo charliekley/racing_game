@@ -354,7 +354,7 @@ function startDriving() {
   game.setTrack(seriesHost.currentTrack()); // the lobby's track, or the series' next one
   game.botDifficulty = botDifficulty;
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
-  // Practice aid: /host/?give=nova (or dash, slick, ricochet, seeker, random) = endless supply of that item.
+  // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, magnet, bumper, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');
   game.devItem = give === 'random' || (ITEM_IDS as readonly string[]).includes(give ?? '') ? (give as ItemId | 'random') : null;
   game.start(players.slots.players.map((p) => p.index));

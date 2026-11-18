@@ -18,6 +18,9 @@ describe('soundsForEvent', () => {
     expect(new Set(used).size).toBe(6);
     expect(ids({ kind: 'hit', slot: 0, by: 'nova', attacker: 1 })).toEqual(['hitNova']);
     expect(ids({ kind: 'hit', slot: 0, by: 'slick', attacker: 1 })).toEqual(['hit']);
+    expect(ids({ kind: 'itemUse', slot: 0, id: 'magnet' })).toEqual(['useMagnet']);
+    expect(ids({ kind: 'itemUse', slot: 0, id: 'bumper' })).toEqual(['useBumper']);
+    expect(ids({ kind: 'bumped', slot: 0, attacker: 1 })).toEqual(['bumped']);
   });
 
   it('steps the drift sound at blue and orange, silent for tier 0', () => {

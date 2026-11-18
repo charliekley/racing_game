@@ -305,7 +305,7 @@ export class Game {
     const camera = this.views[0]?.chase.camera;
     if (!camera) return;
     const temp = new THREE.Group();
-    for (const kind of ['slick', 'ricochet', 'seeker'] as const) {
+    for (const kind of ['slick', 'ricochet', 'seeker', 'magnet', 'bumper'] as const) {
       temp.add(buildEntityMesh(kind));
       const held = buildHeldItemMesh(kind);
       if (held) temp.add(held);
@@ -453,7 +453,7 @@ export class Game {
       if (this.boxWasActive[i] && !b.active) this.fx.shatterBox(b.x, b.y + 1, b.z);
       this.boxWasActive[i] = b.active;
     });
-    for (const e of items.entityList) if (e.kind !== 'slick') this.fx.itemTrail(e.kind, e.x, e.y, e.z, e.heading);
+    for (const e of items.entityList) if (e.kind === 'ricochet' || e.kind === 'seeker') this.fx.itemTrail(e.kind, e.x, e.y, e.z, e.heading);
 
     // Update every kart's interpolated pose, then each player's camera.
     let cx = 0;
@@ -736,6 +736,10 @@ export class Game {
         this.fx.itemPop(p.x, p.y + 0.4, p.z);
         this.shake(e.slot, 0.2);
         break;
+      case 'bumped': // knocked aside by a Bumper orb
+        this.fx.bump(p.x, p.y, p.z);
+        this.shake(e.slot, 0.45);
+        break;
       case 'itemBox':
         this.fx.pickup(p.x, p.y, p.z);
         break;
@@ -884,6 +888,10 @@ export class Game {
           break;
         case 'blocked':
           this.haptic(e.slot, HAPTICS.itemUse);
+          break;
+        case 'bumped':
+          this.haptic(e.slot, HAPTICS.novaHit);
+          if (e.attacker !== e.slot) this.toast(e.attacker, `BUMPED ${this.nameOf(e.slot)}!`, 1.0);
           break;
         case 'jumbled':
           this.haptic(e.slot, HAPTICS.spunOut);

@@ -46,8 +46,25 @@ describe('item meshes', () => {
       expect(meshCount(buildEntityMesh(k))).toBeGreaterThan(0);
       expect(buildHeldItemMesh(k)).not.toBeNull();
     }
+    for (const k of ['magnet', 'bumper'] as const) {
+      expect(meshCount(buildEntityMesh(k))).toBeGreaterThan(0);
+      expect(buildHeldItemMesh(k)).toBeNull(); // not dragged
+    }
     expect(buildHeldItemMesh('dash')).toBeNull();
     expect(buildHeldItemMesh('nova')).toBeNull();
+  });
+
+  it('shows the magnet beam only while it has a kart to tow, and the orb keeps its distance from the owner', () => {
+    const m = buildEntityMesh('magnet');
+    updateEntityMesh(m, ent(1, { kind: 'magnet', life: 1 }), 1);
+    expect(m.getObjectByName('beam')!.visible).toBe(false);
+    updateEntityMesh(m, ent(1, { kind: 'magnet', life: 1, link: { x: 1, y: 2, z: 30 } }), 1);
+    const beam = m.getObjectByName('beam')!;
+    expect(beam.visible).toBe(true);
+    expect(beam.scale.z).toBeGreaterThan(26); // about the distance to the towed kart
+    const b = buildEntityMesh('bumper');
+    updateEntityMesh(b, ent(2, { kind: 'bumper', life: 1 }), 1);
+    expect(b.position.x).toBe(1); // placed exactly where the sim says
   });
 
   it('lifts a dragged slick off the road', () => {

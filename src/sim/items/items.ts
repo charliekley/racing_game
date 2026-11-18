@@ -1,6 +1,6 @@
 /**
  * Item system: item boxes, roulette, held items, and the objects items create
- * (oil slicks, ricochet shots, seeker shots). Pure simulation: no Three.js, no
+ * (peels (internal id `slick`), ricochet shots, seeker shots, the magnet and bumper effects). Pure simulation: no Three.js, no
  * DOM, no Math.random (a seeded generator is injected), so it stays testable.
  *
  * Controls (the phone's ITEM button, edge-detected here):
@@ -8,20 +8,53 @@
  *  - Slick, Ricochet and Seeker: a quick TAP fires at once (Slick drops behind you,
  *    shots fly forward; hold BRAKE for a backward Ricochet). HOLD instead and the
  *    item is dragged behind you as a shield; release to fire/drop it.
- *  - A Slick (dragged or dropped) destroys any shot that hits it.
+ *  - A Peel/Slick (dragged or dropped) destroys any shot that hits it.
+ *  - Magnet and Bumper are "attached" effects: they live as entities that follow their owner
+ *    (the renderer draws the model on the kart) and run their own timers here.
  *
- * Adding a new item: add its id to `types.ts`, a behaviour in `USES` below
+ * Adding a new item: add its id to `types.ts`, a case in `use()` below
  * (what happens on use), and a row in `odds.ts`.
  */
 import { Buttons, type ControlInput } from '../../shared/protocol';
 import { ITEMS, KART, SIM_DT, type KartConfig } from '../config';
 import { applyBoost, spinOut, type KartState } from '../kart';
+import { groundPose } from './groundPose';
 import type { Colliders } from '../colliders';
 import type { Track } from '../track';
 import { rollItem } from './odds';
 import { ROULETTE_SECONDS, type HeldItem, type ItemBox, type ItemEntity, type ItemId } from './types';
 
 export type HitSource = 'slick' | 'ricochet' | 'seeker' | 'nova';
+
+/** Shots are the fast projectiles; the other entity kinds are traps (peel) or effects tied to a kart. */
+const isShot = (e: { kind: string }) => e.kind === 'ricochet' || e.kind === 'seeker';
+
+/** Per-owner state of a running Magnet. */
+interface MagnetState {
+  /** Seconds left. */
+  time: number;
+  /** Slot of the kart being towed toward, or null while nobody is in range. */
+  target: number | null;
+}
+
+/** Per-owner state of a running Bumper orb. */
+interface BumperState {
+  time: number;
+  /** Bumps / blocked shots left before the orb pops. */
+  charges: number;
+  /** Where the orb is on its circle (radians). */
+  angle: number;
+  /** Per victim: seconds until this orb may bump that kart again. */
+  cooldown: Map<number, number>;
+}
+
+/** A kart being shoved sideways by a Bumper: it slides `dx,dz` metres per second for `time` more seconds. */
+interface Shove {
+  slot: number;
+  dx: number;
+  dz: number;
+  time: number;
+}
 
 export type ItemEvent =
   | { kind: 'itemBox'; slot: number }
@@ -31,6 +64,8 @@ export type ItemEvent =
   | { kind: 'blocked'; slot: number; by: HitSource }
   /** `slot`'s steering was flipped by `attacker`'s Jumble. */
   | { kind: 'jumbled'; slot: number; attacker: number }
+  /** `slot` was knocked aside by `attacker`'s Bumper orb. */
+  | { kind: 'bumped'; slot: number; attacker: number }
   /** A shot and a Slick cancelled each other out at (x, z). */
   | { kind: 'itemDestroyed'; x: number; z: number };
 
@@ -68,6 +103,9 @@ export class ItemSystem {
   readonly states = new Map<number, ItemState>();
   private entities: Entity[] = [];
   private nextUid = 1;
+  private readonly magnets = new Map<number, MagnetState>();
+  private readonly bumpers = new Map<number, BumperState>();
+  private shoves: Shove[] = [];
   /** Solid scenery that destroys shots (null = shots fly through everything, as before). */
   private colliders: Colliders | null = null;
 
@@ -205,6 +243,7 @@ export class ItemSystem {
       return false;
     }
     spinOut(k, this.configOf(slot));
+    this.magnets.delete(slot); // a spun-out kart loses the tow
     // A hit while dragging an item loses it (a dragged Slick is left on the road).
     const st = this.states.get(slot);
     if (st) this.cancelHold(slot, st, true);
@@ -228,10 +267,13 @@ export class ItemSystem {
   }
 
   // --- Using items ------------------------------------------------------------------------
-  /** Flip the steering of everyone ahead of `slot` in the race (Nova protects). */
+  /**
+   * Flip the steering of the racers just ahead of `slot` in the race (Nova protects).
+   * Only the nearest `ITEMS.jumbleReach` of them: it is a rare comeback tool, not a field-wide curse.
+   */
   private jumbleAhead(slot: number, karts: Map<number, KartState>, events: ItemEvent[]): void {
     const rank = this.lastStandings.indexOf(slot);
-    for (let i = 0; i < rank; i++) {
+    for (let i = Math.max(0, rank - ITEMS.jumbleReach); i < rank; i++) {
       const victim = this.lastStandings[i];
       const vk = karts.get(victim);
       if (!vk || vk.respawnTime > 0 || vk.flight) continue;
@@ -270,6 +312,14 @@ export class ItemSystem {
       case 'jumble':
         this.jumbleAhead(slot, karts, events);
         break;
+      case 'magnet':
+        this.magnets.set(slot, { time: ITEMS.magnetTime, target: null });
+        this.ensureAttached('magnet', slot, k);
+        break;
+      case 'bumper':
+        this.bumpers.set(slot, { time: ITEMS.bumperTime, charges: ITEMS.bumperCharges, angle: k.heading, cooldown: new Map() });
+        this.ensureAttached('bumper', slot, k);
+        break;
       case 'ricochet':
         this.spawnShot('ricochet', slot, k, backward);
         break;
@@ -289,12 +339,17 @@ export class ItemSystem {
     if (slicks.length >= ITEMS.maxSlicks) this.remove(slicks[0]);
     const fx = Math.sin(k.heading);
     const fz = Math.cos(k.heading);
+    const x = k.pos.x - fx * ITEMS.trailDistance;
+    const z = k.pos.z - fz * ITEMS.trailDistance;
+    const pose = groundPose(this.track, x, z, k.heading, k.trackIndex, k.pos.y);
     this.entities.push({
       uid: this.nextUid++,
       kind: 'slick',
-      x: k.pos.x - fx * ITEMS.trailDistance,
-      y: k.pos.y,
-      z: k.pos.z - fz * ITEMS.trailDistance,
+      x,
+      y: pose.y,
+      z,
+      pitch: pose.pitch,
+      roll: pose.roll,
       heading: k.heading,
       owner,
       trailing,
@@ -304,6 +359,28 @@ export class ItemSystem {
       target: null,
       grace: ITEMS.ownerGrace,
       trackIndex: k.trackIndex,
+    });
+  }
+
+  /** Make sure `owner` has an entity of this kind (magnet / bumper) that follows the kart. */
+  private ensureAttached(kind: 'magnet' | 'bumper', owner: number, k: KartState): void {
+    if (this.entities.some((e) => e.kind === kind && e.owner === owner)) return;
+    this.entities.push({
+      uid: this.nextUid++,
+      kind,
+      x: k.pos.x,
+      y: k.pos.y,
+      z: k.pos.z,
+      heading: k.heading,
+      owner,
+      trailing: false,
+      speed: 0,
+      age: 0,
+      bounces: 0,
+      target: null,
+      grace: 0,
+      trackIndex: k.trackIndex,
+      life: 1,
     });
   }
 
@@ -345,6 +422,7 @@ export class ItemSystem {
   private updateEntities(karts: Map<number, KartState>, events: ItemEvent[], dt: number): void {
     const dead = new Set<Entity>();
     const slicks = this.entities.filter((e) => e.kind === 'slick');
+    this.applyShoves(karts, dt);
 
     for (const e of this.entities) {
       e.age += dt;
@@ -359,11 +437,31 @@ export class ItemSystem {
           }
           e.x = owner.pos.x - Math.sin(owner.heading) * ITEMS.trailDistance;
           e.z = owner.pos.z - Math.cos(owner.heading) * ITEMS.trailDistance;
-          e.y = owner.pos.y;
           e.heading = owner.heading;
+          const pose = groundPose(this.track, e.x, e.z, e.heading, owner.trackIndex, owner.pos.y);
+          e.y = pose.y;
+          e.pitch = pose.pitch;
+          e.roll = pose.roll;
           continue; // a dragged slick doesn't hurt anyone (it shields its owner)
         }
+        // A dropped peel settles on the ground (re-checked now and then: e.g. a drawbridge may have moved).
+        if (Math.round(e.age / dt) % 30 === 1) {
+          const p = this.track.project(e.x, e.z, e.trackIndex);
+          e.trackIndex = p.index;
+          const pose = groundPose(this.track, e.x, e.z, e.heading, e.trackIndex, e.y);
+          e.y = pose.y;
+          e.pitch = pose.pitch;
+          e.roll = pose.roll;
+        }
         if (e.age > ITEMS.slickLifetime) dead.add(e);
+        continue;
+      }
+      if (e.kind === 'magnet') {
+        if (!this.updateMagnet(e, karts, dt)) dead.add(e);
+        continue;
+      }
+      if (e.kind === 'bumper') {
+        if (!this.updateBumper(e, karts, events, dead, dt)) dead.add(e);
         continue;
       }
 
@@ -401,7 +499,7 @@ export class ItemSystem {
 
     // Shots vs slicks: both are destroyed.
     for (const e of this.entities) {
-      if (dead.has(e) || e.kind === 'slick') continue;
+      if (dead.has(e) || !isShot(e)) continue;
       for (const sl of slicks) {
         if (dead.has(sl)) continue;
         const d = Math.hypot(e.x - sl.x, e.z - sl.z);
@@ -421,7 +519,7 @@ export class ItemSystem {
 
     // Objects vs karts.
     for (const e of this.entities) {
-      if (dead.has(e) || e.trailing) continue;
+      if (dead.has(e) || e.trailing || e.kind === 'magnet' || e.kind === 'bumper') continue;
       const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
       for (const [slot, k] of karts) {
         if (k.respawnTime > 0 || k.spinTime > 0 || k.invulnTime > 0 || k.flight) continue; // protected karts: shots and slicks pass through
@@ -437,6 +535,144 @@ export class ItemSystem {
       }
     }
     for (const e of dead) this.remove(e);
+  }
+
+  // --- Magnet ----------------------------------------------------------------------------------
+  /**
+   * Run one tick of a Magnet. Each tick it picks the nearest kart roughly ahead of its owner
+   * (within `magnetRange`); while that kart is farther than `magnetMinDist` and the owner is not
+   * already faster than it by `magnetOverspeed`, the owner gets a boost: a tow. Returns false when it ends.
+   */
+  private updateMagnet(e: Entity, karts: Map<number, KartState>, dt: number): boolean {
+    const m = this.magnets.get(e.owner);
+    const o = karts.get(e.owner);
+    if (!m || !o || o.respawnTime > 0) {
+      this.magnets.delete(e.owner);
+      return false;
+    }
+    m.time -= dt;
+    e.x = o.pos.x;
+    e.y = o.pos.y;
+    e.z = o.pos.z;
+    e.heading = o.heading;
+    e.life = Math.max(0, m.time / ITEMS.magnetTime);
+    if (m.time <= 0) {
+      this.magnets.delete(e.owner);
+      return false;
+    }
+    m.target = this.magnetTarget(e.owner, o, karts);
+    const t = m.target === null ? undefined : karts.get(m.target);
+    if (!t) {
+      e.link = undefined;
+      return true;
+    }
+    e.link = { x: t.pos.x, y: t.pos.y, z: t.pos.z };
+    const gap = Math.hypot(t.pos.x - o.pos.x, t.pos.z - o.pos.z);
+    if (o.grounded && o.spinTime <= 0 && gap > ITEMS.magnetMinDist && o.speed < t.speed + ITEMS.magnetOverspeed) applyBoost(o, 0.1);
+    return true;
+  }
+
+  /** Nearest other kart in front of `k` (inside a widening cone) within the magnet's range. */
+  private magnetTarget(owner: number, k: KartState, karts: Map<number, KartState>): number | null {
+    const fx = Math.sin(k.heading);
+    const fz = Math.cos(k.heading);
+    let best: number | null = null;
+    let bestAlong = Infinity;
+    for (const [slot, t] of karts) {
+      if (slot === owner || t.respawnTime > 0 || t.flight) continue;
+      const dx = t.pos.x - k.pos.x;
+      const dz = t.pos.z - k.pos.z;
+      const along = dx * fx + dz * fz;
+      const side = Math.abs(dx * fz - dz * fx);
+      if (along < ITEMS.magnetMinDist * 0.5 || along > ITEMS.magnetRange) continue;
+      if (side > 3 + 0.4 * along || Math.abs(t.pos.y - k.pos.y) > 6) continue;
+      if (along < bestAlong) {
+        bestAlong = along;
+        best = slot;
+      }
+    }
+    return best;
+  }
+
+  // --- Bumper ----------------------------------------------------------------------------------
+  /**
+   * Run one tick of a Bumper orb: it circles its owner, shoves aside any other kart it touches
+   * (they lose speed, no spin-out) and swallows shots. Returns false when the orb pops.
+   */
+  private updateBumper(e: Entity, karts: Map<number, KartState>, events: ItemEvent[], dead: Set<Entity>, dt: number): boolean {
+    const b = this.bumpers.get(e.owner);
+    const o = karts.get(e.owner);
+    if (!b || !o || o.respawnTime > 0) {
+      this.bumpers.delete(e.owner);
+      return false;
+    }
+    b.time -= dt;
+    b.angle += ITEMS.bumperSpin * dt;
+    e.x = o.pos.x + Math.sin(b.angle) * ITEMS.bumperOrbit;
+    e.z = o.pos.z + Math.cos(b.angle) * ITEMS.bumperOrbit;
+    e.y = o.pos.y + 0.55;
+    e.heading = b.angle;
+    e.life = Math.max(0, b.time / ITEMS.bumperTime);
+    for (const [slot, left] of b.cooldown) {
+      if (left <= dt) b.cooldown.delete(slot);
+      else b.cooldown.set(slot, left - dt);
+    }
+
+    // Karts: shove aside whoever touches the orb.
+    for (const [slot, k] of karts) {
+      if (slot === e.owner || k.respawnTime > 0 || k.flight || k.spinTime > 0 || b.cooldown.has(slot)) continue;
+      if (Math.abs(k.pos.y - e.y) > 2.2) continue;
+      if (Math.hypot(k.pos.x - e.x, k.pos.z - e.z) > ITEMS.bumperRadius + KART.radius * 0.6) continue;
+      b.cooldown.set(slot, ITEMS.bumperCooldown);
+      if (k.starTime > 0) {
+        events.push({ kind: 'blocked', slot, by: 'nova' });
+        continue;
+      }
+      // Away from the owner's kart.
+      let ax = k.pos.x - o.pos.x;
+      let az = k.pos.z - o.pos.z;
+      const len = Math.hypot(ax, az) || 1;
+      ax /= len;
+      az /= len;
+      const rate = ITEMS.bumperShove / ITEMS.bumperShoveTime;
+      this.shoves.push({ slot, dx: ax * rate, dz: az * rate, time: ITEMS.bumperShoveTime });
+      k.speed *= ITEMS.bumperSpeedFactor;
+      k.vel.x *= ITEMS.bumperSpeedFactor;
+      k.vel.z *= ITEMS.bumperSpeedFactor;
+      events.push({ kind: 'bumped', slot, attacker: e.owner });
+      b.charges--;
+    }
+    // Shots: swallowed (each costs a charge).
+    for (const s of this.entities) {
+      if (b.charges <= 0) break;
+      if (dead.has(s) || !isShot(s) || s.owner === e.owner) continue;
+      const r = s.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
+      if (Math.hypot(s.x - e.x, s.z - e.z) < ITEMS.bumperRadius + r) {
+        dead.add(s);
+        b.charges--;
+        events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
+      }
+    }
+    if (b.time <= 0 || b.charges <= 0) {
+      this.bumpers.delete(e.owner);
+      events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
+      return false;
+    }
+    return true;
+  }
+
+  /** Slide the karts that were bumped (the push is spread over a fraction of a second so it looks like a shove). */
+  private applyShoves(karts: Map<number, KartState>, dt: number): void {
+    if (this.shoves.length === 0) return;
+    for (const s of this.shoves) {
+      const k = karts.get(s.slot);
+      if (k && k.respawnTime <= 0 && !k.flight) {
+        k.pos.x += s.dx * dt;
+        k.pos.z += s.dz * dt;
+      }
+      s.time -= dt;
+    }
+    this.shoves = this.shoves.filter((s) => s.time > 0);
   }
 
   /** Reflect a ricochet off a wall. Returns false when it has used up its bounces. */
