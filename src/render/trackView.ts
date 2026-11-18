@@ -17,6 +17,8 @@ import { FLOOR_Y, TerrainView } from './terrainView';
 import { buildBranchViews } from './branchView';
 import { fluidMaterial } from './env/fluids';
 import { merge, paint, scratch, tubeGeo } from './env/geo';
+import { FogCuller } from './env/fogCull';
+import { mergeStaticMeshes } from './env/mergeStatic';
 
 interface Edge {
   d: number;
@@ -121,6 +123,8 @@ export class TrackView {
   private boostMat: THREE.MeshBasicMaterial;
   /** The ground meshes (terrain, cliff faces, bridges); `stats` holds triangle counts. */
   readonly terrainView: TerrainView;
+  /** Hides the scenery chunks that are completely inside the fog for a given camera (see env/fogCull.ts). */
+  readonly sceneryCull: FogCuller;
 
   constructor(readonly track: Track) {
     const def = track.def;
@@ -327,7 +331,13 @@ export class TrackView {
     // Shortcut branch roads, curbs, walls and the fork gates (render/branchView.ts).
     this.group.add(buildBranchViews(track, strip));
 
-    this.group.add(buildScenery(track));
+    const scenery = buildScenery(track);
+    this.group.add(scenery);
+    this.sceneryCull = new FogCuller(scenery);
+
+    // PERF: the road ribbons (one per stretch between gaps, per kerb side...) share a few materials; merge the
+    // big ones so each material costs one draw call per view instead of several (see env/mergeStatic.ts).
+    mergeStaticMeshes(this.group);
   }
 
   /** Animate (boost arrows and glow, water, lava, flags and foliage through the shared clock). */

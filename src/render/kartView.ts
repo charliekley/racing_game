@@ -74,8 +74,8 @@ export class KartView {
   readonly pose: InterpolatedKart = { x: 0, y: 0, z: 0, heading: 0, speed: 0, yawRate: 0 };
 
   /** Switch to a cheaper model (0 = full, 1 = reduced, 2 = far): see KartModel.setLod. */
-  setLod(tier: 0 | 1 | 2): void {
-    this.model.setLod(tier);
+  setLod(tier: 0 | 1 | 2, lean = false): void {
+    this.model.setLod(tier, lean);
   }
 
   constructor(scene: THREE.Scene, colorHex: string, loadout: Loadout = DEFAULT_LOADOUT) {

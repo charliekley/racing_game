@@ -86,7 +86,7 @@ export interface KartModel {
    * viewport, using the distance from that camera. Only geometry and materials are swapped; the poses
    * and animation stay on the same objects.
    */
-  setLod(tier: 0 | 1 | 2): void;
+  setLod(tier: 0 | 1 | 2, lean?: boolean): void;
   /**
    * Build the one-draw-call version of the far model from the CURRENT pose (call once, after the driver
    * has been put in their neutral pose). See `buildKartModel`.
@@ -266,16 +266,19 @@ export function buildKartModel(
   };
 
   let tier = 0;
-  model.setLod = (t) => {
-    if (t === tier) return;
+  let leanShadows = false;
+  model.setLod = (t, lean = false) => {
+    if (t === tier && lean === leanShadows) return;
     tier = t;
+    leanShadows = lean;
     const merged = t === 2 && farMerged !== null;
     for (const s of slots) {
       s.mesh.geometry = s.geometry[t];
       s.mesh.material = s.material[t];
       // Shadow passes are drawn once per viewport, so every draw call counts: a reduced kart only casts
       // its body and torso (a blob of shadow looks the same), a full-detail kart casts all its parts.
-      s.mesh.castShadow = t === 0 || SHADOW_PARTS.has(s.mesh.name);
+      // `lean` (3-4 viewports, each a small picture) makes even the full-detail kart cast only those parts.
+      s.mesh.castShadow = (t === 0 && !lean) || SHADOW_PARTS.has(s.mesh.name);
       // Parts that live in the merged far mesh are hidden while it is shown.
       s.mesh.visible = !(merged && s.material[2] === detailMat);
     }

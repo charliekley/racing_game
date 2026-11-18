@@ -81,6 +81,32 @@ describe('AdaptiveQuality', () => {
     expect(a.scale).toBeCloseTo(0.9, 5);
   });
 
+  it('does not react to an isolated hitch (one 200 ms frame in a calm race)', () => {
+    const { a, log } = make();
+    let t = run(a, 1000, 3, 16.6);
+    for (let i = 0; i < 10; i++) {
+      t += 200; // a stall: garbage collection, shader compile...
+      a.frame(t, true);
+      t = run(a, t, 3, 16.6);
+    }
+    expect(log).toEqual([]);
+  });
+
+  it('settles on a scale when the frame cost follows the scale smoothly (few changes, no preset drop)', () => {
+    // Cost model: 9 ms fixed + 14 ms * scale^2 -> 60 fps needs scale <= ~0.7.
+    const changes: number[] = [];
+    const a = new AdaptiveQuality({ onScale: (s) => changes.push(s), onStepDown: () => changes.push(-1) });
+    let t = 1000;
+    for (let i = 0; i < 60 * 180; i++) {
+      t += 9 + 14 * a.scale * a.scale;
+      a.frame(t, true);
+    }
+    expect(changes).not.toContain(-1);
+    expect(changes.length).toBeLessThanOrEqual(10); // 3 minutes: it may probe upwards now and then, but not oscillate
+    expect(a.scale).toBeGreaterThanOrEqual(0.6);
+    expect(a.scale).toBeLessThanOrEqual(0.8);
+  });
+
   it('never asks for a higher preset', () => {
     const { a, log } = make();
     run(a, 1000, 60, 10); // very fast

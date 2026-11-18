@@ -34,6 +34,30 @@ interface Chunk {
   uv: number[];
   idx: number[];
   count: number;
+  /** Index count after each added instance (tree, rock...): where one instance's triangles end. */
+  ends: number[];
+}
+
+/**
+ * Put the instances of an index list in a random (but repeatable: same `seed`, same order) order.
+ * `ends[i]` = index count after instance i in `idx`. Returns the new index list and its new `ends`.
+ */
+export function shuffleInstances(idx: number[], ends: number[], seed: number): { idx: number[]; ends: number[] } {
+  const order = ends.map((_, i) => i);
+  let s = (seed >>> 0) || 1;
+  for (let i = order.length - 1; i > 0; i--) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0; // small linear congruential generator
+    const j = s % (i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const out: number[] = [];
+  const outEnds: number[] = [];
+  for (const k of order) {
+    const from = k === 0 ? 0 : ends[k - 1];
+    for (let i = from; i < ends[k]; i++) out.push(idx[i]);
+    outEnds.push(out.length);
+  }
+  return { idx: out, ends: outEnds };
 }
 
 const _v = new THREE.Vector3();
@@ -66,7 +90,7 @@ export class ChunkBatch {
     const key = `${ix},${iz}`;
     let c = this.chunks.get(key);
     if (!c) {
-      c = { ix, iz, pos: [], nor: [], col: [], sway: [], uv: [], idx: [], count: 0 };
+      c = { ix, iz, pos: [], nor: [], col: [], sway: [], uv: [], idx: [], count: 0, ends: [] };
       this.chunks.set(key, c);
     }
     return c;
@@ -103,19 +127,26 @@ export class ChunkBatch {
     if (index) for (let i = 0; i < index.count; i++) ch.idx.push(base + index.getX(i));
     else for (let i = 0; i < pos.count; i++) ch.idx.push(base + i);
     ch.count += pos.count;
+    ch.ends.push(ch.idx.length);
   }
 
-  /** Make one mesh for a chunk (positioned at the cell centre). */
-  meshFor(ch: Chunk, material: THREE.Material): THREE.Mesh {
+  /**
+   * Make one mesh for a chunk (positioned at the cell centre). With `thinnable` the instances' triangles are
+   * put in a stable pseudo-random order and their end positions are kept in `userData.instanceEnds`, so that
+   * `ChunkLod` can draw just the first N instances of a far chunk (an even, random thinning of the forest).
+   */
+  meshFor(ch: Chunk, material: THREE.Material, thinnable = false): THREE.Mesh {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(ch.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(ch.nor, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(ch.col, 3));
     g.setAttribute('sway', new THREE.Float32BufferAttribute(ch.sway, 1));
     if (this.withUv) g.setAttribute('uv', new THREE.Float32BufferAttribute(ch.uv, 2));
-    g.setIndex(ch.idx);
+    const shuffled = thinnable ? shuffleInstances(ch.idx, ch.ends, ch.ix * 73856093 + ch.iz * 19349663) : null;
+    g.setIndex(shuffled ? shuffled.idx : ch.idx);
     g.computeBoundingSphere();
     const m = new THREE.Mesh(g, material);
+    if (shuffled) m.userData.instanceEnds = shuffled.ends;
     m.position.set((ch.ix + 0.5) * this.cell, 0, (ch.iz + 0.5) * this.cell);
     m.matrixAutoUpdate = false;
     m.updateMatrix();
@@ -187,7 +218,29 @@ export class ChunkLod extends THREE.LOD {
     near.visible = useNear;
     far.visible = !useNear && d < this.cullDistance;
     if (this.shadowProxy) this.shadowProxy.visible = d < PROXY_RANGE;
+    // PERF (Medium/Low): the farther a chunk, the fewer of its trees/rocks are drawn. At 300 m a tree is a few
+    // pixels and half-hidden in fog, but a forest chunk still costs 10-17k triangles. Instances are in random
+    // order (see meshFor), so drawing the first N thins the chunk evenly. The range is set on every update
+    // (also while the chunk is near) because the geometry is shared by the views and the shadow proxy.
+    const ends = (far as THREE.Mesh).userData?.instanceEnds as number[] | undefined;
+    if (ends && ends.length > 0) {
+      const keep = envQuality.cheap ? thinFraction(d) : 1;
+      const n = Math.max(1, Math.ceil(ends.length * keep));
+      (far as THREE.Mesh).geometry.setDrawRange(0, ends[n - 1]);
+    }
   }
+}
+
+/** Distances (m) between which far chunks go from fully drawn to `THIN_MIN` of their instances. */
+const THIN_START = 200;
+const THIN_END = 420;
+const THIN_MIN = 0.4;
+
+/** Share (0..1) of a far chunk's instances to draw at distance `d`. */
+export function thinFraction(d: number): number {
+  if (d <= THIN_START) return 1;
+  if (d >= THIN_END) return THIN_MIN;
+  return 1 - ((d - THIN_START) / (THIN_END - THIN_START)) * (1 - THIN_MIN);
 }
 
 /** Two batches (detailed + cheap) placed together; `build` returns chunk LODs. */
@@ -222,7 +275,7 @@ export class LodBatch {
       const farCh = this.far.chunks.get(key);
       let farMesh: THREE.Mesh | null = null;
       if (farCh) {
-        farMesh = this.far.meshFor(farCh, material);
+        farMesh = this.far.meshFor(farCh, material, true); // thinnable: see ChunkLod.update
         farMesh.castShadow = castShadow;
         farMesh.receiveShadow = true;
       }

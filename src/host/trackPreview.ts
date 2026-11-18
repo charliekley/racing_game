@@ -85,12 +85,20 @@ export class TrackPreview {
   /**
    * Render the 3D course pictures in the background, one track at a time with a pause between them so the
    * lobby never stalls (each shot builds a whole scene, ~100-300 ms). `onShot` runs after each one (the
-   * caller then re-sends cards). The WebGL renderer is released after the last.
+   * caller then re-sends cards). The WebGL renderer is released after the last. `paused()` = true while a race is
+   * on screen: the queue then waits (see PERF note below).
    */
-  renderShots(defs: TrackDef[], onShot: (def: TrackDef) => void, startDelayMs = 1500): void {
+  renderShots(defs: TrackDef[], onShot: (def: TrackDef) => void, startDelayMs = 1500, paused: () => boolean = () => false): void {
     const shooter = new TrackShooter();
     const queue = defs.filter((d) => !this.shots.has(d.name));
     const step = () => {
+      // PERF: a shot builds a whole scene (100-300 ms) and keeps a second GL context alive. Never do that while a race is
+      // running: release the context and look again in a second.
+      if (queue.length > 0 && paused()) {
+        shooter.close();
+        setTimeout(step, 1000);
+        return;
+      }
       const def = queue.shift();
       if (!def) {
         shooter.close();

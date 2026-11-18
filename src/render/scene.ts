@@ -52,6 +52,12 @@ export interface QualitySettings {
   lodScale: number;
   /** Edge length of the sky cube used for environment lighting. */
   envSize: number;
+  /**
+   * Multiplies the fog distances (1 = as the track's mood says). Below 1 the world fades out sooner, and everything
+   * beyond the fog is skipped entirely (terrain tiles, scenery chunks: see env/fogCull.ts), which is the cheapest
+   * big saving on a slow GPU. Only Low uses it.
+   */
+  fogScale: number;
 }
 
 /**
@@ -62,9 +68,9 @@ export interface QualitySettings {
  *  Low     fallback: no shadows or clouds, 75% render scale, FXAA, no bloom, little ground detail.
  */
 export const QUALITY_PRESETS: QualitySettings[] = [
-  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, bloomShift: 1, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, shadowSplitScale: 1, lodScale: 1, envSize: 256 },
-  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 38, shadowSplitScale: 0.625, lodScale: 0.7, envSize: 128 },
-  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, shadowSplitScale: 1, lodScale: 0.55, envSize: 64 },
+  { name: 'High', maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, clouds: true, sceneryDetail: 1, post: true, bloomLevels: 6, bloomShift: 1, msaa: 4, fxaa: false, shadowPerView: true, shadowRadius: 55, shadowSplitScale: 1, lodScale: 1, envSize: 256, fogScale: 1 },
+  { name: 'Medium', maxPixelRatio: 1, renderScale: 1, shadows: true, shadowMapSize: 1024, clouds: true, sceneryDetail: 0.7, post: true, bloomLevels: 3, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: true, shadowRadius: 38, shadowSplitScale: 0.625, lodScale: 0.7, envSize: 128, fogScale: 1 },
+  { name: 'Low', maxPixelRatio: 1, renderScale: 0.75, shadows: false, shadowMapSize: 512, clouds: false, sceneryDetail: 0.35, post: true, bloomLevels: 0, bloomShift: 2, msaa: 0, fxaa: true, shadowPerView: false, shadowRadius: 35, shadowSplitScale: 1, lodScale: 0.55, envSize: 64, fogScale: 0.6 },
 ];
 export const DEFAULT_QUALITY = QUALITY_PRESETS[1];
 
@@ -121,6 +127,13 @@ export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLigh
   sun.castShadow = q.shadows;
   envQuality.cheap = q.name !== 'High'; // cheaper ground shaders (materials.ts); the needsUpdate below recompiles them
   setShadowMapSize(sun, q, viewCount);
+  scene.userData.fogScale = q.fogScale;
+  const theme = scene.userData.theme as SkyTheme | undefined;
+  if (theme && scene.fog) {
+    const look = lookFor(theme);
+    (scene.fog as THREE.Fog).near = look.fogNear * q.fogScale;
+    (scene.fog as THREE.Fog).far = look.fogFar * q.fogScale;
+  }
   scene.traverse((o) => {
     const full = o.userData.detailIndexCount as number | undefined;
     if (full !== undefined) (o as THREE.Mesh).geometry.setDrawRange(0, Math.floor((full * q.sceneryDetail) / 3) * 3);
@@ -290,8 +303,9 @@ export function applyTheme(scene: THREE.Scene, theme: SkyTheme, renderer?: THREE
   scene.background = horizon.clone();
   if (scene.fog) {
     scene.fog.color.copy(horizon);
-    (scene.fog as THREE.Fog).near = look.fogNear;
-    (scene.fog as THREE.Fog).far = look.fogFar;
+    const k = (scene.userData.fogScale as number | undefined) ?? 1; // the preset's fog scale (see QualitySettings.fogScale)
+    (scene.fog as THREE.Fog).near = look.fogNear * k;
+    (scene.fog as THREE.Fog).far = look.fogFar * k;
   }
   const dir = directionOf(look.sunAzimuth, look.sunElevation);
   scene.userData.sunDir = dir;

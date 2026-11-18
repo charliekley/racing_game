@@ -52,6 +52,7 @@ export function tileMesh(geometry: THREE.BufferGeometry, material: THREE.Materia
 /** Group of tiles (see `tileMesh`); `shadows` copies the cast/receive flags onto every tile. */
 export function tiledGroup(geometry: THREE.BufferGeometry, material: THREE.Material, tile: number, cast: boolean, receive: boolean): THREE.Group {
   const group = new THREE.Group();
+  group.userData.tiles = true; // marks the group for TerrainView.cullToFog
   for (const m of tileMesh(geometry, material, tile)) {
     m.castShadow = cast;
     m.receiveShadow = receive;
