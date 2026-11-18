@@ -99,47 +99,55 @@ const dash = unit((ctx, t) => {
 });
 
 // ---------------------------------------------------------------------------
-// slick: glossy black-and-purple oil puddle with a falling drip
+// slick (shown as "Peel"): a yellow fruit peel seen from above, strips curling back
 // ---------------------------------------------------------------------------
-/** Wobbly blob outline: a circle whose radius varies with the angle. */
-function puddlePath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, squash: number): void {
+/** One curled-back strip pointing along +x from the middle; the caller rotates it into place. */
+function peelStrip(ctx: CanvasRenderingContext2D, length: number, width: number): void {
   ctx.beginPath();
-  for (let i = 0; i <= 48; i++) {
-    const a = (i / 48) * TAU;
-    const rr = r * (1 + 0.16 * Math.sin(3 * a + 0.5) + 0.07 * Math.sin(5 * a + 1.3));
-    const x = cx + rr * Math.cos(a);
-    const y = cy + rr * Math.sin(a) * squash;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
+  ctx.moveTo(0.04, -width * 0.5);
+  ctx.bezierCurveTo(length * 0.5, -width * 0.9, length * 0.95, -width * 0.7, length, -width * 0.05);
+  ctx.bezierCurveTo(length * 1.02, width * 0.5, length * 0.72, width * 0.7, length * 0.66, width * 0.28); // the curled-over tip
+  ctx.bezierCurveTo(length * 0.5, width * 0.2, length * 0.3, width * 0.55, 0.04, width * 0.5);
   ctx.closePath();
 }
 
 const slick = unit((ctx) => {
-  // Main puddle
-  puddlePath(ctx, 0.5, 0.7, 0.42, 0.5);
-  fillOutline(ctx, '#2a1048');
-  // Purple sheen ring
-  puddlePath(ctx, 0.5, 0.69, 0.29, 0.42);
-  ctx.fillStyle = '#7b2fd0';
-  ctx.fill();
-  // Rainbow-ish oil film streak
-  ctx.lineWidth = 0.03;
-  ctx.strokeStyle = '#2ec4b6';
+  const strips = [
+    { a: -2.55, len: 0.4, w: 0.2 },
+    { a: -0.6, len: 0.42, w: 0.2 },
+    { a: 0.75, len: 0.4, w: 0.19 },
+    { a: 2.3, len: 0.38, w: 0.19 },
+  ];
+  ctx.save();
+  ctx.translate(0.5, 0.56);
+  ctx.scale(1, 0.82); // seen at a slight angle
+  for (const st of strips) {
+    ctx.save();
+    ctx.rotate(st.a);
+    peelStrip(ctx, st.len, st.w);
+    fillOutline(ctx, '#f7d51f');
+    // Cream inside of the curled tip, and brown speckles.
+    ctx.beginPath();
+    ctx.ellipse(st.len * 0.82, st.w * 0.12, st.len * 0.14, st.w * 0.2, 0.3, 0, TAU);
+    ctx.fillStyle = '#f4e7a8';
+    ctx.fill();
+    ctx.fillStyle = '#6a4512';
+    for (const [dx, dy] of [[0.45, -0.02], [0.3, 0.03], [0.58, 0.0]]) {
+      ctx.beginPath();
+      ctx.arc(st.len * dx, st.w * dy, 0.012, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // Middle cap and stem.
   ctx.beginPath();
-  ctx.arc(0.5, 0.7, 0.22, 0.15 * Math.PI, 0.55 * Math.PI);
-  ctx.stroke();
-  // Shine
-  shine(ctx, 0.34, 0.62, 0.09, 0.035, -0.3);
-
-  // Drip falling in (teardrop)
+  ctx.arc(0, 0, 0.12, 0, TAU);
+  fillOutline(ctx, '#eab912');
   ctx.beginPath();
-  ctx.moveTo(0.5, 0.08);
-  ctx.bezierCurveTo(0.6, 0.2, 0.66, 0.3, 0.5, 0.38);
-  ctx.bezierCurveTo(0.34, 0.3, 0.4, 0.2, 0.5, 0.08);
-  ctx.closePath();
-  fillOutline(ctx, '#4b1d86');
-  shine(ctx, 0.46, 0.27, 0.02, 0.045, 0.2);
+  ctx.roundRect(-0.035, -0.2, 0.07, 0.16, 0.03);
+  fillOutline(ctx, '#6a4512', 0.035);
+  ctx.restore();
+  shine(ctx, 0.42, 0.5, 0.05, 0.022, -0.5);
 });
 
 // ---------------------------------------------------------------------------
@@ -404,11 +412,78 @@ const unknown = unit((ctx) => {
   ctx.fillText('?', 0.5, 0.54);
 });
 
-export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble };
+// ---------------------------------------------------------------------------
+// magnet: red horseshoe with silver tips and pulsing field arcs
+// ---------------------------------------------------------------------------
+const magnet = unit((ctx, t) => {
+  // Field arcs pulse outward from the open end.
+  const ph = (t / 900) % 1;
+  for (let i = 0; i < 2; i++) {
+    const p = (ph + i * 0.5) % 1;
+    ctx.globalAlpha = 1 - p;
+    ctx.lineWidth = 0.03;
+    ctx.strokeStyle = '#46c8ff';
+    ctx.beginPath();
+    ctx.arc(0.5, 0.78, 0.12 + p * 0.2, Math.PI * 1.2, Math.PI * 1.8);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // The bend is a thick arc; the legs are short thick strokes.
+  const draw = (width: number, color: string) => {
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0.25, 0.7);
+    ctx.lineTo(0.25, 0.42);
+    ctx.arc(0.5, 0.42, 0.25, Math.PI, 0);
+    ctx.lineTo(0.75, 0.7);
+    ctx.stroke();
+  };
+  draw(0.27, OUTLINE);
+  draw(0.19, '#e8362e');
+  // Silver tips with an outline.
+  for (const x of [0.25, 0.75]) {
+    ctx.beginPath();
+    ctx.rect(x - 0.095, 0.62, 0.19, 0.17);
+    fillOutline(ctx, '#d8dde8');
+  }
+  shine(ctx, 0.36, 0.3, 0.05, 0.02, -0.7);
+});
+
+// ---------------------------------------------------------------------------
+// bumper: orange studded orb with a circling arrow-trail
+// ---------------------------------------------------------------------------
+const bumper = unit((ctx, t) => {
+  const spin = t / 600;
+  // Studs around the orb.
+  for (let i = 0; i < 6; i++) {
+    const a = spin + (i / 6) * TAU;
+    ctx.beginPath();
+    ctx.arc(0.5 + Math.cos(a) * 0.33, 0.5 + Math.sin(a) * 0.33, 0.07, 0, TAU);
+    fillOutline(ctx, '#3a3d50', 0.035);
+  }
+  // Orb.
+  const grad = ctx.createRadialGradient(0.42, 0.4, 0.03, 0.5, 0.5, 0.26);
+  grad.addColorStop(0, '#ffd08a');
+  grad.addColorStop(1, '#ff6a12');
+  ctx.beginPath();
+  ctx.arc(0.5, 0.5, 0.25, 0, TAU);
+  fillOutline(ctx, grad);
+  shine(ctx, 0.41, 0.4, 0.07, 0.035, -0.7);
+  // A "knock" mark on the outside.
+  ctx.lineWidth = 0.03;
+  ctx.strokeStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0.5, 0.5, 0.43, spin + 0.2, spin + 0.7);
+  ctx.stroke();
+});
+
+export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble, magnet, bumper };
 
 /** Icons that move over time, so the host view must keep redrawing them. */
 export function isIconAnimated(id: string): boolean {
-  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble';
+  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble' || id === 'magnet' || id === 'bumper';
 }
 
 /** Draw `id` (any string; unknown ids get a "?"), plus a "×N" badge if count > 1. Clears nothing. */

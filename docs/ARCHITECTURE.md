@@ -85,8 +85,9 @@ racing_game/
    │  ├─ world.ts              ✅ track + karts + race, respawn carrier, tick() → events
    │  ├─ autopilot.ts          ✅ computer driver (bots, tests)
    │  ├─ items/                ✅ types.ts (ids, names, shared shapes), odds.ts (position-
-   │  │                           weighted rolls), items.ts (boxes, roulette, the five items,
-   │  │                           hits, shields, Nova bumps; bot item button)
+   │  │                           weighted rolls), items.ts (boxes, roulette, the seven items,
+   │  │                           hits, shields, Nova bumps; bot item button),
+   │  │                           groundPose.ts (height + tilt of a flat object on the road)
    │  └─ items/                one file per item behind an `ItemBehavior` interface
    ├─ track/                   ✅ track DATA only
    │  ├─ types.ts              ✅ TrackDef format
@@ -100,7 +101,7 @@ racing_game/
    │                              mountains, clouds, gantry), meshBatch.ts (merges many shapes
    │                              into one draw call), layout.ts (split-screen rects),
    │                              minimap.ts, effects.ts (drift sparks, boost flames, carrier drone),
-   │                              itemMeshes.ts (item box, slick, shots, Nova aura)
+   │                              itemMeshes.ts + peelModel.ts (item box, peel, shots, magnet, bumper, Nova aura)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

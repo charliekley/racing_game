@@ -5,7 +5,8 @@
  * (traps, rear-firing shots) and rarely anything powerful; whoever is behind
  * gets the strong stuff (homing shots, Nova, dash packs) to catch up.
  *
- * Seeker and Jumble only come out when someone is ahead of you.
+ * Seeker, Jumble and Magnet only come out when someone is ahead of you. Jumble is also rare and
+ * only for karts well behind (its weight ramps from 0 at mid-field to the "last place" value).
  * Weights are given for the leader and for last place; every position in
  * between interpolates linearly, so the same table works for 2, 3 or 4 racers.
  * Pure functions: deterministic given the random-number source.
@@ -13,14 +14,17 @@
 import type { HeldItem } from './types';
 
 /** What can come out of a box. 'dash3' is the three-charge Dash pack. */
-export type ItemPick = 'dash' | 'dash3' | 'slick' | 'ricochet' | 'seeker' | 'nova' | 'jumble';
-export const ITEM_PICKS: readonly ItemPick[] = ['dash', 'dash3', 'slick', 'ricochet', 'seeker', 'nova', 'jumble'];
+export type ItemPick = 'dash' | 'dash3' | 'slick' | 'ricochet' | 'seeker' | 'nova' | 'jumble' | 'magnet' | 'bumper';
+export const ITEM_PICKS: readonly ItemPick[] = ['dash', 'dash3', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'magnet', 'bumper'];
 
 type Weights = Record<ItemPick, number>;
 
 /** Relative likelihoods (they don't need to add up to 100). */
-export const LEADER_WEIGHTS: Weights = { dash: 24, dash3: 2, slick: 38, ricochet: 32, seeker: 0, nova: 0, jumble: 0 };
-export const LAST_WEIGHTS: Weights = { dash: 10, dash3: 22, slick: 3, ricochet: 6, seeker: 20, nova: 28, jumble: 16 };
+export const LEADER_WEIGHTS: Weights = { dash: 24, dash3: 2, slick: 34, ricochet: 28, seeker: 0, nova: 0, jumble: 0, magnet: 0, bumper: 18 };
+export const LAST_WEIGHTS: Weights = { dash: 10, dash3: 20, slick: 3, ricochet: 6, seeker: 20, nova: 26, jumble: 6, magnet: 16, bumper: 6 };
+
+/** Jumble is for karts well behind: nothing in the front half of the field, then a linear ramp up to last place. */
+const JUMBLE_FROM = 0.5;
 
 /** Weights for 1-based `position` out of `racers`. */
 export function itemWeights(position: number, racers: number): Weights {
@@ -28,10 +32,12 @@ export function itemWeights(position: number, racers: number): Weights {
   const f = racers <= 1 ? 0.5 : Math.min(1, Math.max(0, (position - 1) / (racers - 1)));
   const out = {} as Weights;
   for (const k of ITEM_PICKS) out[k] = LEADER_WEIGHTS[k] + (LAST_WEIGHTS[k] - LEADER_WEIGHTS[k]) * f;
+  out.jumble = LAST_WEIGHTS.jumble * Math.max(0, (f - JUMBLE_FROM) / (1 - JUMBLE_FROM));
   // Items that target "the racer(s) ahead of you" are pointless in the lead.
   if (position <= 1) {
     out.seeker = 0;
     out.jumble = 0;
+    out.magnet = 0;
   }
   return out;
 }

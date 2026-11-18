@@ -83,20 +83,32 @@ export interface Skill {
   steerGain: number;
   /** Added to the personality's corner speed: braver (+) or more careful (-) in corners. */
   cornerBonus: number;
+  /**
+   * How the bot copes with a Jumble (steering flipped). It has to re-learn the controls:
+   *  - reaction: seconds before it notices and flips its steering (until then it steers "normally" and veers away),
+   *  - overshoot: extra steering amplitude right after noticing (over-correction), fading as it gets used to it,
+   *  - wobble: size of the left-right sway it can't quite stop, fading over the effect,
+   *  - caution: 0..1 share of the time it lifts off the gas while unsure, fading over the effect.
+   * Easy bots suffer most, hard bots least, but everybody loses real time.
+   */
+  jumble: { reaction: number; overshoot: number; wobble: number; caution: number };
 }
 
 export const SKILLS: Record<Difficulty, Skill> = {
   easy: {
     pace: BOTS.pace.easy, driftCurvature: 0, trickChance: 0.3, rocketEarly: -1.2, rocketLate: 0.15, stallChance: 0.2,
     mistakeEvery: 16, mistakeLength: 0.4, itemDelay: 2.5, holdShields: false, dodge: 0.5, skillful: false, steerGain: 2.4, cornerBonus: -0.06,
+    jumble: { reaction: 1.3, overshoot: 0.7, wobble: 0.8, caution: 0.65 },
   },
   normal: {
     pace: BOTS.pace.normal, driftCurvature: 0.032, trickChance: 0.8, rocketEarly: -0.75, rocketLate: -0.08, stallChance: 0.04,
     mistakeEvery: 25, mistakeLength: 0.3, itemDelay: 1.0, holdShields: true, dodge: 0.85, skillful: true, steerGain: 3, cornerBonus: 0,
+    jumble: { reaction: 0.85, overshoot: 0.5, wobble: 0.55, caution: 0.5 },
   },
   hard: {
     pace: BOTS.pace.hard, driftCurvature: 0.028, trickChance: 1, rocketEarly: -0.28, rocketLate: -0.03, stallChance: 0,
     mistakeEvery: 0, mistakeLength: 0, itemDelay: 0.35, holdShields: true, dodge: 1, skillful: true, steerGain: 3.4, cornerBonus: 0.06,
+    jumble: { reaction: 0.6, overshoot: 0.35, wobble: 0.42, caution: 0.55 },
   },
 };
 
@@ -176,6 +188,9 @@ export class Bot {
   private rubber = 1;
   /** The bot's own tick counter (seconds since it was created). */
   private clock = 0;
+  /** Jumble bookkeeping: seconds since the steering was last flipped on us, and last tick's invertTime (to spot a new hit). */
+  private jumbleAge = 0;
+  private lastInvert = 0;
 
   constructor(
     readonly slot: number,
@@ -247,12 +262,28 @@ export class Bot {
     const p =track.project(k.pos.x, k.pos.z, k.trackIndex);
     const ahead = (o: number) => track.sampleAhead(p.route, p.i, o).curvature;
 
-    // --- Jumbled (steering flipped by ink): steer the opposite way. Easy bots take a second to work it out. ---
-    if (k.invertTime > 0) {
-      const confused = this.difficulty === 'easy' && k.invertTime > ITEMS.jumbleTime - 1;
-      if (confused) buttons &= ~Buttons.GAS; // easy bots lift for a second before they work it out
-      else steer = -steer;
+    // --- Jumbled (steering flipped by ink): the bot has to re-learn the controls (see Skill.jumble). ---
+    const jumbled = k.invertTime > 0;
+    if (jumbled) {
+      if (k.invertTime > this.lastInvert + 1e-9) this.jumbleAge = 0; // freshly hit (or hit again)
+      this.jumbleAge += SIM_DT;
+      const j = this.skill.jumble;
+      const fade = clamp(k.invertTime / ITEMS.jumbleTime, 0, 1); // 1 at the start of the effect, 0 at the end
+      if (this.jumbleAge < j.reaction) {
+        // Not noticed yet: the bot steers as usual, the kart goes the other way (it runs wide). Startled, it lifts off the gas.
+        buttons &= ~Buttons.GAS;
+      } else {
+        // Flipped on purpose, but too hard and with a sway: the confusion fades as the effect runs out.
+        steer = -steer * (1 + j.overshoot * fade);
+        steer += j.wobble * fade * Math.sin(this.clock * 5 + this.slot);
+        steer = clamp(steer, -1, 1);
+        // Unsure drivers lift: off the gas for part of every 1.5 s, less and less as it fades.
+        if ((this.clock * 0.67 + this.slot * 0.31) % 1 < j.caution * fade * 1.4) buttons &= ~Buttons.GAS;
+      }
+    } else {
+      this.jumbleAge = 0;
     }
+    this.lastInvert = k.invertTime;
 
     // --- Mistakes (easy / normal only) --------------------------------------------------------
     if (this.mistake && this.clock > this.mistake.until) this.mistake = null;
@@ -265,7 +296,13 @@ export class Bot {
     if (this.mistake?.kind === 'lift') buttons &= ~Buttons.GAS;
 
     // --- Drifting through long corners, mini-turbo on release ----------------------------------
-    const driftButton = this.driftLogic(k, track, p, ahead);
+    let driftButton = this.driftLogic(k, track, p, ahead);
+    if (jumbled) {
+      // Nobody drifts with flipped controls: let go (a drift in progress ends with its mini-turbo).
+      driftButton = { hold: false, forceSteer: 0 };
+      this.drifting = false;
+      this.driftCooldown = Math.max(this.driftCooldown, 1);
+    }
     if (driftButton.hold) buttons |= Buttons.DRIFT;
     if (driftButton.forceSteer !== 0) steer = driftButton.forceSteer * Math.max(Math.abs(steer), 0.7);
     if (this.drifting) buttons |= Buttons.GAS; // never lift in a drift: the charge needs speed
@@ -445,6 +482,18 @@ export class Bot {
         return ready && (rank > 0 || st.heldFor > 3) ? tap() : 0;
       case 'jumble':
         return ready && rank > 0 ? tap() : 0;
+      case 'magnet': {
+        // Worth it when a kart is a decent way ahead (inside the tow range, not already next to us).
+        const target = front !== null && front.d > ITEMS.magnetMinDist + 4 && front.d < ITEMS.magnetRange - 5 && Math.abs(front.side) < 6;
+        if (!ready || rank === 0) return 0;
+        return target || st.heldFor > 8 ? tap() : 0;
+      }
+      case 'bumper': {
+        // Use it when somebody is close alongside, ahead or behind (the orb needs company to be useful).
+        const near = (o: { d: number; side: number } | null) => o !== null && o.d < 10 && Math.abs(o.side) < 7;
+        if (!ready) return 0;
+        return near(front) || near(back) || st.heldFor > 10 ? tap() : 0;
+      }
       case 'seeker':
         return ready && rank > 0 ? tap() : ready && st.heldFor > 8 ? tap() : 0;
       case 'ricochet': {

@@ -177,8 +177,28 @@ export const ITEMS = {
   seekerTurnRate: 3.2,
   seekerLifetime: 9,
   seekerRadius: 1.3,
-  /** Jumble: how long a hit racer's steering stays flipped (s). */
-  jumbleTime: 7,
+  /** Jumble: how long a hit racer's steering stays flipped (s), and how many racers directly ahead of the user it hits. */
+  jumbleTime: 4.5,
+  jumbleReach: 2,
+  /** Magnet: how long it tugs (s), the range ahead it looks for a kart to tow behind (m), and the gap at which the tug lets go (m). */
+  magnetTime: 3.5,
+  magnetRange: 40,
+  magnetMinDist: 6,
+  /** The magnet never pulls you faster than the towed kart plus this (m/s): it helps you catch up, it does not rocket you past. */
+  magnetOverspeed: 9,
+  /** Bumper orb: orbits its owner for this long (s) or until it has bumped / blocked this many times. */
+  bumperTime: 7,
+  bumperCharges: 3,
+  /** Orb radius, orbit radius (m) and orbit speed (rad/s). */
+  bumperRadius: 0.75,
+  bumperOrbit: 2.3,
+  bumperSpin: 5,
+  /** A bumped kart is shoved sideways this far (m), over this many seconds, and keeps this fraction of its speed. */
+  bumperShove: 2.6,
+  bumperShoveTime: 0.3,
+  bumperSpeedFactor: 0.72,
+  /** The same kart can't be bumped again by the same orb for this long (s). */
+  bumperCooldown: 1.2,
   /** Shots spawn this far in front of / behind the kart (m). */
   muzzleDistance: 2.4,
 } as const;

@@ -18,30 +18,53 @@ describe('item odds', () => {
     for (const k of ITEM_PICKS) {
       expect(lead[k]).toBeGreaterThanOrEqual(0);
       expect(last[k]).toBeGreaterThan(0);
-      expect(mid[k]).toBeCloseTo((lead[k] + last[k]) / 2);
+      // Jumble has its own ramp (nothing before mid-field); the rest is a straight line.
+      if (k !== 'jumble') expect(mid[k]).toBeCloseTo((lead[k] + last[k]) / 2);
     }
   });
 
-  it('the better you are doing, the weaker your items: leaders never get Seeker, Jumble or Nova', () => {
+  it('the better you are doing, the weaker your items: leaders never get Seeker, Jumble, Magnet or Nova', () => {
     const lead = distribution(1, 4);
     expect(lead.seeker).toBe(0);
     expect(lead.jumble).toBe(0);
+    expect(lead.magnet).toBe(0);
     expect(lead.nova).toBe(0);
     // Strength rises steadily toward the back of the field.
     const strong = (p: number) => {
       const d = distribution(p, 4);
-      return d.nova + d.seeker + d.jumble + d.dash3;
+      return d.nova + d.seeker + d.jumble + d.magnet + d.dash3;
     };
     expect(strong(1)).toBeLessThan(strong(2));
     expect(strong(2)).toBeLessThan(strong(3));
     expect(strong(3)).toBeLessThan(strong(4));
-    expect(distribution(4, 4).jumble).toBeGreaterThan(0.08);
+  });
+
+  it('Jumble is rare and only for karts well behind (nothing in the front half, a small share even in last)', () => {
+    expect(itemWeights(1, 4).jumble).toBe(0);
+    expect(itemWeights(2, 4).jumble).toBe(0);
+    expect(itemWeights(3, 4).jumble).toBeGreaterThan(0);
+    expect(itemWeights(3, 4).jumble).toBeLessThan(itemWeights(4, 4).jumble);
+    const last = distribution(4, 4);
+    expect(last.jumble).toBeGreaterThan(0.01);
+    expect(last.jumble).toBeLessThan(0.08); // was 16 % of last place's boxes
+    // 2nd place of 3 is mid-field: no Jumble; 3rd of 3 and 2nd of 2 can get it.
+    expect(itemWeights(2, 3).jumble).toBe(0);
+    expect(itemWeights(3, 3).jumble).toBeGreaterThan(0);
+    expect(itemWeights(2, 2).jumble).toBeGreaterThan(0);
+  });
+
+  it('Magnet needs someone ahead; Bumper is a defensive item the leader can get', () => {
+    expect(itemWeights(1, 4).magnet).toBe(0);
+    expect(itemWeights(2, 4).magnet).toBeGreaterThan(0);
+    expect(distribution(1, 4).bumper).toBeGreaterThan(0.1);
+    expect(distribution(1, 4).bumper).toBeGreaterThan(distribution(4, 4).bumper);
+    expect(distribution(4, 4).magnet).toBeGreaterThan(distribution(2, 4).magnet);
   });
 
   it('leaders mostly get defensive items; trailing players get the strong ones', () => {
     const lead = distribution(1, 4);
     const last = distribution(4, 4);
-    expect(lead.slick + lead.ricochet).toBeGreaterThan(0.6);
+    expect(lead.slick + lead.ricochet).toBeGreaterThan(0.5);
     expect(lead.dash3).toBeLessThan(0.05);
     expect(last.slick + last.ricochet).toBeLessThan(0.2);
     expect(last.nova).toBeGreaterThan(lead.nova * 10);
@@ -64,7 +87,7 @@ describe('item odds', () => {
     expect(run()).toEqual(run());
     const seen = new Set<ItemPick>();
     const r = seededRng(1);
-    for (let i = 0; i < 5000; i++) seen.add(rollPick(2, 4, r));
+    for (let i = 0; i < 8000; i++) seen.add(rollPick(4, 4, r));
     expect(seen.size).toBe(ITEM_PICKS.length);
   });
 

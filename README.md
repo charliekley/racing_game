@@ -4,7 +4,7 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 6 of 7.** Item boxes and five items are in (see "Items"). Drifting with blue/orange mini-turbos, ramp
+> **Status: Milestone 6 of 7.** Item boxes and seven items are in (see "Items"). Drifting with blue/orange mini-turbos, ramp
 > tricks, a water jump and a respawn drone are in. Phones connect with a room code + QR code and
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
@@ -160,21 +160,23 @@ You can slide your thumb between GAS and BRAKE without lifting it.
 **Items:** drive through the rainbow **item boxes** (rows of three; they come back
 5 s later). A roulette spins for about 1.6 s on the phone and the TV, then you
 get an item. **The further back you are, the better your items** (leaders mostly
-get Slicks and Ricochets and never the strongest ones). You can only hold one
+get Peels, Ricochets and Bumpers and never the strongest ones). You can only hold one
 at a time. On the phone the item's icon appears in the **ITEM button** itself.
 
 | Item | What it does |
 |---|---|
 | **Dash** (single or pack of 3) | Instant speed boost. The pack gives three boosts, one per tap. |
-| **Slick** | An oil slick that spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
+| **Peel** (internal id `slick`) | A 3-D fruit peel that lies on the road (it follows banking, hills and ramps) and spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
 | **Ricochet** | A fast shot that bounces off walls a few times. **Tap** to fire forward, or hold **BRAKE** while you let go to fire **backward**. Hold ITEM to drag it behind you first. |
 | **Seeker** | A homing shot that chases the racer directly ahead of you. If you're in the lead it just flies straight. |
 | **Nova** | 7 s of invincibility: faster, ignores grass, immune to hits, and bumping a rival spins them out. |
-| **Jumble** | Sprays ink on **everyone ahead of you**: their steering is flipped left/right for 7 s and an ink splat covers part of their screen. You can't get it in the lead; Nova blocks it. |
+| **Jumble** | Sprays ink on the **two racers just ahead of you**: their steering is flipped left/right for 4.5 s and an ink splat covers part of a human's screen. Computer drivers have to re-learn the controls (they veer, over-correct, wobble and lift; easy bots suffer most, hard bots least) and can run wide. **Rare, and only for karts well behind** (nothing in the front half of the field); Nova blocks it. |
+| **Magnet** | For 3.5 s you are towed toward the kart ahead (within 40 m): a boost that stops when you catch up and never takes you much faster than that kart. A comeback item (never in the lead); a spin-out cancels it. A beam shows who you are tugging toward. |
+| **Bumper** | An orange studded orb circles your kart for 7 s. Any other kart that touches it is shoved sideways and loses about a quarter of its speed (no spin-out); it also swallows shots. It pops after 3 bumps or blocked shots. Nova karts shrug it off. Good for the leader, to keep rivals off your tail. |
 
 Getting hit spins you out for about 1.3 s: no steering, most of your speed and
 any boost lost, and Android buzzes. A hit while dragging an item loses it (a
-dragged Slick stays on the road). The TV only shows "HIT NAME!" for whoever got
+dragged Peel stays on the road). The TV only shows "HIT NAME!" for whoever got
 you; other feedback is visual (icons, the spin, effects) or a phone buzz rather
 than words.
 
@@ -332,17 +334,17 @@ rocks, houses and the distant mountains (see `biomeFor` in
 
 ## 6. Milestone 6 test checklist
 
-1. **Practice mode:** open `/host/?drive=2&give=nova` (or `dash`, `slick`,
-   `ricochet`, `seeker`, `random`). Everyone has an endless supply of that item
+1. **Practice mode:** open `/host/?drive=2&give=nova` (or `dash`, `slick` (the Peel),
+   `ricochet`, `seeker`, `jumble`, `magnet`, `bumper`, `random`). Everyone has an endless supply of that item
    so you can try it without hunting boxes. The icon shows in the box at the top
    of each player's view. Use **E** (the keyboard player's ITEM key).
 2. **Boxes:** in a normal race (`/host/?drive=2`), look for rows of three rainbow
-   "?" cubes on the road. Drive into one: the item box icon spins through the five
+   "?" cubes on the road. Drive into one: the item box icon spins through the
    items for ~1.6 s and then shows your item. The cube vanishes and comes back
    after 5 s. Driving through a box while holding an item does nothing.
 3. **Dash:** tap E: instant boost, with flames. A pack of three shows "x3".
-4. **Slick:** tap E to drop an oil puddle behind you; a bot (or you, circling
-   back) that drives over it spins around and loses speed. Hold E: the puddle
+4. **Peel:** tap E to drop a banana-style peel behind you; a bot (or you, circling
+   back) that drives over it spins around and loses speed. Hold E: the peel
    drags behind your kart; release to drop it. Try firing a Ricochet at it.
 5. **Ricochet / Seeker:** tap E to fire. Ricochet bounces off the tire walls;
    hold **S** (brake) when you let go of E to fire backward. A Seeker curves
@@ -352,7 +354,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 7. **Phones:** the roulette animates on the phone, then the item's icon shows in
    the middle (with ×3 for a Dash pack). Tap ITEM (left side, top button) to use
    it. Android buzzes when you get an item, use one, or get hit. The lobby's **Test item** button cycles every icon on a phone.
-8. Computer drivers use items too: watch for them dropping slicks and firing shots.
+8. Computer drivers use items too: watch for them dropping peels, firing shots and circling with bumper orbs.
 
 ## 7. Milestone 5 test checklist
 
