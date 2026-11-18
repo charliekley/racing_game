@@ -205,6 +205,7 @@ The first player's phone (P1, or the next player if P1 leaves) gets a **forced p
 * **Single race**: one track, then back to the menu (Enter / RACE AGAIN repeats it).
 * **Grand Prix**: all tracks in order. Points per place **10 / 7 / 5 / 3** (`GP_POINTS` in `src/host/series.ts`), standings on the TV after each race, a podium at the end. Ties: more wins, then more 2nd places..., then the last race, then slot number.
 * **Loser picks**: after each race the last-place *human* picks the next track on their phone (the others see who is choosing). Points are kept like in a Grand Prix. P1 taps STOP for the podium.
+* **Knockout**: one longer race (5 laps on these tracks). When the first kart finishes lap 2, 3, ... the kart in last place is knocked out: the carrier drone lifts it away and its view greys out with its final place. The last kart standing wins; places follow the reverse knockout order and the results list the lap each kart went out on. No points. Rules are pure logic in `src/sim/knockout.ts` (decided from race state, so the sim stays deterministic). `?mode=knockout` picks it from the address.
 
 Without phones, in the lobby: **Left/Right** = track, **Up/Down** = mode, **Enter** = start. In Loser picks the TV shows the track strip: Left/Right + Enter to pick, **S** to stop. `?drive` and `?track=` work as before (a single race); `?mode=gp` or `?mode=loser` picks a mode from the address.
 

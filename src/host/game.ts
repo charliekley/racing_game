@@ -824,7 +824,7 @@ export class Game {
         case 'knockout':
           this.haptic(e.slot, HAPTICS.respawn);
           this.viewOf(e.slot)?.hud.knockedOut(e.place);
-          for (const v of this.views) if (v.slot !== e.slot) v.hud.showBanner(`${this.nameOf(e.slot)} OUT!`, 1.6, this.elapsed);
+          for (const v of this.views) if (v.slot !== e.slot) v.hud.showBanner(`P${e.slot + 1} OUT!`, 1.6, this.elapsed);
           this.sendStatus();
           break;
         // --- end Knockout ---
