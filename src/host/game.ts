@@ -25,6 +25,7 @@ import { buildResults, type ResultRow, type ResultsExtras } from './resultsView'
 import type { Placing } from './series';
 import { setKartDetail, type KartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
+import { reactionsForEvent, tailgateSide, type FaceContext } from '../render/kart/expression';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, buildItemBox } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
@@ -612,6 +613,7 @@ export class Game {
       // PERF: one HudState object is refilled for every view instead of building a new literal per view per frame.
       const hs = this.hudScratch;
       hs.position = racer.place ?? race.positionOf(v.slot);
+      this.watchFaces(v, hs.position, race.phase === 'racing' && !racer.finished);
       hs.racers = race.racers.size;
       hs.lap = Math.min(race.totalLaps, Math.max(1, racer.lap));
       hs.laps = race.totalLaps;
@@ -697,6 +699,33 @@ export class Game {
   /** Camera shake for one player's view (0..1). */
   private shake(slot: number, amount: number): void {
     this.viewOf(slot)?.chase.addTrauma(amount);
+  }
+
+  /** Context for the face mapper (how many karts race, how long a spin-out lasts). */
+  private readonly faceCtx: FaceContext = { racers: 1, spinTime: KART.spinTime };
+
+  /** Driver faces: a sim event may make one or two karts grin, gasp or glance back (pure mapper in render/kart/expression.ts). */
+  private reactFaces(e: WorldEvent): void {
+    this.faceCtx.racers = this.views.length;
+    for (const r of reactionsForEvent(e, this.faceCtx)) this.viewOf(r.slot)?.kart.face.react(r);
+  }
+
+  /**
+   * Per frame, per view: overtaking (the race place improved) makes the driver smug, and another kart right
+   * behind makes them glance over the shoulder. No allocation.
+   */
+  private watchFaces(v: PlayerView, place: number, racing: boolean): void {
+    const face = v.kart.face;
+    face.notePlace(place, racing);
+    if (!racing || Math.abs(v.kart.pose.speed) < 6) return;
+    for (const o of this.views) {
+      if (o === v) continue;
+      const side = tailgateSide(o.kart.pose.x - v.kart.pose.x, o.kart.pose.z - v.kart.pose.z, v.kart.pose.heading);
+      if (side !== 0) {
+        face.tailgated(side);
+        break;
+      }
+    }
   }
 
   /** Visual + camera reactions to a sim event (particles, shake, flashes). Haptics are handled in handleEvents. */
@@ -826,6 +855,7 @@ export class Game {
     this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.world.race?.totalLaps ?? this.track.def.laps });
     for (const e of events) {
       this.reactFx(e);
+      this.reactFaces(e); // driver faces: events (and bot moods) become expressions and head turns
       switch (e.kind) {
         case 'go':
           for (const v of this.views) {
@@ -863,7 +893,7 @@ export class Game {
           break;
         // --- end Knockout ---
         case 'botMood':
-          break; // (driver faces can react to e.slot / e.mood here)
+          break; // the face reaction itself is done by reactFaces() above (see render/kart/expression.ts)
         case 'wall':
           if (e.impact > 6) this.haptic(e.slot, HAPTICS.wall);
           break;

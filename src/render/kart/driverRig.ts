@@ -34,11 +34,18 @@ export interface DriverInput {
   spun: boolean;
   /** Race finished (celebrate). */
   celebrate: boolean;
+  /** 0..1 how far the driver is turned to look over their shoulder (see HeadLook in expression.ts), and which one: +1 left, -1 right. */
+  look: number;
+  lookSide: number;
 }
 
 export const IDLE_INPUT: DriverInput = {
-  steer: 0, bodyRoll: 0, accel: 0, speed01: 0, drift: 0, boosting: false, airborne: false, trick: -1, spun: false, celebrate: false,
+  steer: 0, bodyRoll: 0, accel: 0, speed01: 0, drift: 0, boosting: false, airborne: false, trick: -1, spun: false, celebrate: false, look: 0, lookSide: 1,
 };
+
+/** How far (radians) the head and torso turn at full "look over the shoulder" (head is relative to the torso). */
+const LOOK_HEAD_YAW = 1.85;
+const LOOK_TORSO_YAW = 0.7;
 
 const _Z = new THREE.Vector3(0, 0, 1);
 const _w = new THREE.Vector3();
@@ -106,13 +113,18 @@ export class DriverRig {
     m.steeringWheel.rotation.z = this.steer * 1.25;
     const torso = m.torso;
     const lean = -this.roll * 1.6 - inp.drift * 0.05;
-    torso.rotation.z = lean;
+    torso.rotation.z = lean - this.steer * 0.05; // lean into the turn (the body roll) and a bit more with the wheel
     torso.rotation.x = this.pitch - this.boostLean * 0.28 + (inp.celebrate ? Math.sin(t * 10) * 0.05 : 0);
-    // Heads look into the turn, tilt a little, and wobble when dizzy.
+    // Heads look into the turn, tilt a little, and wobble when dizzy. `look` (0..1, eased by HeadLook) blends
+    // that into a glance over the shoulder: the head turns most of the way round and the torso twists a bit,
+    // so the face shows to the chase camera.
     const head = m.head;
-    head.rotation.y = this.lookYaw;
-    head.rotation.z = -lean * 0.5 + (inp.spun ? Math.sin(t * 11) * 0.28 : 0);
-    head.rotation.x = this.boostLean * 0.18 + (inp.spun ? Math.sin(t * 8.3) * 0.18 : 0) + (inp.celebrate ? -0.1 : 0);
+    const lk = inp.look;
+    const side = inp.lookSide;
+    torso.rotation.y = side * lk * LOOK_TORSO_YAW;
+    head.rotation.y = this.lookYaw * (1 - lk) + side * lk * LOOK_HEAD_YAW;
+    head.rotation.z = -lean * 0.5 * (1 - lk) + side * lk * -0.1 + (inp.spun ? Math.sin(t * 11) * 0.28 : 0) + (inp.celebrate ? Math.sin(t * 7) * 0.08 : 0);
+    head.rotation.x = this.boostLean * 0.18 * (1 - lk) + lk * 0.06 + (inp.spun ? Math.sin(t * 8.3) * 0.18 : 0) + (inp.celebrate ? -0.1 : 0);
     // Squash and stretch about the hip (volume-preserving-ish).
     const s = this.baseScale;
     m.driver.scale.set(s * (1 - sq * 0.6), s * (1 + sq), s * (1 - sq * 0.6));

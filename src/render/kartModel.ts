@@ -26,7 +26,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { CHARACTERS, DEFAULT_LOADOUT } from '../shared/characters';
 import { PartBuilder, withDetail, type Bucket } from './kart/geo';
 import { STYLE_BUILDERS, buildSteeringWheelGeometry, type StyleLayout } from './kart/bodies';
-import { buildDriverGeometries, NECK, SHOULDER_R, type DriverGeometries } from './kart/drivers';
+import { buildDriverGeometries, HEAD_SCALE, NECK, SHOULDER_R, type DriverGeometries } from './kart/drivers';
 import { getDetailMaterial, getPaintMaterials } from './kart/materials';
 import { buildWheelGeometry } from './kart/wheels';
 
@@ -74,6 +74,12 @@ export interface KartModel {
   torso: THREE.Group;
   /** Head pivot (origin at the neck). Child of `torso`. */
   head: THREE.Group;
+  /**
+   * The head mesh's morph-target weights (see kart/face.ts): [blink, happy, shocked, ...] in the order of
+   * `DriverFace.weights`. Write the weights here each frame (no extra draw calls: the GPU blends the faces).
+   * Only the full and reduced LODs show faces; the far model is frozen in the neutral face.
+   */
+  faceInfluences: number[];
   /** Shoulder pivots [left, right] (children of `torso`); the hand is at local +Z. */
   arms: THREE.Group[];
   /** Spin this around its local Z to turn the steering wheel. */
@@ -293,6 +299,8 @@ const farMergedCache = new Map<string, THREE.BufferGeometry>();
 /** Copy of `geo` moved by `m`. A mirrored transform (the left arm) also flips the triangle order so the faces stay outward. */
 function bakePart(geo: THREE.BufferGeometry, m: THREE.Matrix4): THREE.BufferGeometry {
   const g = geo.clone().applyMatrix4(m);
+  g.morphAttributes = {}; // the far model is frozen in the neutral face (and mergeGeometries needs all parts alike)
+  g.morphTargetsRelative = false;
   const index = g.getIndex();
   if (m.determinant() < 0 && index) {
     for (let i = 0; i + 2 < index.count; i += 3) {
@@ -365,7 +373,9 @@ function buildOneLevel(
   driver.add(torso);
   const head = new THREE.Group();
   head.position.set(...NECK);
-  head.add(mk(dg.head, detailMat, 'driver-head'));
+  const headMesh = mk(dg.head, detailMat, 'driver-head');
+  head.add(headMesh);
+  head.scale.setScalar(HEAD_SCALE[look.species]); // chunky cartoon head
   torso.add(head);
   const arms: THREE.Group[] = [];
   for (const side of [-1, 1]) {
@@ -404,6 +414,7 @@ function buildOneLevel(
   return {
     root, body, frontPivots, wheels, wheelRadii, exhausts, rearWheelContacts, style,
     character, driver, torso, head, arms, steeringWheel,
+    faceInfluences: headMesh.morphTargetInfluences ?? [],
     wheelSpec: { pos: new THREE.Vector3(...wheel.pos), tilt: wheel.tilt, handRadius: 0.15 },
     setLod: () => {},
     bakeFarModel: () => {},

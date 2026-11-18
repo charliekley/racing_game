@@ -52,4 +52,25 @@ describe('KartView effects', () => {
     expect(drone).toBeDefined();
     expect(drone!.position.y).toBeGreaterThan(kart.pos.y + 1);
   });
+
+  it('turns a reaction into morph weights and a head turn, without replacing the weights array', () => {
+    const { view, kart } = setup();
+    const infl = view.model.faceInfluences;
+    view.face.react({ expr: 'angry', duration: 1, look: { side: 1, hold: 0.8 } });
+    for (let i = 0; i < 30; i++) view.update(kart, kart, 1, 1 / 60);
+    expect(view.model.faceInfluences).toBe(infl);
+    expect(infl.some((v) => v > 0.5)).toBe(true);
+    // The head is turned toward the camera (yaw well beyond the usual look into a turn).
+    expect(Math.abs(view.model.head.rotation.y)).toBeGreaterThan(1);
+    for (let i = 0; i < 240; i++) view.update(kart, kart, 1, 1 / 60);
+    expect(Math.max(...infl.slice(1))).toBe(0);
+    expect(Math.abs(view.model.head.rotation.y)).toBeLessThan(0.1);
+  });
+
+  it('grits its teeth while drifting', () => {
+    const { view, kart } = setup();
+    kart.driftDir = 1;
+    for (let i = 0; i < 20; i++) view.update(kart, kart, 1, 1 / 60);
+    expect(view.face.current).toBe('gritted');
+  });
 });
