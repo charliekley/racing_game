@@ -268,9 +268,9 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
   },
   bumped: (e, t, g) => {
     // The orb knocks a kart aside: a dull thump and a short springy twang.
-    tone(e, t, { type: 'sine', f0: 140, f1: 60, dur: 0.18, gain: 0.55 * g });
-    tone(e, t, { type: 'triangle', f0: 600, f1: 250, dur: 0.16, gain: 0.25 * g, vib: [30, 28] });
-    noiseBurst(e, t, { dur: 0.06, gain: 0.25 * g, f0: 1400, q: 1 });
+    tone(e, t, { type: 'sine', f0: 140, f1: 60, dur: 0.18, gain: 0.45 * g });
+    tone(e, t, { type: 'triangle', f0: 600, f1: 250, dur: 0.16, gain: 0.22 * g, vib: [30, 28] });
+    noiseBurst(e, t, { dur: 0.06, gain: 0.2 * g, f0: 1400, q: 1 });
     return 0.25;
   },
   hit: (e, t, g) => {
@@ -380,19 +380,20 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
   // --- Track hazards ---------------------------------------------------------
   hazardWarn: (e, t, g) => {
     // Geyser warning: a deep rumble that grows, a hiss of steam and a few crackles of sparks.
-    noiseBurst(e, t, { dur: 1.5, gain: 0.5 * g, filter: 'lowpass', f0: 90, f1: 220, q: 1, a: 0.5 });
-    tone(e, t, { type: 'sine', f0: 48, f1: 70, dur: 1.5, gain: 0.5 * g, a: 0.6 });
+    // (Levels: the layers add up, so each stays well under 0.5 to keep the sum below the cannon boom.)
+    noiseBurst(e, t, { dur: 1.5, gain: 0.4 * g, filter: 'lowpass', f0: 90, f1: 220, q: 1, a: 0.5 });
+    tone(e, t, { type: 'sine', f0: 48, f1: 70, dur: 1.5, gain: 0.4 * g, a: 0.6 });
     noiseBurst(e, t + 0.2, { dur: 1.3, gain: 0.12 * g, filter: 'highpass', f0: 3500, a: 0.7 });
     for (const [off, f] of [[0.35, 2600], [0.7, 3300], [0.95, 2900], [1.15, 3600], [1.3, 3100]]) {
-      noiseBurst(e, t + off, { dur: 0.04, gain: 0.25 * g, f0: f, q: 3 });
+      noiseBurst(e, t + off, { dur: 0.04, gain: 0.2 * g, f0: f, q: 3 });
     }
     return 1.55;
   },
   geyser: (e, t, g) => {
     // Eruption: a boom, then a roaring whoosh that fades as the column falls.
-    tone(e, t, { type: 'sine', f0: 110, f1: 34, dur: 0.7, gain: 0.8 * g });
-    noiseBurst(e, t, { dur: 1.2, gain: 0.6 * g, f0: 500, f1: 2200, q: 0.8, a: 0.06 });
-    noiseBurst(e, t + 0.4, { dur: 0.8, gain: 0.35 * g, filter: 'lowpass', f0: 1500, f1: 250 });
+    tone(e, t, { type: 'sine', f0: 110, f1: 34, dur: 0.7, gain: 0.65 * g }); // was 0.8 + 0.6 + 0.35 = clipping-prone on the boom
+    noiseBurst(e, t, { dur: 1.2, gain: 0.45 * g, f0: 500, f1: 2200, q: 0.8, a: 0.06 });
+    noiseBurst(e, t + 0.4, { dur: 0.8, gain: 0.3 * g, filter: 'lowpass', f0: 1500, f1: 250 });
     return 1.25;
   },
   bridgeBell: (e, t, g) => {
@@ -422,16 +423,30 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
   },
   roller: (e, t, g) => {
     // A heavy snowball rolling closer: a rumble that swells with a few low bumps.
-    noiseBurst(e, t, { dur: 1.6, gain: 0.4 * g, filter: 'lowpass', f0: 140, f1: 320, q: 1, a: 0.7 }); // four balls warn close together: keep each modest
-    for (const o of [0.2, 0.55, 0.85, 1.1, 1.3]) tone(e, t + o, { type: 'sine', f0: 70, f1: 40, dur: 0.18, gain: 0.35 * g });
+    noiseBurst(e, t, { dur: 1.6, gain: 0.3 * g, filter: 'lowpass', f0: 140, f1: 320, q: 1, a: 0.7 }); // four balls warn close together: keep each modest
+    for (const o of [0.2, 0.55, 0.85, 1.1, 1.3]) tone(e, t + o, { type: 'sine', f0: 70, f1: 40, dur: 0.18, gain: 0.3 * g });
     return 1.65;
   },
   hazardHit: (e, t, g) => {
     // Burned by lava: a thump and a sizzle.
-    tone(e, t, { type: 'sine', f0: 160, f1: 45, dur: 0.35, gain: 0.7 * g });
-    noiseBurst(e, t, { dur: 0.5, gain: 0.35 * g, filter: 'highpass', f0: 1800, a: 0.01 });
-    noiseBurst(e, t, { dur: 0.3, gain: 0.3 * g, f0: 700, f1: 200, q: 1 });
+    tone(e, t, { type: 'sine', f0: 160, f1: 45, dur: 0.35, gain: 0.6 * g });
+    noiseBurst(e, t, { dur: 0.5, gain: 0.3 * g, filter: 'highpass', f0: 1800, a: 0.01 });
+    noiseBurst(e, t, { dur: 0.3, gain: 0.25 * g, f0: 700, f1: 200, q: 1 });
     return 0.55;
+  },
+  hitSnow: (e, t, g) => {
+    // Flattened by a snowball: a dull "whump", a soft poof of snow and a few crunchy crumbs (no sizzle, no whistle).
+    tone(e, t, { type: 'sine', f0: 120, f1: 45, dur: 0.3, gain: 0.55 * g });
+    noiseBurst(e, t, { dur: 0.45, gain: 0.35 * g, filter: 'lowpass', f0: 1100, f1: 180, q: 0.7, a: 0.01 });
+    for (const [off, f] of [[0.04, 3200], [0.1, 2600], [0.17, 3600]]) noiseBurst(e, t + off, { dur: 0.05, gain: 0.15 * g, f0: f, q: 2 });
+    return 0.5;
+  },
+  hitWater: (e, t, g) => {
+    // Splash: a bright whoosh of spray that sweeps down, a deep "bloop", then a few droplets plinking back.
+    noiseBurst(e, t, { dur: 0.55, gain: 0.4 * g, f0: 3200, f1: 700, q: 0.9, a: 0.02 });
+    tone(e, t, { type: 'sine', f0: 380, f1: 110, dur: 0.3, gain: 0.45 * g });
+    for (const [off, f] of [[0.18, 1500], [0.28, 1900], [0.4, 1300]]) tone(e, t + off, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.08, gain: 0.12 * g });
+    return 0.6;
   },
 };
 

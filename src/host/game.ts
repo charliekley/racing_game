@@ -48,6 +48,8 @@ import { TrackView } from '../render/trackView';
 import { disposeObject } from '../render/dispose';
 import type { PlayerManager } from './playerManager';
 import { ViewHud, type HudState } from './viewHud';
+import { PhotoFinishFx, worthSlowMotion } from './photoFinish';
+import { WrongWayDetector, speedAlongTrack } from './wrongWay';
 import type { ItemDisplay } from '../shared/protocol';
 // AUDIO: sound engine (src/audio). Created in main.ts and handed over via `game.audio`.
 import { musicForTrack, panForRect, type AudioEngine, type KartAudioState } from '../audio';
@@ -80,6 +82,7 @@ const HAPTICS = {
   respawn: [200],
   cannonFire: [120, 30, 60],
   cannonLand: [35],
+  wrongWay: [80, 60, 80],
 } as const;
 
 export interface GameCallbacks {
@@ -144,11 +147,15 @@ export class Game {
   botDifficulty: Difficulty = DEFAULT_DIFFICULTY;
   /** The computer drivers of the current race (see sim/bots.ts). */
   private bots = new BotPack();
-  /**
-   * Set when the sim reports two karts finishing within a fraction of a second ("photo finish").
-   * Nothing uses it yet: a slow-motion replay could read it (and reset it) later.
-   */
+  /** Set when the sim reports two karts finishing within a fraction of a second ("photo finish"); the slow-motion moment itself is `photo`. */
   photoFinish = false;
+  /** Photo-finish slow motion (timing only, see photoFinish.ts). Its time scale feeds the fixed-step loop, never the sim. */
+  readonly photo = new PhotoFinishFx();
+  /** Only one photo-finish moment per race. */
+  private photoPlayed = false;
+  /** WRONG WAY detectors, one per human kart (see wrongWay.ts), and the slots whose sign is showing. */
+  private readonly wrongWay = new Map<number, WrongWayDetector>();
+  private readonly wrongWayShown = new Set<number>();
   // --- Knockout mode (see sim/knockout.ts) ---
   /** Set by main.ts before `start`: play a Knockout race (more laps, the last kart is out after every lap). */
   knockout = false;
@@ -236,6 +243,7 @@ export class Game {
     // Space / Enter skips the intro flyover.
     window.addEventListener('keydown', (e) => {
       if (this.flyover.active && (e.code === 'Space' || e.code === 'Enter')) this.endIntro();
+      if (this.photo.active && (e.code === 'Space' || e.code === 'Enter')) this.photo.skip(); // skip the photo-finish slow motion
     });
   }
 
@@ -379,6 +387,10 @@ export class Game {
     this.world.startRace(slots, laps, loadouts, { knockout: this.knockout });
     this.bots = new BotPack(this.botDifficulty, (slot) => !this.players.isBot(slot));
     this.photoFinish = false;
+    this.photo.skip();
+    this.photoPlayed = false;
+    this.wrongWay.clear();
+    this.wrongWayShown.clear();
 
     // Launch cannons for this track (barrel, mouth glow, landing pad).
     this.cannonView?.dispose(this.scene);
@@ -456,7 +468,10 @@ export class Game {
     // While the intro flyover plays the simulation is paused (karts wait on the grid).
     if (this.flyover.tick(dt)) this.endIntro();
     const intro = this.flyover.active;
-    const alpha = intro ? 1 : this.loop.advance(dt);
+    // Photo finish: slow motion = feed the fixed-step loop less time (the sim still steps in exact 1/60 s steps, only fewer per second).
+    const timeScale = this.photo.tick(dt);
+    const sdt = dt * timeScale; // "slowed" seconds: particles and the camera follow the slow motion too
+    const alpha = intro ? 1 : this.loop.advance(sdt);
     const race = this.world.race!;
     this.trackView.update(this.elapsed);
     this.cannonView?.update(this.elapsed, dt);
@@ -496,6 +511,7 @@ export class Game {
       cx += v.kart.pose.x;
       cz += v.kart.pose.z;
     }
+    this.updateWrongWay(sdt);
     cx /= Math.max(1, this.views.length);
     cz /= Math.max(1, this.views.length);
     let spread = 0;
@@ -514,7 +530,7 @@ export class Game {
         for (const v of this.views) v.hud.toast(String(n), 1, this.elapsed, 'count');
       }
     }
-    this.fx.update(dt);
+    this.fx.update(sdt);
 
     // HAZARDS: a hazard is a pure function of the race clock, so we draw it at the INTERPOLATED race
     // time (the sim's latest tick time minus the fraction of a tick we have not simulated yet).
@@ -596,7 +612,7 @@ export class Game {
       cs.flightPhase = kart.flight?.phase ?? null;
       cs.finished = racer.finished;
       cs.driftDir = kart.driftDir;
-      v.chase.update(v.kart.pose, dt, cs, ground);
+      v.chase.update(v.kart.pose, sdt, cs, ground); // sdt: during a photo finish the camera holds (slow motion)
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).
         const fwd = v.chase.camera.getWorldDirection(this.dirScratch);
@@ -661,6 +677,37 @@ export class Game {
       this.showResults();
       this.audio?.results(); // AUDIO: fanfare + results loop
       this.callbacks.onResults();
+    }
+  }
+
+  /**
+   * WRONG WAY: for every human kart, ask the detector (wrongWay.ts) whether it has been driving against the
+   * racing direction for a while; show or hide the sign on that player's HUD and buzz their phone when it appears.
+   */
+  private updateWrongWay(dt: number): void {
+    const race = this.world.race;
+    if (!race) return;
+    for (const v of this.views) {
+      if (this.players.isBot(v.slot)) continue;
+      const k = this.world.karts.get(v.slot);
+      const racer = race.racers.get(v.slot);
+      if (!k || !racer) continue;
+      let det = this.wrongWay.get(v.slot);
+      if (!det) this.wrongWay.set(v.slot, (det = new WrongWayDetector()));
+      const sample = k.trackIndex >= 0 ? this.track.samples[k.trackIndex] : undefined;
+      // Cases where "backwards" is meaningless: before GO, finished/knocked out, respawning, in a cannon, spinning out, in the air.
+      const excluded = !sample || race.phase !== 'racing' || racer.finished || racer.out || k.respawnTime > 0 || !!k.flight || k.spinTime > 0 || !k.grounded;
+      const along = sample ? speedAlongTrack(k.vel.x, k.vel.z, sample.tx, sample.tz) : 0;
+      const show = det.update(dt, along, excluded);
+      if (show !== this.wrongWayShown.has(v.slot)) {
+        if (show) {
+          this.wrongWayShown.add(v.slot);
+          this.haptic(v.slot, HAPTICS.wrongWay);
+        } else {
+          this.wrongWayShown.delete(v.slot);
+        }
+        v.hud.setWrongWay(show);
+      }
     }
   }
 
@@ -849,7 +896,17 @@ export class Game {
           this.haptic(e.slot, HAPTICS.miniTurbo);
           break;
         case 'photoFinish':
-          this.photoFinish = true; // not used yet: see the field's comment
+          this.photoFinish = true;
+          // Slow motion + white flash + banner on every screen (all players are slowed equally, so nobody loses anything).
+          // Not in Knockout, and not when only bots were involved (see worthSlowMotion).
+          if (worthSlowMotion({ slots: e.slots, isHuman: (s) => !this.players.isBot(s), knockout: this.knockout, alreadyPlayed: this.photoPlayed })) {
+            this.photoPlayed = true;
+            this.photo.start();
+            for (const v of this.views) {
+              v.hud.flash('photo');
+              v.hud.showBanner('PHOTO FINISH', 1.8, this.elapsed, 'photo');
+            }
+          }
           break;
         case 'stall':
           this.haptic(e.slot, HAPTICS.stall);
