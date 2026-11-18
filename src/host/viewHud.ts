@@ -49,6 +49,7 @@ export class ViewHud {
   private center: HTMLElement;
   private banner: HTMLElement;
   private flashEl: HTMLElement;
+  private wrongWayEl: HTMLElement;
   private itemBox: HTMLElement;
   private itemCanvas: HTMLCanvasElement;
   private itemCtx: CanvasRenderingContext2D;
@@ -88,6 +89,7 @@ export class ViewHud {
       <div class="hud-drift"><div class="drift-fill"></div><div class="drift-mark"></div></div>
       <div class="hud-center"></div>
       <div class="hud-banner"></div>
+      <div class="hud-wrongway"><svg viewBox="0 0 100 60" aria-hidden="true"><path d="M12 38 A24 24 0 0 1 60 30 L60 18 L88 38 L60 58 L60 46 A8 8 0 0 0 28 38 Z" transform="translate(0 -8) scale(1 0.9)"/></svg><b>WRONG WAY</b></div>
       <div class="hud-speed"></div>`;
     (this.root.querySelector('.tag-name') as HTMLElement).textContent = name; // from a phone: textContent only
     const q = (s: string) => this.root.querySelector(s) as HTMLElement;
@@ -108,6 +110,7 @@ export class ViewHud {
     this.center = q('.hud-center');
     this.banner = q('.hud-banner');
     this.flashEl = q('.hud-flash');
+    this.wrongWayEl = q('.hud-wrongway');
     this.itemBox = q('.hud-item');
     this.drift = q('.hud-drift');
     this.driftFill = q('.drift-fill');
@@ -243,8 +246,13 @@ export class ViewHud {
     this.ink.show(seconds);
   }
 
-  /** A quick coloured screen flash: 'hit' (red/white), 'boost' (orange), 'item' (gold). */
-  flash(kind: 'hit' | 'boost' | 'item'): void {
+  /** Show or hide the WRONG WAY sign (a U-turn arrow); the host decides when (see wrongWay.ts). */
+  setWrongWay(on: boolean): void {
+    this.wrongWayEl.classList.toggle('on', on);
+  }
+
+  /** A quick coloured screen flash: 'hit' (red/white), 'boost' (orange), 'item' (gold), 'photo' (white, photo finish). */
+  flash(kind: 'hit' | 'boost' | 'item' | 'photo'): void {
     this.flashEl.dataset.kind = kind;
     ViewHud.retrigger(this.flashEl, 'go');
   }
@@ -260,9 +268,10 @@ export class ViewHud {
     this.toastUntil = now + seconds;
   }
 
-  /** A wide banner that sweeps across the screen (FINAL LAP!). */
-  showBanner(text: string, seconds: number, now: number): void {
+  /** A wide banner that sweeps across the screen (FINAL LAP!). `kind` 'photo' gives it the cool blue photo-finish look. */
+  showBanner(text: string, seconds: number, now: number, kind: 'plain' | 'photo' = 'plain'): void {
     this.banner.textContent = text;
+    this.banner.dataset.kind = kind;
     this.banner.classList.remove('show');
     void this.banner.offsetWidth;
     this.banner.classList.add('show');

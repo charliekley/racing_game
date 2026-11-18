@@ -20,6 +20,8 @@ export const SOUND_IDS = [
   'hazardWarn', 'geyser', 'bridgeBell', 'bridgeMove', 'gust', 'roller', 'hazardHit',
   // Items added later (Magnet, Bumper). Only ever append to this list.
   'useMagnet', 'useBumper', 'bumped',
+  // Hazard hits with their own character (snowball, water). Only ever append to this list.
+  'hitSnow', 'hitWater',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -126,7 +128,7 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return hazardCues(ev, e.kind === 'hazardFire', ctx);
     case 'hazardHit':
       // Only the person who got hit hears the sizzle (bots being hit make no sound).
-      return slot !== undefined && ctx.isHuman(slot) ? [cue('hazardHit')] : [];
+      return slot !== undefined && ctx.isHuman(slot) ? [cue(hazardHitSound(String(ev.type)))] : [];
     case 'lap': {
       // `lap` = the lap just completed; the next lap is the last one when lap + 1 === totalLaps.
       const out: Cue[] = [cue('lap')];
@@ -166,6 +168,18 @@ export function hazardSound(type: string, fire: boolean): SoundId | null {
       return fire ? null : 'roller'; // rumbling snowball
     default:
       return null;
+  }
+}
+
+/** The sound a hazard makes when it HITS a kart: snow thud for the snowball, splash for the drawbridge (falling in the water), sizzle (lava) otherwise. */
+export function hazardHitSound(type: string): SoundId {
+  switch (type) {
+    case 'roller':
+      return 'hitSnow';
+    case 'drawbridge':
+      return 'hitWater';
+    default:
+      return 'hazardHit'; // geyser (lava); gusts only push, they never raise a hit
   }
 }
 

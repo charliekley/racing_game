@@ -90,6 +90,12 @@ describe('soundsForEvent', () => {
     expect(ids({ kind: 'hazardHit', slot: 2, hazard: 1, type: 'geyser' })).toEqual([]);
   });
 
+  it('snowball and drawbridge hits have their own sounds (not the lava sizzle)', () => {
+    expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'roller' })).toEqual(['hitSnow']);
+    expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'drawbridge' })).toEqual(['hitWater']);
+    expect(ids({ kind: 'hazardHit', slot: 2, hazard: 1, type: 'roller' })).toEqual([]); // bots hit: silent
+  });
+
   it('every sound id has a synth, and every cue returns a known id', () => {
     for (const id of SOUND_IDS) expect(typeof SYNTHS[id]).toBe('function');
     expect(Object.keys(SYNTHS).sort()).toEqual([...SOUND_IDS].sort());
