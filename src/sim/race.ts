@@ -17,6 +17,7 @@
  */
 import { Buttons, type ControlInput } from '../shared/protocol';
 import { START } from './config';
+import { Knockout } from './knockout';
 
 export const COUNTDOWN_SECONDS = 3;
 /** After the first finisher, the others get this long before the race ends. */
@@ -52,6 +53,10 @@ export interface Racer {
   lastS: number | null;
   /** How long (s) the kart has been on a section past a skipped checkpoint. */
   offCourseTime: number;
+  /** Knockout mode: knocked out (or left the game). Such a racer no longer races; `place` is its final place. */
+  out: boolean;
+  /** Knockout mode: the lap whose end knocked this racer out (0 = it left the game). */
+  outLap: number | null;
 }
 
 export type RaceEvent =
@@ -66,6 +71,8 @@ export type RaceEvent =
   | { kind: 'photoFinish'; slots: [number, number]; gap: number }
   /** The kart skipped checkpoints (cut across): the world should put it back at its last checkpoint. */
   | { kind: 'offCourse'; slot: number }
+  /** Knockout mode: this kart is out (the world lifts it away). `place` is its final place, `lap` the lap that ended it (0 = left). */
+  | { kind: 'knockout'; slot: number; place: number; lap: number }
   | { kind: 'done' };
 
 export interface TrackInfo {
@@ -81,12 +88,20 @@ export class Race {
   readonly racers = new Map<number, Racer>();
   finishOrder: number[] = [];
   private firstFinishAt: number | null = null;
+  /** Knockout rules (null in a normal race). */
+  readonly knockout: Knockout | null;
+  /** Events produced between ticks (a player leaving); delivered with the next tick's events. */
+  private queued: RaceEvent[] = [];
+  /** Laps finished by `grantProgress` between ticks (cannon landings), for the knockout check. */
+  private lapQueue: RaceEvent[] = [];
 
   constructor(
     readonly track: TrackInfo,
     readonly totalLaps: number,
     slots: number[],
+    options: { knockout?: boolean } = {},
   ) {
+    this.knockout = options.knockout ? new Knockout(slots) : null;
     for (const slot of slots) {
       this.racers.set(slot, {
         slot,
@@ -101,6 +116,8 @@ export class Race {
         gasSince: null,
         lastS: null,
         offCourseTime: 0,
+        out: false,
+        outLap: null,
       });
     }
   }
@@ -120,19 +137,64 @@ export class Race {
     }
     r.lap++;
     r.lapStartTime = this.time;
-    if (r.lap > this.totalLaps) {
-      r.finished = true;
-      r.finishTime = this.time;
-      this.finishOrder.push(r.slot);
-      r.place = this.finishOrder.length;
-      this.firstFinishAt ??= this.time;
-      events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
-      // Photo finish: this racer crossed right behind the previous finisher.
-      const before = this.finishOrder.length >= 2 ? this.racers.get(this.finishOrder[this.finishOrder.length - 2]) : undefined;
-      if (before?.finishTime != null && this.time - before.finishTime <= START.photoFinishGap) {
-        events.push({ kind: 'photoFinish', slots: [before.slot, r.slot], gap: this.time - before.finishTime });
-      }
+    if (r.lap > this.totalLaps) this.finishRacer(r, events);
+  }
+
+  /** The racer is done: record the finish (and a photo finish when it crossed right behind the previous finisher). */
+  private finishRacer(r: Racer, events: RaceEvent[]): void {
+    r.finished = true;
+    r.finishTime = this.time;
+    this.finishOrder.push(r.slot);
+    r.place = this.finishOrder.length;
+    this.firstFinishAt ??= this.time;
+    events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
+    const before = this.finishOrder.length >= 2 ? this.racers.get(this.finishOrder[this.finishOrder.length - 2]) : undefined;
+    if (before?.finishTime != null && this.time - before.finishTime <= START.photoFinishGap) {
+      events.push({ kind: 'photoFinish', slots: [before.slot, r.slot], gap: this.time - before.finishTime });
     }
+  }
+
+  /**
+   * Knockout: after this tick's laps were counted (so every kart's distance is up to date), the first
+   * kart across the line on lap L knocks out whoever is last. The survivor wins as soon as it is alone.
+   */
+  private runKnockout(lapEvents: RaceEvent[], events: RaceEvent[]): void {
+    const ko = this.knockout;
+    if (!ko) return;
+    for (const e of lapEvents) {
+      if (e.kind !== 'lap' || e.lap >= this.totalLaps) continue; // the last lap is the finish, not a knockout
+      const contenders = [...this.racers.values()].filter((r) => !r.out && !r.finished);
+      const el = ko.round(e.lap, contenders);
+      if (el) events.push(this.markOut(el));
+    }
+    this.crownWinner(events);
+  }
+
+  /** Mark a racer as out and make the `knockout` event for it. */
+  private markOut(el: { slot: number; place: number; lap: number }): RaceEvent {
+    const r = this.racers.get(el.slot)!;
+    r.out = true;
+    r.outLap = el.lap;
+    r.place = el.place;
+    return { kind: 'knockout', slot: el.slot, place: el.place, lap: el.lap };
+  }
+
+  /** Knockout: the last kart standing finishes first (like crossing the line). */
+  private crownWinner(events: RaceEvent[]): void {
+    const w = this.knockout?.winner();
+    const r = w === null || w === undefined ? undefined : this.racers.get(w);
+    if (r && !r.finished && !r.out) this.finishRacer(r, events);
+  }
+
+  /**
+   * Knockout: a player left the game. Their kart is out right now (and the survivor wins if it is alone).
+   * The events come out with the next `tick`. Does nothing in a normal race.
+   */
+  removeRacer(slot: number): void {
+    const el = this.knockout?.drop(slot);
+    if (!el || this.racers.get(slot)?.finished) return;
+    this.queued.push(this.markOut(el));
+    this.crownWinner(this.queued);
   }
 
   /**
@@ -153,6 +215,7 @@ export class Race {
     const ahead = (target - r.next + K) % K; // 0 = the next checkpoint itself
     if (ahead > K / 2 - 1 && ahead !== 0) return events;
     for (let i = 0; i <= ahead && !r.finished; i++) this.enterSegment(r, events);
+    this.lapQueue.push(...events.filter((e) => e.kind === 'lap')); // (a cannon landing can finish a lap: Knockout sees it next tick)
     return events;
   }
 
@@ -171,7 +234,10 @@ export class Race {
    * @param positions  each kart's distance along the track (0..length)
    */
   tick(dt: number, positions: Map<number, number>, inputs: Map<number, ControlInput>): RaceEvent[] {
-    const events: RaceEvent[] = [];
+    const events: RaceEvent[] = this.queued;
+    this.queued = [];
+    const lapEvents: RaceEvent[] = this.lapQueue; // (knockout looks at them once every kart's distance is updated)
+    this.lapQueue = [];
     const prevTime = this.time;
     this.time += dt;
 
@@ -202,19 +268,23 @@ export class Race {
     const K = cps.length;
     for (const r of this.racers.values()) {
       const s = positions.get(r.slot);
-      if (s === undefined) continue;
+      if (s === undefined || r.out) continue; // a knocked-out kart stays frozen in the ranking
       if (this.phase === 'racing' && !r.finished) {
         const seg = this.segmentOf(s);
         // How many checkpoints ahead of the expected one is the kart? (0 = the expected one.)
         const ahead = (seg - r.next + K) % K;
         if (seg === r.next) {
+          const before = events.length;
           this.enterSegment(r, events);
+          for (const e of events.slice(before)) if (e.kind === 'lap') lapEvents.push(e);
           r.offCourseTime = 0;
         } else if (ahead > 0 && ahead < K / 2) {
           // Past a checkpoint it never entered. Small hop forward: credit it. Otherwise: off course.
           const jump = r.lastS === null ? Infinity : (((s - r.lastS) % L) + L) % L;
           if (jump <= SKIP_CREDIT_DISTANCE) {
-            events.push(...this.grantProgress(r.slot, s));
+            const granted = this.grantProgress(r.slot, s);
+            events.push(...granted);
+            lapEvents.push(...granted.filter((e) => e.kind === 'lap'));
             r.offCourseTime = 0;
           } else {
             r.offCourseTime += dt;
@@ -239,17 +309,24 @@ export class Race {
       if (!r.finished) r.progress = (r.lap - 1) * L + cps[cur] + into;
     }
 
+    if (this.phase === 'racing') this.runKnockout(lapEvents, events);
+
     if (this.phase === 'racing') {
-      const allDone = [...this.racers.values()].every((r) => r.finished);
+      const allDone = [...this.racers.values()].every((r) => r.finished || r.out);
       const graceOver = this.firstFinishAt !== null && this.time - this.firstFinishAt > FINISH_GRACE_SECONDS;
       if (allDone || graceOver) {
         this.phase = 'done';
-        // Anyone still racing is placed by progress.
-        for (const slot of this.standings()) {
-          const r = this.racers.get(slot)!;
-          if (r.place === null) {
-            this.finishOrder.push(slot);
-            r.place = this.finishOrder.length;
+        if (this.knockout) {
+          // Knockout: finishers first, then whoever is still in (by distance), then the knocked-out karts, last one out first.
+          this.standings().forEach((slot, i) => (this.racers.get(slot)!.place = i + 1));
+        } else {
+          // Anyone still racing is placed by progress.
+          for (const slot of this.standings()) {
+            const r = this.racers.get(slot)!;
+            if (r.place === null) {
+              this.finishOrder.push(slot);
+              r.place = this.finishOrder.length;
+            }
           }
         }
         events.push({ kind: 'done' });
@@ -258,14 +335,18 @@ export class Race {
     return events;
   }
 
-  /** Slots ordered 1st..last: finishers by finish order, then by distance raced. */
+  /**
+   * Slots ordered 1st..last: finishers by finish order, then by distance raced; in Knockout the
+   * knocked-out karts come last, the one that went out most recently first.
+   */
   standings(): number[] {
     const finished = this.finishOrder.filter((s) => this.racers.get(s)?.finished);
     const rest = [...this.racers.values()]
-      .filter((r) => !r.finished && !finished.includes(r.slot))
+      .filter((r) => !r.finished && !r.out && !finished.includes(r.slot))
       .sort((a, b) => b.progress - a.progress)
       .map((r) => r.slot);
-    return [...finished, ...rest];
+    const out = (this.knockout?.eliminated ?? []).map((e) => e.slot).reverse();
+    return [...finished, ...rest, ...out];
   }
 
   positionOf(slot: number): number {

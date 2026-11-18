@@ -55,6 +55,8 @@ export function buildResults(
   trackName: string,
   actions: ResultsActions,
   extras?: ResultsExtras,
+  /** Small title above "Results" for a plain race (e.g. "KNOCKOUT"); default "RACE COMPLETE". */
+  flag?: string,
 ): void {
   const box = document.createElement('div');
   box.className = 'results-box';
@@ -64,6 +66,7 @@ export function buildResults(
   head.innerHTML = '<div class="res-flag">RACE COMPLETE</div><h2>Results</h2><div class="res-track"></div>';
   head.querySelector('.res-track')!.textContent = trackName;
   if (extras) head.querySelector('.res-flag')!.textContent = extras.heading;
+  else if (flag) head.querySelector('.res-flag')!.textContent = flag;
   box.appendChild(head);
 
   const list = document.createElement('ol');

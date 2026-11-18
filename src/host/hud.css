@@ -288,3 +288,31 @@
 /* While the intro flyover plays, hide the per-player HUDs (they fade in afterwards). */
 .view-hud { transition: opacity 0.5s; }
 .hud-layer.intro .view-hud { opacity: 0; }
+
+/* ---- Knockout: a knocked-out kart's view greys out and shows its final place ---- */
+.view-hud.knocked-out::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 22, 30, 0.35);
+  backdrop-filter: grayscale(1) brightness(0.7);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.7);
+  animation: out-fade 0.8s ease-out both;
+  pointer-events: none;
+}
+.hud-out {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  text-shadow: 0 0.6cqh 0 rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: finish-in 0.7s cubic-bezier(0.2, 1.7, 0.4, 1) both;
+}
+.hud-out b { font-size: 16cqh; letter-spacing: 0.06em; line-height: 1; }
+.hud-out span { font-size: 6cqh; opacity: 0.9; }
+@keyframes out-fade { from { opacity: 0; } to { opacity: 1; } }

@@ -14,6 +14,7 @@ import { BotPack, DEFAULT_DIFFICULTY, type Difficulty } from '../sim/bots';
 import { ITEMS, KART, SIM_DT } from '../sim/config';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
+import { knockoutLaps } from '../sim/knockout';
 import { Track } from '../sim/track';
 import { World, type WorldEvent } from '../sim/world';
 import { TRACKS, type TrackDef } from '../track';
@@ -148,6 +149,9 @@ export class Game {
    * Nothing uses it yet: a slow-motion replay could read it (and reset it) later.
    */
   photoFinish = false;
+  // --- Knockout mode (see sim/knockout.ts) ---
+  /** Set by main.ts before `start`: play a Knockout race (more laps, the last kart is out after every lap). */
+  knockout = false;
   /** AUDIO: set by main.ts; null = silent (every use below is optional-chained). */
   audio: AudioEngine | null = null;
   private itemPool: ItemMeshPool;
@@ -212,7 +216,9 @@ export class Game {
     this.fx = new GameFx(this.scene, quality);
     this.fx.setTheme(this.track.def.theme.offroad);
     this.world = new World(this.track, this.track);
-    this.loop = new FixedStepLoop(() => this.handleEvents(this.world.tick((slot) => this.inputFor(slot))), SIM_DT);
+    this.loop = new FixedStepLoop(() => this.handleEvents([...this.world.tick((slot) => this.inputFor(slot)), ...this.bots.drainEvents()]), SIM_DT);
+    // Knockout: a player who leaves is out of the race right away.
+    this.players.onRemoved.add((slot) => this.world.race?.removeRacer(slot));
 
     this.hudLayer = document.createElement('div');
     this.hudLayer.className = 'hud-layer';
@@ -368,7 +374,9 @@ export class Game {
     this.world = new World(this.track, this.track);
     // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
     const loadouts = new Map(slots.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? DEFAULT_LOADOUT] as const));
-    this.world.startRace(slots, this.track.def.laps, loadouts);
+    // Knockout: more laps, and the sim runs the elimination rules (sim/knockout.ts).
+    const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, slots.length) : this.track.def.laps;
+    this.world.startRace(slots, laps, loadouts, { knockout: this.knockout });
     this.bots = new BotPack(this.botDifficulty, (slot) => !this.players.isBot(slot));
     this.photoFinish = false;
 
@@ -664,7 +672,7 @@ export class Game {
     t.className = 'intro-title';
     t.textContent = this.track.def.name.toUpperCase(); // textContent: never treat strings as HTML
     const sub = document.createElement('small');
-    sub.textContent = `${this.track.def.laps} laps · Space to skip`;
+    sub.textContent = `${this.world.race?.totalLaps ?? this.track.def.laps} laps${this.knockout ? ' · knockout' : ''} · Space to skip`;
     t.appendChild(sub);
     this.hudLayer.appendChild(t);
     this.introTitle = t;
@@ -815,7 +823,7 @@ export class Game {
 
   private handleEvents(events: WorldEvent[]): void {
     // AUDIO: one call turns every event into sounds (mapping lives in src/audio/mapping.ts).
-    this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.track.def.laps });
+    this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.world.race?.totalLaps ?? this.track.def.laps });
     for (const e of events) {
       this.reactFx(e);
       switch (e.kind) {
@@ -846,6 +854,16 @@ export class Game {
         case 'stall':
           this.haptic(e.slot, HAPTICS.stall);
           break;
+        // --- Knockout: the kart is carried away; its view greys out with the final place, the others see who went ---
+        case 'knockout':
+          this.haptic(e.slot, HAPTICS.respawn);
+          this.viewOf(e.slot)?.hud.knockedOut(e.place);
+          for (const v of this.views) if (v.slot !== e.slot) v.hud.showBanner(`P${e.slot + 1} OUT!`, 1.6, this.elapsed);
+          this.sendStatus();
+          break;
+        // --- end Knockout ---
+        case 'botMood':
+          break; // (driver faces can react to e.slot / e.mood here)
         case 'wall':
           if (e.impact > 6) this.haptic(e.slot, HAPTICS.wall);
           break;
@@ -858,7 +876,7 @@ export class Game {
         case 'lap': {
           this.haptic(e.slot, HAPTICS.lap);
           // Only the final lap gets a banner; the lap counter covers the rest.
-          if (e.lap + 1 === this.track.def.laps) {
+          if (e.lap + 1 === this.world.race?.totalLaps) {
             this.viewOf(e.slot)?.hud.showBanner('FINAL LAP!', 1.9, this.elapsed);
             if (!this.players.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
           }
@@ -974,10 +992,10 @@ export class Game {
         name: p?.name ?? `P${slot + 1}`,
         color: colorHex(p?.color ?? slot),
         loadoutText: `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`,
-        time: r.finished ? formatTime(r.finishTime!) : 'DNF',
+        time: this.knockout ? (r.out ? (r.outLap ? `OUT · LAP ${r.outLap}` : 'LEFT') : 'WINNER') : r.finished ? formatTime(r.finishTime!) : 'DNF',
         best: Number.isFinite(best) ? formatTime(best) : '–',
         fastest: false,
-        finished: r.finished,
+        finished: this.knockout ? !r.out : r.finished,
       };
       return { row, best };
     });
@@ -994,6 +1012,7 @@ export class Game {
       this.track.def.name,
       { raceAgain: () => this.callbacks.onRaceAgain?.(), changeTrack: () => this.callbacks.onChangeTrack?.() },
       extras,
+      this.knockout ? 'KNOCKOUT' : undefined,
     );
     this.results.classList.remove('hidden');
   }

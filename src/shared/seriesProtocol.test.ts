@@ -13,8 +13,10 @@ import {
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 
 describe('mode / track validation', () => {
-  it('accepts only the three modes', () => {
+  it('accepts only the known modes', () => {
     expect(sanitizeMode('gp')).toBe('gp');
+    expect(sanitizeMode('knockout')).toBe('knockout');
+    expect(sanitizeMode('Knockout')).toBeNull();
     expect(sanitizeMode('loser')).toBe('loser');
     expect(sanitizeMode('GP')).toBeNull();
     expect(sanitizeMode(1)).toBeNull();
@@ -30,6 +32,7 @@ describe('mode / track validation', () => {
 
   it('parseSetup keeps valid fields and drops bad ones', () => {
     expect(parseSetup({ t: 'setup', mode: 'gp', track: 2 }, 4)).toEqual({ mode: 'gp', track: 2 });
+    expect(parseSetup({ t: 'setup', mode: 'knockout', track: 1 }, 4)).toEqual({ mode: 'knockout', track: 1 });
     expect(parseSetup({ t: 'setup', mode: 'gp', track: 99 }, 4)).toEqual({ mode: 'gp' });
     expect(parseSetup({ t: 'setup', track: 1 }, 4)).toEqual({ track: 1 });
     expect(parseSetup({ t: 'setup', mode: 'x', track: -1 }, 4)).toBeNull();
