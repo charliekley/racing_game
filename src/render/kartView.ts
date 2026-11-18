@@ -18,6 +18,7 @@ import { CARRIER_HEIGHT } from '../sim/world';
 import type { ItemId } from '../sim/items/types';
 import { buildHeldItemMesh, buildNovaAura, type NovaAura } from './itemMeshes';
 import { DriverRig, type DriverInput } from './kart/driverRig';
+import { DriverFace, type FaceConditions } from './kart/expression';
 
 
 /** Shortest-path angle interpolation (handles wrap-around at ±π). */
@@ -46,6 +47,11 @@ export class KartView {
   private driftYaw = 0;
   /** Cosmetic driver animation (hands on the wheel, leaning, trick spin...). */
   readonly rig: DriverRig;
+  /**
+   * The driver's face: game events call `face.react(...)` (see `reactionsForEvent` in kart/expression.ts),
+   * `update` turns the result into morph-target weights on the head and a head turn for the rig.
+   */
+  readonly face = new DriverFace();
   /** Set true when the race is over for this kart: the driver cheers. */
   finished = false;
   // Suspension: a damped spring on the body's height, kicked by hops and landings.
@@ -58,8 +64,9 @@ export class KartView {
   private wasHopping = false;
   private trickT = -1;
   private readonly riderInput: DriverInput = {
-    steer: 0, bodyRoll: 0, accel: 0, speed01: 0, drift: 0, boosting: false, airborne: false, trick: -1, spun: false, celebrate: false,
+    steer: 0, bodyRoll: 0, accel: 0, speed01: 0, drift: 0, boosting: false, airborne: false, trick: -1, spun: false, celebrate: false, look: 0, lookSide: 1,
   };
+  private readonly faceConditions: FaceConditions = { gritted: false };
   private sparks: SparkEmitter;
   private flames: THREE.Group[] = [];
   private drone: CarrierDrone;
@@ -202,6 +209,16 @@ export class KartView {
     inp.trick = this.trickT;
     inp.spun = cur.spinTime > 0;
     inp.celebrate = this.finished;
+    // Face: expression weights go to the head's morph targets; the head turn goes to the rig.
+    // Spinning out is an event the face hears about too, but the sim state is the reliable source.
+    const face = this.face;
+    face.look.sideHint = cur.steer > 0.15 ? 1 : cur.steer < -0.15 ? -1 : face.look.sideHint; // look over the outside shoulder
+    this.faceConditions.gritted = cur.driftDir !== 0 && cur.grounded; // teeth gritted while drifting / charging
+    face.update(dt, this.faceConditions);
+    const fi = m.faceInfluences;
+    for (let i = 0; i < fi.length; i++) fi[i] = face.weights[i];
+    inp.look = face.look.amount;
+    inp.lookSide = face.look.side;
     this.rig.update(dt, inp);
 
     // Drift sparks from the rear wheels (dust while charging, then blue/orange).

@@ -13,10 +13,11 @@
 import * as THREE from 'three';
 import type { DriverLook } from '../../shared/characters';
 import { PartBuilder, SURF, capsule, lathe, mix, roundBox, roundCone, shade, sphere, sweep, type Place, type Surf, type V3 } from './geo';
+import { FACE_POSES, NEUTRAL_POSE, addFace, ellipsoidZ, type FacePose, type FaceSpec } from './face';
 
 export const ARM_LEN = 0.5;
 /** Pivot positions in driver space. */
-export const NECK: V3 = [0, 0.47, 0.0];
+export const NECK: V3 = [0, 0.44, 0.0];
 export const SHOULDER_R: V3 = [0.17, 0.4, 0.03];
 
 export interface DriverGeometries {
@@ -29,20 +30,25 @@ const EYE_WHITE = '#fbfbf6';
 const EYE_DARK = '#1b1a22';
 
 /** Small helper bundle so species code reads like a description of the character. */
-class Piece {
+export class Piece {
   readonly b = new PartBuilder();
   // Three ellipsoid qualities: big shapes (heads, bellies) need many segments to look round.
   private readonly sphBig = sphere(26, 18);
   private readonly sph = sphere(16, 12);
   private readonly sphLo = sphere(8, 6);
-  private pick(r: V3, lo: boolean) {
+  /**
+   * Sphere quality for a part. `lo` = true/'low' forces the coarse sphere, 'mid' forces the medium one
+   * (face parts use it so their vertex count never depends on the pose), otherwise it is chosen by size.
+   */
+  private pick(r: V3, lo: boolean | 'low' | 'mid') {
+    if (lo === 'mid') return this.sph;
     const m = Math.max(r[0], r[1], r[2]);
     if (m >= 0.17 && !lo) return this.sphBig;
     return lo || m < 0.06 ? this.sphLo : this.sph;
   }
 
   /** Ellipsoid at p with radii r. */
-  e(p: V3, r: V3 | number, color: string, surf: Surf = SURF.fur, rot: V3 = [0, 0, 0], lo = false): this {
+  e(p: V3, r: V3 | number, color: string, surf: Surf = SURF.fur, rot: V3 = [0, 0, 0], lo: boolean | 'low' | 'mid' = false): this {
     const radii: V3 = typeof r === 'number' ? [r, r, r] : r;
     this.b.part(this.pick(radii, lo), { p, r: rot, s: radii }, color, surf);
     return this;
@@ -107,7 +113,10 @@ type Species = DriverLook['species'];
 
 interface SpeciesBuild {
   torso: (p: Piece, c: Palette) => void;
+  /** The head WITHOUT eyes, brows and mouth (those come from `face`, so they can change shape). */
   head: (p: Piece, c: Palette) => void;
+  /** Where the eyes, brows and mouth go (see face.ts). */
+  face: (c: Palette) => FaceSpec;
   /** Arm colours: sleeve, hand. */
   arm: (c: Palette) => { sleeve: string; hand: string; glove?: boolean; surf?: Surf };
 }
@@ -147,16 +156,20 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.e(HEAD_C, [0.31, 0.28, 0.28], c.P);
-      // Cheek blush, big eyes, beak and a little tuft.
+      // Cheek blush, beak and a little tuft.
       p.ep([0.2, 0.2, 0.2], [0.06, 0.04, 0.03], '#ff9aa8', SURF.matte, [0, 0.5, 0]);
-      p.eye(0.115, 0.34, 0.235, 0.085, { pupil: 0.7 });
-      p.eye(-0.115, 0.34, 0.235, 0.085, { pupil: 0.7 });
       p.e([0, 0.26, 0.32], [0.075, 0.04, 0.09], c.S, SURF.gloss);
       p.e([0, 0.225, 0.3], [0.062, 0.028, 0.075], shade(c.S, 0.85), SURF.gloss);
       p.cone([0, 0.5, 0.02], 0.045, 0.17, c.P, [0.4, 0, 0]);
       p.cone([0.03, 0.5, 0.02], 0.04, 0.14, c.L, [0.35, 0, -0.5]);
       p.cone([-0.03, 0.5, 0.02], 0.04, 0.14, c.L, [0.35, 0, 0.5]);
     },
+    face: (c) => ({
+      eye: { x: 0.115, y: 0.34, z: 0.235, r: 0.09 },
+      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.5, lid: c.P,
+      brow: { color: c.D, maxY: 0.5, liftK: 0.6, surfZ: ellipsoidZ(HEAD_C, [0.31, 0.28, 0.28]) },
+      mouth: { y: 0.15, w: 0.06, color: shade(c.S, 0.5), inside: '#7a2a1c', surfZ: ellipsoidZ(HEAD_C, [0.31, 0.28, 0.28]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: c.S }),
   },
 
@@ -177,22 +190,19 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       // Forehead stripes and cheeks.
       for (const dx of [-0.06, 0, 0.06]) p.e([dx, 0.5, 0.15], [0.017, 0.045, 0.012], '#b4a79a', SURF.matte, [0.9, 0, dx * -3]);
       p.ep([0.2, 0.19, 0.2], [0.07, 0.045, 0.05], c.L, SURF.fur);
-      // Big green eyes with slit pupils.
-      for (const sx of [1, -1]) {
-        p.e([0.12 * sx, 0.31, 0.235], [0.075, 0.085, 0.05], EYE_WHITE, SURF.eye);
-        p.e([0.12 * sx, 0.31, 0.27], [0.058, 0.07, 0.03], '#46b86f', SURF.eye);
-        p.e([0.12 * sx, 0.31, 0.292], [0.016, 0.06, 0.014], EYE_DARK, SURF.eye);
-        p.e([0.105 * sx, 0.34, 0.305], [0.016, 0.018, 0.01], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
-      // Nose, mouth, whiskers.
+      // Nose and whiskers (the eyes and mouth come from the face).
       p.e([0, 0.255, 0.283], [0.03, 0.022, 0.02], c.S, SURF.gloss);
       p.line([[0, 0.24, 0.285], [0, 0.215, 0.285]], 0.005, '#8a7f78');
-      p.line([[-0.075, 0.2, 0.275], [-0.035, 0.2, 0.292], [0, 0.215, 0.285]], 0.005, '#8a7f78');
-      p.line([[0.075, 0.2, 0.275], [0.035, 0.2, 0.292], [0, 0.215, 0.285]], 0.005, '#8a7f78');
       for (const [dy, dz] of [[0.03, 0.04], [0, 0.0], [-0.03, -0.05]] as const) {
         p.line([[0.1, 0.22 + dy * 0.3, 0.27], [0.22, 0.22 + dy, 0.27 + dz * 0.5], [0.34, 0.22 + dy * 2, 0.22 + dz]], 0.004, '#fbfbfb', SURF.matte, true);
       }
     },
+    face: (c) => ({
+      eye: { x: 0.12, y: 0.31, z: 0.235, r: 0.077 },
+      white: EYE_WHITE, iris: '#46b86f', pupil: EYE_DARK, pupilK: 0.42, slit: 0.4, lid: c.P,
+      brow: { color: '#7a6d64', maxY: 0.47, surfZ: ellipsoidZ(HEAD_C, [0.32, 0.26, 0.26]) },
+      mouth: { y: 0.2, w: 0.07, color: '#8a7f78', inside: '#7a2a3a', surfZ: ellipsoidZ(HEAD_C, [0.32, 0.26, 0.26]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: c.P }),
   },
 
@@ -206,19 +216,19 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.e([0, 0.23, 0.03], [0.34, 0.22, 0.27], c.P);
-      // Eyes bulging up on top of the head.
-      for (const sx of [1, -1]) {
-        p.e([0.16 * sx, 0.44, 0.07], 0.115, c.P);
-        p.e([0.16 * sx, 0.47, 0.15], [0.092, 0.092, 0.07], EYE_WHITE, SURF.eye);
-        p.e([0.16 * sx, 0.465, 0.205], [0.058, 0.066, 0.03], EYE_DARK, SURF.eye);
-        p.e([0.145 * sx, 0.5, 0.225], [0.018, 0.02, 0.01], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
-      // Big smile, nostrils, cheeks, head spots.
-      p.line([[-0.2, 0.2, 0.22], [-0.1, 0.145, 0.285], [0, 0.135, 0.3], [0.1, 0.145, 0.285], [0.2, 0.2, 0.22]], 0.012, '#27543a');
+      // Eye bulges up on top of the head (the eyeball itself comes from the face).
+      for (const sx of [1, -1]) p.e([0.16 * sx, 0.44, 0.07], 0.115, c.P);
+      // Nostrils, cheeks, head spots.
       p.ep([0.06, 0.255, 0.285], [0.014, 0.01, 0.01], '#27543a', SURF.matte, [0, 0, 0], true);
       p.ep([0.22, 0.2, 0.18], [0.06, 0.04, 0.03], '#ff9fb0', SURF.matte, [0, 0.6, 0], true);
       p.ep([0.08, 0.38, 0.19], [0.035, 0.02, 0.03], c.D, SURF.fur, [0.3, 0, 0], true);
     },
+    face: (c) => ({
+      eye: { x: 0.16, y: 0.47, z: 0.15, r: 0.092 },
+      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.58, zk: 0.76, lid: c.P,
+      brow: { color: '#27543a', maxY: 0.545, liftK: 0.7, surfZ: ellipsoidZ([0.16, 0.44, 0.07], [0.115, 0.115, 0.115]) },
+      mouth: { y: 0.16, w: 0.19, color: '#27543a', inside: '#4a1a24', surfZ: ellipsoidZ([0, 0.23, 0.03], [0.34, 0.22, 0.27]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: c.S }),
   },
 
@@ -261,13 +271,7 @@ const SPECIES: Record<Species, SpeciesBuild> = {
         rim.push([x, 0.3 + y, Math.sqrt(Math.max(0, 0.34 * 0.34 - x * x - y * y))]);
       }
       p.b.part(sweep(rim, 0.016, 28, 6, true), {}, c.S, SURF.gloss);
-      // Friendly eyes visible through the visor.
-      for (const sx of [1, -1]) {
-        p.e([0.095 * sx, 0.31, 0.335], [0.05, 0.065, 0.02], '#d8f4ff', SURF.glow);
-        p.e([0.095 * sx, 0.31, 0.348], [0.027, 0.035, 0.012], '#0b1220', SURF.eye);
-        p.e([0.085 * sx, 0.33, 0.356], [0.012, 0.014, 0.008], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
-      p.line([[-0.06, 0.2, 0.34], [0, 0.185, 0.355], [0.06, 0.2, 0.34]], 0.008, '#d8f4ff', SURF.glow);
+      // (Friendly eyes, brows and a mouth are drawn on the visor by the face.)
       // Visor gloss streak.
       p.e([0.14, 0.4, 0.31], [0.07, 0.015, 0.03], '#ffffff', SURF.glow, [0.2, 0.5, -0.5], true);
       // Ear modules and a bobble antenna.
@@ -278,6 +282,15 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       p.e([0.12, 0.8, -0.16], 0.036, '#ff5a4a', SURF.glow, [0, 0, 0], true);
       // Neck seal ring.
       p.b.part(lathe([[0.15, -0.02], [0.18, -0.01], [0.18, 0.04], [0.15, 0.05]], 20), {}, c.S, SURF.gloss);
+    },
+    face: () => {
+      const visor = ellipsoidZ([0, 0.3, 0.19], [0.255, 0.21, 0.17]);
+      return {
+        eye: { x: 0.095, y: 0.31, z: 0.335, r: 0.052 },
+        white: '#d8f4ff', whiteSurf: SURF.glow, pupil: '#0b1220', pupilK: 0.52, zk: 0.4, lid: '#17284a',
+        brow: { color: '#d8f4ff', surf: SURF.glow, thick: 0.12, maxY: 0.46, surfZ: visor },
+        mouth: { y: 0.195, w: 0.06, color: '#d8f4ff', surf: SURF.glow, inside: '#0b1220', tongue: '#ff8aa0', surfZ: visor },
+      };
     },
     arm: (c) => ({ sleeve: c.P, hand: c.S, glove: true, surf: SURF.plastic }),
   },
@@ -302,13 +315,8 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.b.part(roundBox(0.52, 0.4, 0.44, 0.13), { p: [0, 0.27, 0.0] }, c.P, SURF.metal);
-      // Dark screen face with glowing eyes and mouth.
+      // Dark screen; the glowing eyes, brows and mouth are drawn on it by the face.
       p.rbox([0, 0.28, 0.185], [0.42, 0.28, 0.1], 0.06, '#0d1219', SURF.gloss);
-      for (const sx of [1, -1]) {
-        p.e([0.105 * sx, 0.32, 0.238], [0.062, 0.075, 0.012], c.S, SURF.glow);
-        p.e([0.09 * sx, 0.345, 0.246], [0.016, 0.022, 0.008], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
-      p.line([[-0.09, 0.2, 0.238], [-0.04, 0.178, 0.242], [0.04, 0.178, 0.242], [0.09, 0.2, 0.238]], 0.012, c.S, SURF.glow);
       // Ear discs, neck and antenna.
       for (const sx of [1, -1]) {
         p.b.part(lathe([[0, -0.03], [0.065, -0.03], [0.065, 0.03], [0, 0.03]], 14), { p: [0.27 * sx, 0.27, 0.0], r: [0, 0, Math.PI / 2 * -sx] }, shade(c.P, 0.7), SURF.metal);
@@ -318,6 +326,12 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       p.line([[0.0, 0.46, -0.02], [0.02, 0.58, -0.02], [0.0, 0.68, 0.0]], 0.013, '#9aa3b0', SURF.metal);
       p.e([0, 0.7, 0.0], 0.045, c.S, SURF.glow);
     },
+    face: (c) => ({
+      eye: { x: 0.105, y: 0.32, z: 0.238, r: 0.062 },
+      white: c.S, whiteSurf: SURF.glow, pupil: '#fffbd6', pupilK: 0.0001, zk: 0.2, lid: '#0d1219',
+      brow: { color: c.S, surf: SURF.glow, thick: 0.14, maxY: 0.405, surfZ: () => 0.236 },
+      mouth: { y: 0.2, w: 0.09, color: c.S, surf: SURF.glow, inside: '#0d1219', teeth: c.S, tongue: '#ff8a5a', surfZ: () => 0.24 },
+    }),
     arm: (c) => ({ sleeve: shade(c.P, 0.85), hand: c.S, surf: SURF.metal }),
   },
 
@@ -339,16 +353,14 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       p.cone([0.16, 0.43, -0.03], 0.105, 0.3, c.P, [0.05, 0, -0.32], true, SURF.fur, 0.95);
       p.cone([0.165, 0.45, 0.0], 0.062, 0.22, c.S, [0.1, 0, -0.32], true, SURF.fur, 0.95);
       p.cone([0.228, 0.635, -0.03], 0.034, 0.074, '#3a241b', [0.05, 0, -0.32], true, SURF.fur, 0.95);
-      // Sly slanted eyes with amber irises, and brows.
-      for (const sx of [1, -1]) {
-        p.e([0.115 * sx, 0.31, 0.215], [0.07, 0.075, 0.05], EYE_WHITE, SURF.eye, [0, 0, -0.35 * sx]);
-        p.e([0.12 * sx, 0.31, 0.248], [0.05, 0.06, 0.03], '#e9a21e', SURF.eye);
-        p.e([0.122 * sx, 0.31, 0.265], [0.022, 0.04, 0.015], EYE_DARK, SURF.eye);
-        p.e([0.108 * sx, 0.33, 0.275], [0.014, 0.016, 0.01], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
-      p.line([[0.05, 0.385, 0.23], [0.12, 0.395, 0.235], [0.2, 0.35, 0.2]], 0.01, '#3a241b', SURF.matte, true);
-      p.line([[-0.05, 0.205, 0.405], [0.0, 0.17, 0.41], [0.05, 0.205, 0.405]], 0.006, '#3a241b');
+      // (Sly slanted eyes with amber irises, brows and the mouth come from the face.)
     },
+    face: () => ({
+      eye: { x: 0.115, y: 0.31, z: 0.215, r: 0.07 },
+      white: EYE_WHITE, iris: '#e9a21e', pupil: EYE_DARK, pupilK: 0.4, slit: 0.55, slant: -0.35, lid: '#e8742c',
+      brow: { color: '#3a241b', maxY: 0.46, surfZ: ellipsoidZ(HEAD_C, [0.31, 0.25, 0.25]) },
+      mouth: { y: 0.185, w: 0.065, color: '#3a241b', inside: '#5a1c1c', surfZ: ellipsoidZ([0, 0.2, 0.25], [0.11, 0.085, 0.16]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: '#4a3026' }),
   },
 
@@ -366,16 +378,15 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       // Muzzle, nose, mouth.
       p.e([0, 0.2, 0.28], [0.15, 0.115, 0.1], c.S, SURF.fur);
       p.e([0, 0.255, 0.365], [0.055, 0.036, 0.03], '#241713', SURF.gloss);
-      p.line([[0, 0.235, 0.37], [0, 0.2, 0.375]], 0.007, '#241713');
-      p.line([[-0.07, 0.17, 0.35], [-0.03, 0.155, 0.37], [0, 0.2, 0.375]], 0.007, '#241713');
-      p.line([[0.07, 0.17, 0.35], [0.03, 0.155, 0.37], [0, 0.2, 0.375]], 0.007, '#241713');
-      // Small bright eyes and thick brows.
-      for (const sx of [1, -1]) {
-        p.e([0.125 * sx, 0.34, 0.27], [0.052, 0.058, 0.04], '#1a1514', SURF.eye);
-        p.e([0.112 * sx, 0.358, 0.305], [0.016, 0.018, 0.01], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
+      // (Small eyes, thick brows and the mouth come from the face.)
       p.ep([0.22, 0.2, 0.22], [0.06, 0.04, 0.03], '#e58f8f', SURF.matte, [0, 0.6, 0], true);
     },
+    face: (c) => ({
+      eye: { x: 0.125, y: 0.34, z: 0.262, r: 0.062 },
+      white: EYE_WHITE, pupil: '#1a1514', pupilK: 0.62, lid: c.P,
+      brow: { color: '#2a1b15', thick: 0.26, maxY: 0.5, surfZ: ellipsoidZ(HEAD_C, [0.34, 0.3, 0.3]) },
+      mouth: { y: 0.165, w: 0.07, color: '#241713', inside: '#4a1a1a', surfZ: ellipsoidZ([0, 0.2, 0.28], [0.15, 0.115, 0.1]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: c.D }),
   },
 
@@ -395,22 +406,19 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       // Long snout with nostrils, lighter jaw, smile and a few teeth.
       p.e([0, 0.2, 0.3], [0.17, 0.12, 0.2], c.P);
       p.e([0, 0.13, 0.31], [0.15, 0.06, 0.18], c.S, SURF.fur);
-      p.line([[-0.13, 0.17, 0.3], [-0.06, 0.15, 0.44], [0.06, 0.15, 0.44], [0.13, 0.17, 0.3]], 0.008, '#1f3d34');
       p.ep([0.05, 0.275, 0.46], [0.016, 0.012, 0.012], '#1f3d34', SURF.matte, [0, 0, 0], true);
-      for (const x of [-0.07, 0.07]) p.cone([x, 0.16, 0.455], 0.014, 0.035, '#ffffff', [Math.PI, 0, 0], false, SURF.gloss);
-      // Brows, big yellow eyes.
-      for (const sx of [1, -1]) {
-        p.e([0.13 * sx, 0.425, 0.2], [0.07, 0.022, 0.06], c.D, SURF.fur, [0.2, 0, 0.12 * sx], true);
-        p.e([0.125 * sx, 0.365, 0.2], [0.075, 0.08, 0.06], EYE_WHITE, SURF.eye);
-        p.e([0.126 * sx, 0.365, 0.246], [0.05, 0.058, 0.03], '#e8c326', SURF.eye);
-        p.e([0.127 * sx, 0.365, 0.272], [0.016, 0.044, 0.012], EYE_DARK, SURF.eye);
-        p.e([0.113 * sx, 0.385, 0.282], [0.015, 0.017, 0.01], '#ffffff', SURF.glow, [0, 0, 0], true);
-      }
+      // (Brows, big yellow eyes and the mouth come from the face.)
       // Crest of rounded spikes down the back of the head.
       p.cone([0, 0.5, 0.1], 0.05, 0.12, c.S, [-0.4, 0, 0]);
       p.cone([0, 0.5, -0.02], 0.055, 0.14, c.S, [-0.7, 0, 0]);
       p.cone([0, 0.44, -0.14], 0.05, 0.12, c.S, [-1.0, 0, 0]);
     },
+    face: (c) => ({
+      eye: { x: 0.125, y: 0.365, z: 0.2, r: 0.077 },
+      white: EYE_WHITE, iris: '#e8c326', pupil: EYE_DARK, pupilK: 0.42, slit: 0.4, lid: c.P,
+      brow: { color: c.D, thick: 0.22, maxY: 0.52, surfZ: ellipsoidZ(HEAD_C, [0.28, 0.25, 0.27]) },
+      mouth: { y: 0.165, w: 0.115, color: '#1f3d34', inside: '#4a1a24', surfZ: ellipsoidZ([0, 0.2, 0.3], [0.17, 0.12, 0.2]) },
+    }),
     arm: (c) => ({ sleeve: c.P, hand: c.P }),
   },
 };
@@ -431,15 +439,53 @@ function buildArm(sleeve: string, hand: string, surf: Surf, glove: boolean): THR
   return p.build();
 }
 
+/**
+ * How much bigger than the plain model each species' head is drawn (chunky cartoon proportions, so faces
+ * stay readable from the chase camera and in 4-way split screen). The model scales the head pivot by this.
+ */
+export const HEAD_SCALE: Record<Species, number> = {
+  chick: 1.42, cat: 1.4, frog: 1.32, astronaut: 1.2, robot: 1.24, fox: 1.4, bear: 1.34, dino: 1.34,
+};
+
+/**
+ * The head is built once per face pose with identical parts, so vertex N is the same point in every copy.
+ * The neutral copy is the mesh; the others are stored as morph targets (differences to neutral), in the order
+ * of FACE_POSES (see face.ts and expression.ts).
+ */
+function buildHead(def: SpeciesBuild, c: Palette): THREE.BufferGeometry {
+  const spec = def.face(c);
+  const make = (f: FacePose): THREE.BufferGeometry => {
+    const piece = new Piece();
+    def.head(piece, c);
+    addFace(piece, spec, f);
+    return piece.build();
+  };
+  const head = make(NEUTRAL_POSE);
+  const base = head.getAttribute('position');
+  const targets = FACE_POSES.map((f) => {
+    const g = make(f);
+    const pos = g.getAttribute('position');
+    if (pos.count !== base.count) throw new Error(`face pose changed the vertex count (${pos.count} vs ${base.count})`);
+    const delta = new Float32Array(base.count * 3);
+    for (let i = 0; i < delta.length; i++) delta[i] = (pos.array as Float32Array)[i] - (base.array as Float32Array)[i];
+    g.dispose();
+    return new THREE.Float32BufferAttribute(delta, 3);
+  });
+  head.morphAttributes.position = targets;
+  head.morphTargetsRelative = true;
+  // Faces may stick out a little in some poses: keep the culling sphere generous.
+  head.computeBoundingSphere();
+  if (head.boundingSphere) head.boundingSphere.radius += 0.08;
+  return head;
+}
+
 export function buildDriverGeometries(look: DriverLook): DriverGeometries {
   const def = SPECIES[look.species];
   const c: Palette = { P: look.primary, S: look.secondary, D: shade(look.primary, 0.68), L: mix(look.primary, '#ffffff', 0.4) };
   const torso = new Piece();
   def.torso(torso, c);
-  const head = new Piece();
-  def.head(head, c);
   const a = def.arm(c);
-  return { torso: torso.build(), head: head.build(), arm: buildArm(a.sleeve, a.hand, a.surf ?? SURF.fur, !!a.glove) };
+  return { torso: torso.build(), head: buildHead(def, c), arm: buildArm(a.sleeve, a.hand, a.surf ?? SURF.fur, !!a.glove) };
 }
 
 // Unused helper imports kept for quick iteration.

@@ -8,7 +8,7 @@
  * materials), the Low quality build, and demo poses for the driver animation.
  *
  * URL parameters (handy for screenshots): ?body=1&driver=3&colour=2&cam=front|side|three|back|top
- *   &focus=kart|driver&pose=drive|idle|left|right|drift|boost|trick|spin|cheer&env=1&low=1&spin=0&labels=0&markers=1
+ *   &focus=kart|driver&pose=drive|idle|left|right|drift|boost|trick|spin|cheer|look&face=neutral|auto|happy|shocked|dizzy|gritted|smug|despair|angry|celebrate&env=1&low=1&spin=0&labels=0&markers=1
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -17,6 +17,7 @@ import { KART_COLORS } from '../shared/colors';
 import { CHARACTERS } from '../shared/characters';
 import { KART_STYLES, buildKartModel, kartTriangleCount, type KartModel } from '../render/kartModel';
 import { DriverRig, IDLE_INPUT, type DriverInput } from '../render/kart/driverRig';
+import { DriverFace, EXPRESSIONS } from '../render/kart/expression';
 
 const COL_SPACING = 3.4;
 const ROW_SPACING = 3.3;
@@ -37,6 +38,7 @@ const state = {
   labels: params.get('labels') !== '0',
   markers: params.get('markers') === '1',
   pose: params.get('pose') ?? 'drive',
+  face: params.get('face') ?? 'neutral', // neutral | auto (cycles through all) | an expression name
   cam: params.get('cam') ?? 'three',
   focus: params.get('focus') ?? 'kart',
   dist: Number(params.get('dist') ?? 0),
@@ -86,6 +88,7 @@ controls.maxPolarAngle = Math.PI * 0.495;
 interface Slot {
   model: KartModel;
   rig: DriverRig;
+  face: DriverFace;
   turntable: THREE.Group;
   markers: THREE.Object3D[];
   label: HTMLElement;
@@ -156,7 +159,7 @@ function buildKarts(): void {
       labelLayer.appendChild(label);
 
       scene.add(turntable);
-      slots.push({ model, rig: new DriverRig(model), turntable, markers, label, anchor: new THREE.Vector3(colX(i), 2.0, rowZ(j)), phase: (i + j * 2) * 0.7 });
+      slots.push({ model, rig: new DriverRig(model), face: new DriverFace(), turntable, markers, label, anchor: new THREE.Vector3(colX(i), 2.0, rowZ(j)), phase: (i + j * 2) * 0.7 });
     });
   });
   applyCamPreset(false);
@@ -257,9 +260,15 @@ fillSelect(
 );
 fillSelect(
   'pose',
-  ['drive', 'idle', 'left', 'right', 'drift', 'boost', 'trick', 'spin', 'cheer'].map((p): [string, string] => [p, `Pose: ${p}`]),
+  ['drive', 'idle', 'left', 'right', 'drift', 'boost', 'trick', 'spin', 'cheer', 'look'].map((p): [string, string] => [p, `Pose: ${p}`]),
   state.pose,
   (v) => (state.pose = v),
+);
+fillSelect(
+  'face',
+  ['neutral', 'auto', ...EXPRESSIONS].map((p): [string, string] => [p, `Face: ${p}`]),
+  state.face,
+  (v) => (state.face = v),
 );
 fillSelect('focus', [['kart', 'Frame: kart'], ['driver', 'Frame: driver']], state.focus, (v) => {
   state.focus = v;
@@ -327,6 +336,10 @@ function poseInput(pose: string, t: number, dt: number): DriverInput {
     case 'cheer':
       input.celebrate = true;
       break;
+    case 'look': // glance over the left shoulder (what the face system does on tricks and hits)
+      input.look = 1;
+      input.lookSide = 1;
+      break;
     default:
       break;
   }
@@ -350,6 +363,11 @@ function frame(dtIn: number): void {
     for (const w of s.model.wheels) w.rotation.x += dt * 4;
     for (const p of s.model.frontPivots) p.rotation.y = -inp.steer * 0.45;
     s.model.body.rotation.z = inp.bodyRoll;
+    // Face: keep the chosen expression alive ('auto' cycles through all of them, 1.5 s each).
+    const want = state.face === 'auto' ? (['neutral', ...EXPRESSIONS] as const)[Math.floor((t + s.phase) / 1.5) % (EXPRESSIONS.length + 1)] : state.face;
+    if (want !== 'neutral' && (EXPRESSIONS as readonly string[]).includes(want)) s.face.react({ expr: want as (typeof EXPRESSIONS)[number], duration: 0.3 });
+    s.face.update(dt, { gritted: false });
+    for (let i = 0; i < s.model.faceInfluences.length; i++) s.model.faceInfluences[i] = s.face.weights[i];
     s.rig.update(dt, inp);
   }
   controls.update();

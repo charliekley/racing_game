@@ -253,9 +253,9 @@ export const BOTS = {
 
 /** Camera feel (render-only, doesn't affect the sim). */
 export const CAMERA = {
-  /** Behind and above the kart (m): close and low, so the kart and driver fill the view. */
-  distance: 5.0,
-  height: 2.2,
+  /** Behind and above the kart (m): close and low, so the driver's head and face are in frame (was 5.0 / 2.2). */
+  distance: 3.9,
+  height: 1.75,
   /** How far ahead of the kart the camera looks (m). */
   lookAhead: 4,
   /** Extra sideways look into turns (m per rad/s of yaw rate). */
@@ -268,7 +268,7 @@ export const CAMERA = {
    */
   lagLead: 0.55,
   /** Extra distance at top speed, as a share of `distance` (the "speed zoom-out"). */
-  speedPull: 0.1,
+  speedPull: 0.07,
   fovBase: 68,
   /** Extra FOV at top speed (deg) – boosts later push past this. */
   fovSpeedBonus: 8,
@@ -276,7 +276,7 @@ export const CAMERA = {
   // --- Game-feel camera work (render only; tuned by eye) ---
   /** Extra FOV (deg) and extra distance (m) while boosting: the "kick". */
   fovBoost: 12,
-  boostPull: 0.9,
+  boostPull: 0.6,
   /** Extra FOV (deg) and distance (m) while airborne high above the ground (big jumps). */
   fovAir: 9,
   airPull: 1.4,

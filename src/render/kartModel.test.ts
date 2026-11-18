@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { CHARACTERS } from '../shared/characters';
 import { KART_STYLES, buildKartModel, kartTriangleCount } from './kartModel';
+import { TARGET_COUNT } from './kart/expression';
 
 function countMeshes(o: THREE.Object3D): number {
   let n = 0;
@@ -83,5 +84,52 @@ describe('buildKartModel', () => {
   it('wraps out-of-range style indices', () => {
     expect(buildKartModel('#fff', KART_STYLES.length).style).toBe(0);
     expect(buildKartModel('#fff', -1).style).toBe(KART_STYLES.length - 1);
+  });
+});
+
+describe('driver faces', () => {
+  const visibleMeshes = (m: ReturnType<typeof buildKartModel>) => {
+    let n = 0;
+    m.root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && mesh.visible && mesh.geometry.getAttribute('position')?.count) n++;
+    });
+    return n;
+  };
+
+  it('every driver has a chunky head and one morph target per face pose (and no extra draw calls)', () => {
+    for (let c = 0; c < CHARACTERS.length; c++) {
+      const m = buildKartModel('#3a86ff', 0, c);
+      expect(m.head.scale.x).toBeGreaterThan(1.15); // noticeably bigger than the plain model
+      expect(m.faceInfluences).toHaveLength(TARGET_COUNT);
+      const head = m.head.children[0] as THREE.Mesh;
+      expect(head.geometry.morphAttributes.position).toHaveLength(TARGET_COUNT);
+      expect(head.geometry.morphAttributes.position![0].count).toBe(head.geometry.getAttribute('position').count);
+      expect(countMeshes(m.root)).toBeLessThanOrEqual(13); // same budget as before the faces
+    }
+  });
+
+  it('keeps morph targets on the reduced tier and the same visible mesh counts per tier', () => {
+    const m = buildKartModel('#3a86ff', 0, 1);
+    m.bakeFarModel();
+    const head = m.head.children[0] as THREE.Mesh;
+    m.setLod(1);
+    expect(head.geometry.morphAttributes.position).toHaveLength(TARGET_COUNT);
+    const mid = visibleMeshes(m);
+    m.setLod(0);
+    const full = visibleMeshes(m);
+    m.setLod(2);
+    const far = visibleMeshes(m);
+    expect(full).toBeLessThanOrEqual(13);
+    expect(mid).toBeLessThanOrEqual(13);
+    // Far tier: paint + accent + ONE merged mesh holding wheels, driver, head (frozen neutral face).
+    expect(far).toBeLessThanOrEqual(4);
+    expect(far).toBeLessThan(mid);
+  });
+
+  it('the face poses all keep the vertex count (a mismatch would throw while building)', () => {
+    for (let c = 0; c < CHARACTERS.length; c++) {
+      for (const d of ['high', 'mid', 'low', 'far'] as const) expect(() => buildKartModel('#fff', 0, c, d)).not.toThrow();
+    }
   });
 });
