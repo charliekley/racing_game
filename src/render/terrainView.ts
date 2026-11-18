@@ -46,6 +46,12 @@ const PATH_DIP = 0.7;
 /** Edge length (m) of the culling tiles the ground and the rock walls are cut into (see env/tiles.ts). */
 const TERRAIN_TILE = 300;
 const WALL_TILE = 200;
+/**
+ * Medium/Low use bigger tiles: the grid is coarse there, so a tile holds few triangles and the draw CALL is what
+ * costs (CPU work in the browser), not the triangles. Bigger tiles = fewer calls, a little less culling.
+ */
+const CHEAP_TERRAIN_TILE = 520;
+const CHEAP_WALL_TILE = 360;
 
 interface V3 {
   x: number;
@@ -228,11 +234,46 @@ export class TerrainView {
       this.stats.faceTriangles = (mesh.geometry.getIndex()!.count / 3) | 0;
       // The rock walls hang DOWN from the ground edge into the void, so they shade nothing worth a shadow draw
       // (they used to cast, which cost 50-120k triangles in every shadow pass): receive only.
-      const tiles = tiledGroup(mesh.geometry, mesh.material as THREE.Material, WALL_TILE, false, true);
+      const tiles = tiledGroup(mesh.geometry, mesh.material as THREE.Material, envQuality.cheap ? CHEAP_WALL_TILE : WALL_TILE, false, true);
       this.group.add(tiles);
       this.stats.meshes += tiles.children.length;
     }
     this.buildFloorAndLakes();
+  }
+
+  /** Culling data of one ground/rock tile (centre + radius of its bounding sphere). */
+  private tiles: { mesh: THREE.Mesh; cx: number; cy: number; cz: number; r: number }[] | null = null;
+  private readonly fwd = new THREE.Vector3();
+
+  /**
+   * PERF: hide the ground tiles that lie completely beyond the fog's far distance, for the camera that is
+   * about to draw. Past that distance the fog is 100% opaque, so those tiles would only paint the fog colour
+   * (which is also what the sky shows there): drawing them costs draw calls and triangles for nothing.
+   * Three.js fog works on the depth along the view direction, so we compare that depth too (a tile far to the
+   * side is only skipped when it is also outside the picture). Call before every renderView().
+   */
+  cullToFog(camera: THREE.Camera, fogFar: number): void {
+    if (!this.tiles) {
+      this.tiles = [];
+      for (const g of this.group.children) {
+        if (!g.userData.tiles) continue;
+        for (const m of g.children as THREE.Mesh[]) {
+          const s = m.geometry.boundingSphere;
+          if (s) this.tiles.push({ mesh: m, cx: s.center.x, cy: s.center.y, cz: s.center.z, r: s.radius });
+        }
+      }
+    }
+    const f = camera.getWorldDirection(this.fwd);
+    const p = camera.position;
+    for (const t of this.tiles) {
+      const depth = (t.cx - p.x) * f.x + (t.cy - p.y) * f.y + (t.cz - p.z) * f.z;
+      t.mesh.visible = depth - t.r < fogFar;
+    }
+  }
+
+  /** Show every tile again (for cameras that do not use the fog cull, e.g. the lobby picture). */
+  showAllTiles(): void {
+    if (this.tiles) for (const t of this.tiles) t.mesh.visible = true;
   }
 
   /** The old look: one flat grass plane (tracks without a terrain def). */
@@ -480,7 +521,7 @@ export class TerrainView {
     geo.computeVertexNormals(); // shared vertices -> smooth shading, no facets
     // One mesh per ~300 m tile instead of one huge mesh: tiles outside the camera view (or outside the
     // shadow box) are skipped, which cuts the terrain triangles per view to a fraction.
-    const tiles = tiledGroup(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }), TERRAIN_TILE, false, true);
+    const tiles = tiledGroup(geo, groundMaterial({ maps: grassMaps('#e4e4e4'), mottle: 0.32, speckle: 0.1 }), envQuality.cheap ? CHEAP_TERRAIN_TILE : TERRAIN_TILE, false, true);
     this.group.add(tiles);
     this.stats.terrainTriangles = index.length / 3;
     this.stats.meshes += tiles.children.length;

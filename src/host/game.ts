@@ -29,7 +29,7 @@ import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, build
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
 import { HazardViews } from '../render/hazards';
-import { Minimap } from '../render/minimap';
+import { Minimap, type MapDot } from '../render/minimap';
 import {
   applyRendererQuality,
   applyTheme,
@@ -46,7 +46,8 @@ import { envQuality } from '../render/env/batch';
 import { TrackView } from '../render/trackView';
 import { disposeObject } from '../render/dispose';
 import type { PlayerManager } from './playerManager';
-import { ViewHud } from './viewHud';
+import { ViewHud, type HudState } from './viewHud';
+import type { ItemDisplay } from '../shared/protocol';
 // AUDIO: sound engine (src/audio). Created in main.ts and handed over via `game.audio`.
 import { musicForTrack, panForRect, type AudioEngine, type KartAudioState } from '../audio';
 
@@ -166,6 +167,17 @@ export class Game {
   /** Scratch vectors reused every frame (creating objects in the render loop makes the garbage collector hitch). */
   private readonly sizeScratch = new THREE.Vector2();
   private readonly dirScratch = new THREE.Vector3();
+  // PERF block: reusable containers for the per-frame lists below (see frame()), so the render loop allocates (almost) nothing.
+  private readonly focusScratch: { x: number; z: number }[] = [];
+  private readonly audioScratch: KartAudioState[] = [];
+  private readonly dotScratch: MapDot[] = [];
+  private readonly hudScratch: HudState = {
+    position: 1, racers: 1, lap: 1, laps: 1, time: '', speedKmh: 0, boosting: false,
+    item: { kind: 'none' } as ItemDisplay, driftCharge: 0, driftTier: 0, drifting: false, speedFx: 0,
+  };
+  /** Ground height lookup for the camera; one function for all views (`groundIndex` = the kart being followed). */
+  private groundIndex = 0;
+  private readonly groundHeight = (x: number, z: number): number | null => this.track.sample(x, z, this.groundIndex)?.height ?? null;
   /** Launch cannons of the current track (rebuilt for every race). */
   private cannonView: CannonView | null = null;
   /** Track hazards (lava geysers...) of the current track, rebuilt for every race. */
@@ -233,7 +245,7 @@ export class Game {
     this.pipeline.setTheme(def.theme); // bloom / colour grade follow the track too
     this.scene.remove(this.trackView.group);
     disposeObject(this.trackView.group);
-    this.minimap.canvas.remove();
+    this.minimap.dispose();
     this.cannonView?.dispose(this.scene);
     this.cannonView = null;
     this.hazardViews?.dispose();
@@ -315,6 +327,14 @@ export class Game {
     this.pipeline.compileAsync(this.scene, camera).then(done, done);
   }
 
+  /** PERF: hide the terrain tiles and scenery chunks that are beyond the fog distance for this camera (see TerrainView.cullToFog, env/fogCull.ts). */
+  private cullTerrain(camera: THREE.Camera): void {
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (!fog) return;
+    this.trackView.terrainView.cullToFog(camera, fog.far);
+    this.trackView.sceneryCull.cull(camera, fog.far);
+  }
+
   /**
    * Before drawing viewport `view`: give every kart the model detail that suits its distance from this
    * camera. The kart you follow is always full detail; other karts drop to the reduced and then the far
@@ -324,17 +344,18 @@ export class Game {
     const n = this.views.length;
     const near = n === 1 ? 16 : n === 2 ? 10 : 0; // full detail up to here
     const mid = n === 1 ? 40 : n === 2 ? 28 : 9; // reduced detail up to here, far model beyond
+    const lean = n >= 3; // PERF: in 3-4 way split even the full-detail kart only casts its body and torso shadow
     const cam = view.chase.camera.position;
     for (const other of this.views) {
       if (other === view) {
-        other.kart.setLod(0);
+        other.kart.setLod(0, lean);
         continue;
       }
       const dx = other.kart.pose.x - cam.x;
       const dy = other.kart.pose.y - cam.y;
       const dz = other.kart.pose.z - cam.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      other.kart.setLod(d2 < near * near ? 0 : d2 < mid * mid ? 1 : 2);
+      other.kart.setLod(d2 < near * near ? 0 : d2 < mid * mid ? 1 : 2, lean);
     }
   }
 
@@ -492,28 +513,35 @@ export class Game {
     // Same idea as the kart interpolation above, and it keeps the lava exactly in step with the sim.
     // The kart positions only tell the views which geysers are near a camera (particles are skipped far away).
     if (this.hazardViews) {
-      this.hazardViews.update(race.time - (1 - alpha) * SIM_DT, this.views.map((v) => v.kart.pose));
+      const focus = this.focusScratch; // reused array: no allocation per frame
+      focus.length = 0;
+      for (const v of this.views) focus.push(v.kart.pose);
+      this.hazardViews.update(race.time - (1 - alpha) * SIM_DT, focus);
     }
 
     // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
     if (this.audio) {
-      this.audio.update(
-        dt,
-        this.views.map((v): KartAudioState => {
-          const k = this.world.karts.get(v.slot)!;
-          return {
-            slot: v.slot,
-            human: !this.players.isBot(v.slot),
-            speed: k.speed,
-            boosting: k.boostTime > 0,
-            grounded: k.grounded,
-            drift: k.driftDir !== 0 ? 1 + k.driftTier : 0,
-            silent: !!k.flight || k.respawnTime > 0,
-            rolling: (items.states.get(v.slot)?.roulette ?? 0) > 0,
-            pan: panForRect(v.rect),
-          };
-        }),
-      );
+      // PERF: the state objects are reused every frame (one per view) instead of building new ones.
+      const states = this.audioScratch;
+      while (states.length < this.views.length) {
+        states.push({ slot: 0, human: false, speed: 0, boosting: false, grounded: true, drift: 0, silent: false, rolling: false, pan: 0 });
+      }
+      states.length = this.views.length;
+      for (let i = 0; i < this.views.length; i++) {
+        const v = this.views[i];
+        const k = this.world.karts.get(v.slot)!;
+        const st = states[i];
+        st.slot = v.slot;
+        st.human = !this.players.isBot(v.slot);
+        st.speed = k.speed;
+        st.boosting = k.boostTime > 0;
+        st.grounded = k.grounded;
+        st.drift = k.driftDir !== 0 ? 1 + k.driftTier : 0;
+        st.silent = !!k.flight || k.respawnTime > 0;
+        st.rolling = (items.states.get(v.slot)?.roulette ?? 0) > 0;
+        st.pan = panForRect(v.rect);
+      }
+      this.audio.update(dt, states);
     }
 
     // Render: shadow map once, then the scene once per viewport.
@@ -532,7 +560,8 @@ export class Game {
       if (solo) {
         const v = this.views[0];
         const k = this.world.karts.get(v.slot)!;
-        v.chase.update(v.kart.pose, dt, this.camState, (x, z) => this.track.sample(x, z, k.trackIndex)?.height ?? null);
+        this.groundIndex = k.trackIndex;
+        v.chase.update(v.kart.pose, dt, this.camState, this.groundHeight);
       }
       cam.aspect = r.w / Math.max(1, r.h);
       cam.updateProjectionMatrix();
@@ -541,6 +570,7 @@ export class Game {
       const fwd = cam.getWorldDirection(this.dirScratch);
       followWithSun(this.sun, cam.position.x + fwd.x * 30, cam.position.z + fwd.z * 30, this.quality.shadowRadius + 20);
       this.renderer.shadowMap.needsUpdate = true;
+      this.cullTerrain(cam);
       this.fx.beginView(cam, r.h * this.renderer.getPixelRatio());
       this.pipeline.renderView(this.scene, cam, r.x, r.y, r.w, r.h);
     }
@@ -548,7 +578,8 @@ export class Game {
       const kart = this.world.karts.get(v.slot)!;
       const r = toViewport(v.rect, size.x, size.y);
       v.chase.setAspect(r.w / Math.max(1, r.h));
-      const ground = (x: number, z: number) => this.track.sample(x, z, kart.trackIndex)?.height ?? null;
+      this.groundIndex = kart.trackIndex;
+      const ground = this.groundHeight;
       const racer = race.racers.get(v.slot)!;
       // Tell the camera what the kart is doing: it kicks the FOV, widens in the air, orbits at the finish...
       const cs = this.camState;
@@ -565,37 +596,40 @@ export class Game {
         this.renderer.shadowMap.needsUpdate = true;
       }
       this.applyKartLods(v);
+      this.cullTerrain(v.chase.camera); // PERF: skip ground tiles that are completely fogged out
       this.applyBoxRange(v);
       this.fx.beginView(v.chase.camera, r.h * this.renderer.getPixelRatio()); // particle sizes depend on camera + viewport
       this.pipeline.renderView(this.scene, v.chase.camera, r.x, r.y, r.w, r.h);
 
-      v.hud.update(
-        {
-          position: racer.place ?? race.positionOf(v.slot),
-          racers: race.racers.size,
-          lap: Math.min(race.totalLaps, Math.max(1, racer.lap)),
-          laps: race.totalLaps,
-          time: formatTime(Math.max(0, racer.finishTime ?? race.time)),
-          speedKmh: Math.round(Math.abs(v.kart.pose.speed) * 3.6),
-          boosting: kart.boostTime > 0,
-          item: items.displayFor(v.slot),
-          driftCharge: kart.driftCharge / KART.driftTier2,
-          driftTier: kart.driftTier,
-          drifting: kart.driftDir !== 0 && kart.grounded,
-          speedFx: v.chase.speedFx,
-        },
-        this.elapsed,
-      );
+      // PERF: one HudState object is refilled for every view instead of building a new literal per view per frame.
+      const hs = this.hudScratch;
+      hs.position = racer.place ?? race.positionOf(v.slot);
+      hs.racers = race.racers.size;
+      hs.lap = Math.min(race.totalLaps, Math.max(1, racer.lap));
+      hs.laps = race.totalLaps;
+      hs.time = formatTime(Math.max(0, racer.finishTime ?? race.time));
+      hs.speedKmh = Math.round(Math.abs(v.kart.pose.speed) * 3.6);
+      hs.boosting = kart.boostTime > 0;
+      hs.item = items.displayFor(v.slot);
+      hs.driftCharge = kart.driftCharge / KART.driftTier2;
+      hs.driftTier = kart.driftTier;
+      hs.drifting = kart.driftDir !== 0 && kart.grounded;
+      hs.speedFx = v.chase.speedFx;
+      v.hud.update(hs, this.elapsed);
     }
     this.pipeline.endFrame(); // bloom + colour grade + tone mapping, once for all viewports
 
-    this.minimap.draw(
-      race.standings().map((slot) => {
+    // PERF: the dots go into a reused array; the minimap itself only redraws at 30 Hz.
+    if (this.minimap.due()) {
+      const dots = this.dotScratch;
+      dots.length = 0;
+      for (const slot of race.standings()) {
         const v = this.views.find((x) => x.slot === slot)!;
         const p = this.players.slots.slots[slot];
-        return { x: v.kart.pose.x, z: v.kart.pose.z, color: colorHex(p?.color ?? slot), label: `P${slot + 1}` };
-      }),
-    );
+        dots.push({ x: v.kart.pose.x, z: v.kart.pose.z, color: colorHex(p?.color ?? slot), label: `P${slot + 1}` });
+      }
+      this.minimap.draw(dots);
+    }
 
     // Phone minimap: everyone's position ~8x per second.
     this.mapTimer += dt;

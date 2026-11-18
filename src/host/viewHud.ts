@@ -58,7 +58,17 @@ export class ViewHud {
   private ink: InkOverlay;
   private toastUntil = 0;
   private bannerUntil = 0;
-  private last = '';
+  // PERF: one cached value per DOM write, so a field is only touched when ITS value changes
+  // (the old single key included the race time, which changes every frame, so lap and speed were rewritten every frame).
+  private lapNum!: HTMLElement;
+  private lapTotal!: Text;
+  private speedNum!: HTMLElement;
+  private lastShownPos = -1;
+  private lastShownLap = -1;
+  private lastLaps = -1;
+  private lastTime = '';
+  private lastSpeed = -1;
+  private lastBoost = false;
   private lastPos = 0;
   private lastLap = 0;
   private lastFx = -1;
@@ -87,6 +97,14 @@ export class ViewHud {
     this.lap = q('.hud-lap');
     this.time = q('.hud-time');
     this.speed = q('.hud-speed');
+    // Fixed structure built once: "LAP <b>n</b>/total" and "<b>n</b><span>km/h</span>"; updates only set text.
+    this.lapNum = document.createElement('b');
+    this.lapTotal = document.createTextNode('');
+    this.lap.append('LAP ', this.lapNum, this.lapTotal);
+    this.speedNum = document.createElement('b');
+    const unit = document.createElement('span');
+    unit.textContent = 'km/h';
+    this.speed.append(this.speedNum, unit);
     this.center = q('.hud-center');
     this.banner = q('.hud-banner');
     this.flashEl = q('.hud-flash');
@@ -120,16 +138,31 @@ export class ViewHud {
 
   update(s: HudState, now: number): void {
     // Only touch the DOM when something visible changed (cheap with 4 HUDs at 60 fps).
-    const key = `${s.position}|${s.lap}|${s.time}|${s.speedKmh}|${s.boosting}`;
-    if (key !== this.last) {
-      this.last = key;
+    if (s.position !== this.lastShownPos) {
+      this.lastShownPos = s.position;
       this.pos.textContent = String(s.position);
       this.posSuffix.textContent = ordinalSuffix(s.position);
-      this.lap.innerHTML = `LAP <b>${s.lap}</b>/${s.laps}`;
+    }
+    if (s.lap !== this.lastShownLap) {
+      this.lastShownLap = s.lap;
+      this.lapNum.textContent = String(s.lap);
+    }
+    if (s.laps !== this.lastLaps) {
+      this.lastLaps = s.laps;
+      this.lapTotal.data = `/${s.laps}`;
+    }
+    if (s.time !== this.lastTime) {
+      this.lastTime = s.time;
       this.time.textContent = s.time;
-      this.speed.innerHTML = `<b>${s.speedKmh}</b><span>km/h</span>`;
+    }
+    if (s.speedKmh !== this.lastSpeed) {
+      this.lastSpeed = s.speedKmh;
+      this.speedNum.textContent = String(s.speedKmh);
       // Subtle speedometer ring: fills with speed (0..1 of top speed ~ 190 km/h).
-      this.speed.style.setProperty('--spd', String(Math.min(1, s.speedKmh / (KART.maxSpeed * 3.6)).toFixed(2)));
+      this.speed.style.setProperty('--spd', Math.min(1, s.speedKmh / (KART.maxSpeed * 3.6)).toFixed(2));
+    }
+    if (s.boosting !== this.lastBoost) {
+      this.lastBoost = s.boosting;
       this.root.classList.toggle('boosting', s.boosting);
     }
 

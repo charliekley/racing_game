@@ -28,6 +28,7 @@ import { MODE_NAMES, SERIES_MODES, sanitizeMode } from './series';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
 import { AudioEngine } from '../audio'; // AUDIO
 import { enableWakeLock } from '../shared/wakeLock';
+import { FrameClock } from './frameClock';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -321,7 +322,7 @@ trackPreview.renderShots(TRACKS, () => {
   seriesHost.cardsUpdated(); // phones that are choosing get the new picture
   trackPreview.show(track);
   updateModeUi();
-});
+}, 1500, () => driving); // paused while a race is on screen: a shot would stall the frame
 let game: Game | null = null; // created on first use (sets up WebGL)
 let driving = false;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
@@ -448,12 +449,11 @@ window.addEventListener('keydown', (e) => {
 // --- Frame loop ------------------------------------------------------------
 // requestAnimationFrame calls us right before each screen refresh (~60 Hz).
 const fpsEl = $('fps');
-let last = performance.now();
+const clock = new FrameClock(0.1); // smooths timestamp jitter into an even dt (see frameClock.ts)
 let frames = 0;
-let fpsTimer = last;
+let fpsTimer = performance.now();
 function frame(now: number) {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
+  const dt = clock.tick(now);
   players.updateLocal(dt);
   if (driving && game) game.frame(dt);
   else lobbyView.updateDebug();

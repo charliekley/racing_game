@@ -84,7 +84,10 @@ export class AdaptiveQuality {
       this.warm -= dt;
       return;
     }
-    this.acc += dtMs;
+    // One-off stalls (garbage collection, a shader compile, a context switch) must not make us lower the quality:
+    // a single 200 ms frame inside a 0.6 s window would raise the average by 5 ms on its own. Each frame
+    // therefore counts for at most 2.5 frame times; a game that is really slow stays over the limit anyway.
+    this.acc += Math.min(dtMs, TARGET_MS * 2.5);
     this.n++;
     this.winTime += dt;
     this.sinceRaise += dt;

@@ -61,6 +61,25 @@ describe('buildKartModel', () => {
     expect((a.body.children[0] as THREE.Mesh).geometry).toBe((b.body.children[0] as THREE.Mesh).geometry);
   });
 
+  it('lean shadows (3-4 viewports) cast fewer parts than full detail, and switching back restores them', () => {
+    const m = buildKartModel('#e63946', 0);
+    const casters = () => {
+      let n = 0;
+      m.root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh && mesh.visible && mesh.castShadow) n++;
+      });
+      return n;
+    };
+    const full = casters(); // tier 0, every part
+    m.setLod(0, true);
+    const lean = casters();
+    expect(lean).toBeLessThan(full);
+    expect(lean).toBeGreaterThan(0);
+    m.setLod(0, false);
+    expect(casters()).toBe(full);
+  });
+
   it('wraps out-of-range style indices', () => {
     expect(buildKartModel('#fff', KART_STYLES.length).style).toBe(0);
     expect(buildKartModel('#fff', -1).style).toBe(KART_STYLES.length - 1);

@@ -18,11 +18,30 @@ export class Minimap {
   private cache = new MapCache(() => document.createElement('canvas'));
   /** What the map shows (also what the phones are sent). */
   readonly data: MapData;
+  /** PERF: reading clientWidth forces the browser to lay out the page (right after the HUD wrote to it), so the size is cached and refreshed only when the element is resized. */
+  private cssW = 0;
+  private cssH = 0;
+  private lastDraw = 0;
+  private readonly watcher: ResizeObserver | null;
+  private readonly dotsScratch: MapDot[] = [];
 
   constructor(track: Track, parent: HTMLElement) {
     this.canvas.className = 'minimap';
     parent.appendChild(this.canvas);
     this.data = mapDataFromTrack(track);
+    this.watcher = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.measure());
+    this.watcher?.observe(this.canvas);
+  }
+
+  private measure(): void {
+    this.cssW = this.canvas.clientWidth;
+    this.cssH = this.canvas.clientHeight;
+  }
+
+  /** Stop watching (the canvas is going away). */
+  dispose(): void {
+    this.watcher?.disconnect();
+    this.canvas.remove();
   }
 
   /** Position the map over a screen rect (fractions) or hide it (null). */
@@ -37,17 +56,31 @@ export class Minimap {
     });
   }
 
+  /**
+   * True when a redraw is worthwhile: the map is visible (only with 3 players) and the last one is older than
+   * 32 ms (dots barely move in 1/30 s on a map this small). The caller can skip building its dots otherwise.
+   */
+  due(): boolean {
+    return this.canvas.style.display !== 'none' && performance.now() - this.lastDraw >= 32;
+  }
+
   /** `dots` come in standings order; the leader is drawn last so it ends up on top. */
   draw(dots: MapDot[]): void {
     if (this.canvas.style.display === 'none') return;
+    if (!this.due()) return;
+    this.lastDraw = performance.now();
+    if (this.cssW === 0) this.measure();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = Math.round(this.canvas.clientWidth * dpr);
-    const H = Math.round(this.canvas.clientHeight * dpr);
+    const W = Math.round(this.cssW * dpr);
+    const H = Math.round(this.cssH * dpr);
     if (W === 0 || H === 0) return;
     if (this.canvas.width !== W || this.canvas.height !== H) {
       this.canvas.width = W;
       this.canvas.height = H;
     }
-    this.cache.draw(this.ctx, { w: W, h: H }, this.data, [...dots].reverse(), { labels: true, dotRadius: 0.025 });
+    const rev = this.dotsScratch; // reused array (no per-frame allocation)
+    rev.length = 0;
+    for (let i = dots.length - 1; i >= 0; i--) rev.push(dots[i]);
+    this.cache.draw(this.ctx, { w: W, h: H }, this.data, rev, { labels: true, dotRadius: 0.025 });
   }
 }
