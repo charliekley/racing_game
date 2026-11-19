@@ -202,7 +202,9 @@ export const docksideLoop: TrackDef = {
     // The DRAWBRIDGE over the 50 m water crossing (points 57 to 60, straight and level). The leaves are down
     // for ~14 s of every 24 s; then bell and lights (2 s), up (8 s with the rising and lowering). The boost
     // pad at 56.3 gives a kart the speed to jump the 12 m opening: see sim/hazards/drawbridge.ts.
-    { kind: 'drawbridge', from: 57, to: 60, period: 24, phase: 9 },
+    // Up most of the time (16 s cycle: 3 s down + 2 s warning while still flat, 1.5 s rising, 8 s up, 1.5 s lowering).
+    // Raised, each 5 m leaf is a kicker ramp: hit it at ~23 m/s or more, press TRICK in the air, land on the far leaf.
+    { kind: 'drawbridge', from: 57, to: 60, period: 16, phase: 9, warn: 2, rise: 1.5, hold: 8, lower: 1.5, lift: 5 },
   ],
   laps: 3,
   checkpoints: 16,

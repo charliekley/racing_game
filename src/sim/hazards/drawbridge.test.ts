@@ -8,7 +8,12 @@ import { World } from '../world';
 import { Drawbridge } from './drawbridge';
 import { HazardSystem } from './system';
 
-const track = new Track(docksideLoop);
+// The unit tests use fixed bridge settings (period 24, default 3.8 m leaves) so they test the mechanism,
+// not docksideLoop.ts's current tuning (which may change freely).
+const track = new Track({
+  ...docksideLoop,
+  hazards: [...(docksideLoop.hazards ?? []).filter((h) => h.kind !== 'drawbridge'), { kind: 'drawbridge', from: 57, to: 60, period: 24, phase: 9 }],
+});
 const system = new HazardSystem(track);
 const bridge = system.list[0] as Drawbridge;
 const ground = system.wrapGround(track);
@@ -223,5 +228,24 @@ describe('drawbridge events and bots', () => {
     const w = new World(track, track);
     w.startRace([0], 1);
     expect(w.hazards!.list[0].kind).toBe('drawbridge');
+  });
+});
+
+describe('Dockside Loop drawbridge tuning (the real track)', () => {
+  const real = new Track(docksideLoop);
+  const bridge = new HazardSystem(real).list.find((h) => h.kind === 'drawbridge') as unknown as {
+    lift(t: number): number;
+    clearSpeed(): number;
+  };
+
+  it('is fully up about half the time, so it is mostly a ramp', () => {
+    let up = 0;
+    const N = 1600;
+    for (let i = 0; i < N; i++) if (bridge.lift(i * 0.01) >= 1) up++;
+    expect(up / N).toBeGreaterThanOrEqual(0.45);
+  });
+
+  it('can be jumped below top speed (it is a kicker you can trick off, not a wall)', () => {
+    expect(bridge.clearSpeed()).toBeLessThan(KART.maxSpeed - 3);
   });
 });
