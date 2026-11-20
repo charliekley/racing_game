@@ -310,7 +310,10 @@ body.playing.need-rotate .rotate { display: flex; }
   touch-action: none;
 }
 .sf-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
-.sf-me { font-weight: 800; font-size: clamp(13px, 5cqh, 18px); color: var(--player); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sf-me { flex: 1 1 0; min-width: 0; font-weight: 800; font-size: clamp(13px, 5cqh, 18px); color: var(--player); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the step's own title, centred: never cut off (the name on the left gives way instead) */
+.sf-step { flex: none; font-weight: 900; font-size: clamp(14px, 5.2cqh, 20px); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.sf-right { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .sf-dots { display: flex; gap: 7px; }
 .sf-dots i { width: 10px; height: 10px; border-radius: 50%; background: #2a3166; }
 .sf-dots i.done { background: var(--player); opacity: 0.6; }
@@ -348,30 +351,75 @@ body.playing.need-rotate .rotate { display: flex; }
 }
 .sf-screen[data-stage='name'] .sf-next { width: min(460px, 100%); }
 
-/* CHARACTER / KART */
-.sf-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 3cqw; align-items: center; }
-.sf-hero-box { display: flex; align-items: center; justify-content: center; gap: 1.5cqw; min-height: 0; height: 100%; }
-.sf-hero { width: min(52cqh, 26cqw); height: min(52cqh, 26cqw); flex: none; }
-.sf-arrow { width: 52px; height: 64px; flex: none; border: none; border-radius: 14px; background: var(--panel); color: var(--text); font-size: 38px; line-height: 1; }
+/*
+ * CHARACTER / KART.
+ * Landscape (the normal way to hold the phone): two columns. Left = the big picture with arrows; right = info
+ * on top, the grid of ALL choices under it. BACK + confirm run along the bottom, full width, so they are big
+ * and close to the thumbs. Everything is sized from the stage height (cqh) so it also fits a 667x375
+ * iPhone SE, or a 390 px tall phone with Safari's address bar showing.
+ */
+.sf-browse.on {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'hero info' 'hero strip' 'foot foot';
+  gap: 1.8cqh 2.5cqw;
+}
+.sf-hero-box { grid-area: hero; display: flex; align-items: center; gap: 1cqw; min-height: 0; min-width: 0; }
+.sf-hero-wrap { flex: 1; align-self: stretch; min-width: 0; min-height: 0; position: relative; }
+.sf-hero { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sf-arrow { width: clamp(34px, 5.5cqw, 48px); height: clamp(52px, 17cqh, 70px); flex: none; border: none; border-radius: 12px; background: var(--panel); color: var(--text); font-size: 32px; line-height: 1; padding: 0; }
 .sf-arrow:active { background: var(--player); color: #111; }
-.sf-info { display: flex; flex-direction: column; gap: 0.8cqh; min-width: 0; }
-.sf-title { font-weight: 900; font-size: clamp(24px, 11cqh, 44px); line-height: 1; color: var(--player); }
-.sf-sub { font-weight: 800; font-size: clamp(12px, 4.6cqh, 17px); text-transform: uppercase; letter-spacing: 0.1em; }
+
+.sf-info { grid-area: info; display: flex; flex-direction: column; gap: 0.9cqh; min-width: 0; }
+.sf-titles { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sf-title { font-weight: 900; font-size: clamp(22px, 8.5cqh, 36px); line-height: 1; color: var(--player); }
+.sf-sub { font-weight: 800; font-size: clamp(11px, 3.8cqh, 15px); text-transform: uppercase; letter-spacing: 0.08em; }
 .sf-sub[data-cls='light'] { color: #7fd8ff; }
 .sf-sub[data-cls='medium'] { color: #ffd23a; }
 .sf-sub[data-cls='heavy'] { color: #ff8a6a; }
-.sf-blurb { font-size: clamp(11px, 4.4cqh, 15px); color: var(--muted); line-height: 1.15; margin-bottom: 0.6cqh; }
-.sf-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1cqh 2.5cqw; }
-.sf-stat { display: flex; flex-direction: column; font-size: clamp(10px, 3.8cqh, 13px); color: var(--muted); line-height: 1.1; }
+.sf-blurb { font-size: clamp(11px, 3.8cqh, 14px); color: var(--muted); line-height: 1.15; }
+.sf-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1cqh 2cqw; }
+.sf-stat { display: flex; flex-direction: column; font-size: clamp(10px, 3.4cqh, 12px); color: var(--muted); line-height: 1.1; min-width: 0; }
 .sf-bar { display: flex; gap: 2px; margin-top: 2px; }
-.sf-bar i { flex: 1; height: clamp(5px, 2.2cqh, 9px); border-radius: 3px; background: #2a3166; }
+.sf-bar i { flex: 1; height: clamp(5px, 1.9cqh, 8px); border-radius: 3px; background: #2a3166; }
 .sf-bar i.on { background: var(--player); }
-.sf-strip { display: flex; gap: 6px; justify-content: center; }
-.sf-thumb { flex: none; min-width: 44px; height: 44px; padding: 3px; border: 3px solid transparent; border-radius: 12px; background: var(--panel); color: var(--text); font-weight: 800; font-size: 13px; }
-.sf-thumb canvas { width: 100%; height: 100%; display: block; }
+
+/* The strip is a grid so all choices are visible at once: 4 columns (8 drivers = 2 rows, 4 karts = 1 row). */
+.sf-strip { grid-area: strip; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; align-content: end; min-height: 0; }
+.sf-thumb { min-width: 0; padding: 3px; border: 3px solid transparent; border-radius: 12px; background: var(--panel); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.sf-thumb canvas { display: block; }
 .sf-thumb.on { border-color: var(--player); background: #252c5c; }
-.sf-foot { display: flex; gap: 10px; justify-content: space-between; }
+/* driver thumbnails: square, as big as the row allows */
+.sf-browse[data-kind='character'] .sf-thumb { height: clamp(40px, 15cqh, 62px); }
+.sf-browse[data-kind='character'] .sf-thumb canvas { height: 100%; aspect-ratio: 1; max-width: 100%; }
+/* kart thumbnails: wide picture + the name under it */
+.sf-browse[data-kind='kart'] .sf-thumb { height: clamp(58px, 25cqh, 100px); }
+.sf-browse[data-kind='kart'] .sf-thumb canvas { width: 100%; flex: 1; min-height: 0; object-fit: contain; }
+.sf-thumb-name { font-weight: 800; font-size: clamp(10px, 3.4cqh, 13px); line-height: 1; white-space: nowrap; }
+
+.sf-foot { grid-area: foot; display: flex; gap: 10px; }
+.sf-foot .sf-back { flex: 0 0 26cqw; }
 .sf-foot .sf-confirm { flex: 1; }
+
+/* Held upright (before the rotation lock): one column, top to bottom. */
+@container (max-aspect-ratio: 1/1) {
+  .sf-browse.on {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: 'hero' 'info' 'strip' 'foot';
+    gap: 1.5cqh;
+  }
+  /* narrow header: drop the progress dots so the player's name is not cut off */
+  .sf-dots { display: none; }
+  .sf-right { flex: none; }
+  .sf-step { font-size: 15px; letter-spacing: 0.02em; }
+  .sf-browse[data-kind='character'] .sf-thumb { height: clamp(48px, 9cqh, 80px); }
+  .sf-browse[data-kind='kart'] .sf-thumb { height: clamp(64px, 12cqh, 100px); }
+  .sf-title { font-size: clamp(24px, 4.5cqh, 36px); }
+  .sf-sub, .sf-blurb { font-size: 14px; }
+  .sf-stat { font-size: 12px; }
+}
 
 /* READY */
 .sf-screen[data-stage='ready'] { align-items: center; justify-content: center; gap: 2.5cqh; text-align: center; }

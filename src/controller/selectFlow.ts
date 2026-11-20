@@ -12,7 +12,8 @@
 import { CHARACTERS, KART_BODIES, STAT_KEYS, loadoutStats, sanitizeLoadout, type Loadout, type StatKey } from '../shared/characters';
 import type { LobbyPlayerInfo, SelectRequest } from '../shared/protocol';
 import { SELECT_STAGES, previousStage, stageRank, type SelectStage } from '../shared/selectStage';
-import { drawPortrait } from './portrait';
+import { drawKartPicture, drawPortrait } from './portrait';
+import { STEP_TITLES, bufferPx } from './pictureMath';
 
 const STAT_LABELS: Record<StatKey, string> = {
   speed: 'Speed',
@@ -61,6 +62,8 @@ export class SelectFlow {
   private visible = false;
 
   private readonly head: HTMLElement;
+  /** The step's own title in the middle of the header ('Pick your kart'). */
+  private readonly stepTitle: HTMLElement;
   private readonly dots: HTMLElement[] = [];
   private readonly nameInput: HTMLInputElement;
   private readonly nameNext: HTMLButtonElement;
@@ -76,8 +79,11 @@ export class SelectFlow {
     root.innerHTML = `
       <div class="sf-head">
         <span class="sf-me"></span>
-        <span class="sf-dots">${SELECT_STAGES.map(() => '<i></i>').join('')}</span>
-        <button type="button" class="sf-gear" aria-label="Settings">⚙</button>
+        <span class="sf-step"></span>
+        <span class="sf-right">
+          <span class="sf-dots">${SELECT_STAGES.map(() => '<i></i>').join('')}</span>
+          <button type="button" class="sf-gear" aria-label="Settings">⚙</button>
+        </span>
       </div>
       <section class="sf-screen" data-stage="name">
         <label class="sf-name-label">YOUR NAME
@@ -96,6 +102,7 @@ export class SelectFlow {
     this.root = root;
     this.head = root.querySelector('.sf-me') as HTMLElement;
     root.querySelectorAll<HTMLElement>('.sf-dots i').forEach((d) => this.dots.push(d));
+    this.stepTitle = root.querySelector('.sf-step') as HTMLElement;
     this.nameInput = root.querySelector('.sf-name') as HTMLInputElement;
     this.nameNext = root.querySelector('.sf-next') as HTMLButtonElement;
     this.who = root.querySelector('.sf-who') as HTMLElement;
@@ -224,6 +231,7 @@ export class SelectFlow {
       d.classList.toggle('now', i === rank);
     });
     this.nameNext.disabled = this.nameInput.value.trim() === '';
+    this.stepTitle.textContent = STEP_TITLES[this.stage];
     if (!this.visible) return;
     if (this.stage === 'character' || this.stage === 'kart') this.browse[this.stage].show(this.loadout);
     this.renderWho();
@@ -252,7 +260,14 @@ interface BrowseActions {
   back(): void;
 }
 
-/** One browsing screen (character or kart): big picture with arrows, name + stat bars, a strip to tap, Back / Confirm. */
+
+/**
+ * One browsing screen (character or kart). Pieces (the CSS places them, see `.sf-browse`):
+ *  hero  : the highlighted driver's head / kart, big, with arrows (and swipe)
+ *  info  : name, weight class, blurb, six stat bars
+ *  strip : EVERY choice as a small picture in a grid (8 drivers or 4 karts), tap to jump
+ *  foot  : BACK and the big confirm button
+ */
 class BrowseView {
   private readonly hero: HTMLCanvasElement;
   private readonly title: HTMLElement;
@@ -260,6 +275,8 @@ class BrowseView {
   private readonly blurb: HTMLElement;
   private readonly bars = new Map<StatKey, HTMLElement[]>();
   private readonly thumbs: HTMLElement[] = [];
+  /** Thumbnail canvases (kart pictures change colour with the driver, so they are redrawn in show()). */
+  private readonly thumbCanvases: HTMLCanvasElement[] = [];
 
   constructor(
     el: HTMLElement,
@@ -267,19 +284,17 @@ class BrowseView {
     actions: BrowseActions,
   ) {
     el.classList.add('sf-browse');
+    el.dataset.kind = what;
     el.innerHTML = `
-      <div class="sf-main">
-        <div class="sf-hero-box">
-          <button type="button" class="sf-arrow" data-act="prev" aria-label="Previous">‹</button>
-          <canvas class="sf-hero"></canvas>
-          <button type="button" class="sf-arrow" data-act="next" aria-label="Next">›</button>
-        </div>
-        <div class="sf-info">
-          <div class="sf-title"></div>
-          <div class="sf-sub"></div>
-          <div class="sf-blurb"></div>
-          <div class="sf-stats"></div>
-        </div>
+      <div class="sf-hero-box">
+        <button type="button" class="sf-arrow" data-act="prev" aria-label="Previous">‹</button>
+        <div class="sf-hero-wrap"><canvas class="sf-hero"></canvas></div>
+        <button type="button" class="sf-arrow" data-act="next" aria-label="Next">›</button>
+      </div>
+      <div class="sf-info">
+        <div class="sf-titles"><span class="sf-title"></span><span class="sf-sub"></span></div>
+        <div class="sf-blurb"></div>
+        <div class="sf-stats"></div>
       </div>
       <div class="sf-strip"></div>
       <div class="sf-foot">
@@ -310,7 +325,7 @@ class BrowseView {
       this.bars.set(key, segs);
     }
 
-    // The strip: eight little portraits, or four kart names. Tapping one jumps there.
+    // The strip: eight little portraits, or four kart pictures with their names. Tapping one jumps there.
     const strip = el.querySelector('.sf-strip') as HTMLElement;
     const count = what === 'character' ? CHARACTERS.length : KART_BODIES.length;
     for (let i = 0; i < count; i++) {
@@ -318,13 +333,22 @@ class BrowseView {
       b.type = 'button';
       b.className = 'sf-thumb';
       b.setAttribute('aria-label', what === 'character' ? CHARACTERS[i].name : KART_BODIES[i].name);
+      const c = document.createElement('canvas');
+      // Drawn at 2x what is shown (a thumbnail is ~50-90 CSS px), so it is sharp on high-DPI screens.
       if (what === 'character') {
-        const c = document.createElement('canvas');
-        c.width = c.height = 96; // drawn once, shown at ~44 px (sharp on high-DPI screens)
+        c.width = c.height = 96;
         drawPortrait(c, CHARACTERS[i].look);
-        b.appendChild(c);
       } else {
-        b.textContent = KART_BODIES[i].name;
+        c.width = 160;
+        c.height = 100;
+      }
+      b.appendChild(c);
+      this.thumbCanvases.push(c);
+      if (what === 'kart') {
+        const name = document.createElement('span');
+        name.className = 'sf-thumb-name';
+        name.textContent = KART_BODIES[i].name;
+        b.appendChild(name);
       }
       b.addEventListener('click', () => actions.jump(i));
       strip.appendChild(b);
@@ -370,12 +394,21 @@ class BrowseView {
     for (const key of STAT_KEYS) this.bars.get(key)!.forEach((seg, i) => seg.classList.toggle('on', i < stats[key]));
     const index = l[this.what];
     this.thumbs.forEach((t, i) => t.classList.toggle('on', i === index));
-    // Portrait at the size it is displayed (sharp on high-DPI phones).
-    const css = this.hero.clientWidth;
-    if (css > 0) {
-      const px = Math.round(css * Math.min(2, window.devicePixelRatio || 1));
-      if (this.hero.width !== px) this.hero.width = this.hero.height = px;
+
+    // Big picture at the size it is displayed (sharp on high-DPI phones). The canvas fills its wrapper.
+    const dpr = window.devicePixelRatio || 1;
+    const wpx = bufferPx(this.hero.clientWidth, dpr);
+    const hpx = bufferPx(this.hero.clientHeight, dpr);
+    if (wpx > 0 && hpx > 0 && (this.hero.width !== wpx || this.hero.height !== hpx)) {
+      this.hero.width = wpx;
+      this.hero.height = hpx;
     }
-    drawPortrait(this.hero, ch.look);
+    if (this.what === 'character') {
+      drawPortrait(this.hero, ch.look);
+    } else {
+      drawKartPicture(this.hero, l.kart, l.character);
+      // The kart thumbnails wear the chosen driver's paint.
+      this.thumbCanvases.forEach((c, i) => drawKartPicture(c, i, l.character));
+    }
   }
 }
