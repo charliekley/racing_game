@@ -101,7 +101,21 @@ function flipWinding(g: THREE.BufferGeometry): void {
 const _col = new THREE.Color();
 const _size = new THREE.Vector3();
 
+/**
+ * Debug/test hook: called for every part a PartBuilder accepts, with the part already placed (its final
+ * position in the builder's space) and its label (see `PartBuilder.tag`). The clearance test uses it to
+ * learn which kart parts are the seat, the hull and so on. Costs nothing when null (the normal case).
+ */
+export type PartTap = (tag: string, positions: Float32Array, index: ArrayLike<number>) => void;
+
 export class PartBuilder {
+  /** Set by tests (see PartTap). */
+  static tap: PartTap | null = null;
+  /**
+   * Label of the parts added from now on ('frame' by default; kart bodies set 'seat' or 'hull'). Only the
+   * clearance test reads it: the driver may touch the seat and the hull, but nothing else.
+   */
+  tag = 'frame';
   private parts: Record<Bucket, THREE.BufferGeometry[]> = { paint: [], accent: [], detail: [] };
 
   /** Add a shape to a bucket. `color`/`surf` only matter for the vertex-coloured detail bucket. */
@@ -172,6 +186,7 @@ export class PartBuilder {
       }
     }
     if (m.determinant() < 0) flipWinding(g);
+    PartBuilder.tap?.(this.tag, g.getAttribute('position').array as Float32Array, g.index!.array);
     if (bucket === 'detail') {
       const n = g.getAttribute('position').count;
       _col.set(color); // hex is sRGB; Color.set converts to the linear working space

@@ -112,16 +112,16 @@ export class DriverRig {
     // Steering wheel and body pose.
     m.steeringWheel.rotation.z = this.steer * 1.25;
     const torso = m.torso;
-    const lean = -this.roll * 1.6 - inp.drift * 0.05;
-    torso.rotation.z = lean - this.steer * 0.05; // lean into the turn (the body roll) and a bit more with the wheel
-    torso.rotation.x = this.pitch - this.boostLean * 0.28 + (inp.celebrate ? Math.sin(t * 10) * 0.05 : 0);
+    const lean = (-this.roll * 1.6 - inp.drift * 0.05) * m.leanScale;
+    torso.rotation.z = lean - this.steer * 0.05 * m.leanScale; // lean into the turn (the body roll) and a bit more with the wheel
+    torso.rotation.x = this.pitch - this.boostLean * 0.18 + (inp.celebrate ? Math.sin(t * 10) * 0.05 : 0);
     // Heads look into the turn, tilt a little, and wobble when dizzy. `look` (0..1, eased by HeadLook) blends
     // that into a glance over the shoulder: the head turns most of the way round and the torso twists a bit,
     // so the face shows to the chase camera.
     const head = m.head;
     const lk = inp.look;
     const side = inp.lookSide;
-    torso.rotation.y = side * lk * LOOK_TORSO_YAW;
+    torso.rotation.y = side * lk * LOOK_TORSO_YAW * m.twistScale;
     head.rotation.y = this.lookYaw * (1 - lk) + side * lk * LOOK_HEAD_YAW;
     head.rotation.z = -lean * 0.5 * (1 - lk) + side * lk * -0.1 + (inp.spun ? Math.sin(t * 11) * 0.28 : 0) + (inp.celebrate ? Math.sin(t * 7) * 0.08 : 0);
     head.rotation.x = this.boostLean * 0.18 * (1 - lk) + lk * 0.06 + (inp.spun ? Math.sin(t * 8.3) * 0.18 : 0) + (inp.celebrate ? -0.1 : 0);

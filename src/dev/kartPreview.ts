@@ -8,13 +8,13 @@
  * materials), the Low quality build, and demo poses for the driver animation.
  *
  * URL parameters (handy for screenshots): ?body=1&driver=3&colour=2&cam=front|side|three|back|top
- *   &focus=kart|driver&pose=drive|idle|left|right|drift|boost|trick|spin|cheer|look&face=neutral|auto|happy|shocked|dizzy|gritted|smug|despair|angry|celebrate&env=1&low=1&spin=0&labels=0&markers=1
+ *   &focus=kart|driver&pose=drive|idle|left|right|drift|boost|trick|spin|cheer|look&face=neutral|auto|happy|shocked|dizzy|gritted|smug|despair|angry|celebrate&env=1&low=1&pal=0&spin=0&labels=0&markers=1
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { KART_COLORS } from '../shared/colors';
-import { CHARACTERS } from '../shared/characters';
+import { CHARACTERS, paletteFor } from '../shared/characters';
 import { KART_STYLES, buildKartModel, kartTriangleCount, type KartModel } from '../render/kartModel';
 import { DriverRig, IDLE_INPUT, type DriverInput } from '../render/kart/driverRig';
 import { DriverFace, EXPRESSIONS } from '../render/kart/expression';
@@ -34,6 +34,7 @@ const state = {
   colour: Number(params.get('colour') ?? -1), // -1 = a different colour per row
   env: params.get('env') === '1',
   low: params.get('low') === '1',
+  pal: params.get('pal') !== '0', // paint karts in each character's own palette, like the game (pal=0: mixed player colours)
   spin: params.get('spin') !== '0',
   labels: params.get('labels') !== '0',
   markers: params.get('markers') === '1',
@@ -132,7 +133,7 @@ function buildKarts(): void {
       disc.receiveShadow = true;
       turntable.add(disc);
 
-      const model = buildKartModel(color, body, driver, state.low ? 'low' : 'high');
+      const model = buildKartModel(color, body, driver, state.low ? 'low' : 'high', state.pal ? paletteFor(driver) : undefined);
       turntable.add(model.root);
 
       // Debug markers showing where boost flames and drift sparks would go.
@@ -388,6 +389,7 @@ renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
 (window as unknown as { __preview: unknown }).__preview = {
   state,
   rebuild: buildKarts,
+  renderer,
   applyEnv,
   camera,
   controls,
@@ -395,6 +397,23 @@ renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
   /** Advance the animation by `frames` steps of `dt` seconds (the loop is paused when the tab is hidden). */
   step: (frames: number, dt = 1 / 60) => {
     for (let i = 0; i < frames; i++) frame(dt);
+  },
+  /**
+   * Render at an exact size (also bigger than the window) and POST the PNG to a local receiver
+   * (http://localhost:5192/save?name=...), for contact sheets. Returns when it was sent.
+   */
+  shot: async (name: string, w: number, h: number): Promise<void> => {
+    renderer.setPixelRatio(1);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    applyCamPreset(false);
+    controls.update();
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL('image/png');
+    await fetch(`http://localhost:5192/save?name=${encodeURIComponent(name)}`, { method: 'POST', mode: 'no-cors', body: url });
+    resize();
+    applyCamPreset(false);
   },
   /** Render one frame right now (the animation loop can be paused in a hidden tab). */
   render: () => {
