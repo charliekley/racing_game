@@ -45,13 +45,17 @@ export interface PaintMaterials {
 
 const paintCache = new Map<string, PaintMaterials>();
 
-/** Player-colour materials, cached per colour and detail level (Low skips the clear coat). */
-export function getPaintMaterials(colorHex: string, high: boolean): PaintMaterials {
-  const key = `${colorHex}|${high ? 1 : 0}`;
+/**
+ * Paint materials, cached per colour and detail level (Low skips the clear coat).
+ * `trimHex` (a character palette's second colour) paints the accent parts; without it the accent is a
+ * lighter tint of the body colour.
+ */
+export function getPaintMaterials(colorHex: string, high: boolean, trimHex?: string): PaintMaterials {
+  const key = `${colorHex}|${high ? 1 : 0}|${trimHex ?? ''}`;
   let mats = paintCache.get(key);
   if (mats) return mats;
   const base = new THREE.Color(colorHex);
-  const light = base.clone().lerp(new THREE.Color('#ffffff'), 0.4);
+  const light = trimHex ? new THREE.Color(trimHex) : base.clone().lerp(new THREE.Color('#ffffff'), 0.4);
   if (high) {
     mats = {
       paint: new THREE.MeshPhysicalMaterial({ color: base, roughness: 0.34, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08 }),

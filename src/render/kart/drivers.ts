@@ -109,7 +109,7 @@ interface Palette {
   L: string;
 }
 
-type Species = DriverLook['species'];
+export type Species = DriverLook['species'];
 
 interface SpeciesBuild {
   torso: (p: Piece, c: Palette) => void;

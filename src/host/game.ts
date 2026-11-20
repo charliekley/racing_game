@@ -422,6 +422,7 @@ export class Game {
       hud.root.classList.toggle('solo', slots.length === 1);
       const chase = new ChaseCamera();
       chase.snap();
+      // The slot colour is for the HUD badge and minimap; the kart itself is painted from the character's palette (KartView).
       return { slot, kart: new KartView(this.scene, color, loadouts.get(slot)), chase, hud, rect: layout.views[i] };
     });
     this.minimap.place(layout.minimap);

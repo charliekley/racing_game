@@ -42,13 +42,6 @@ export const KEY_SCHEMES: KeyScheme[] = [
 /** Keys that add a keyboard player in the lobby ("1" -> WASD player, "2" -> arrows player). */
 export const KEY_JOIN = ['Digit1', 'Digit2'];
 
-/**
- * DEPRECATED: the old "press C / V to cycle driver / kart" keys. Nothing reads them any more (see keySelectActions);
- * kept only because lobbyView.ts still imports them for its hint text. Remove together with that text.
- */
-export const KEY_CHARACTER = ['KeyC', 'Comma'];
-export const KEY_KART = ['KeyV', 'Period'];
-
 /** How fast keyboard steering ramps toward full lock / back to center (units per second). */
 const KEY_STEER_RATE = 5;
 const KEY_RETURN_RATE = 9;

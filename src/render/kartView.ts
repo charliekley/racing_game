@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import type { KartState } from '../sim/kart';
 import type { Ground } from '../sim/ground';
 import { KART } from '../sim/config';
-import { DEFAULT_LOADOUT, type Loadout } from '../shared/characters';
+import { DEFAULT_LOADOUT, paletteFor, type Loadout } from '../shared/characters';
 import { buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
@@ -85,8 +85,14 @@ export class KartView {
     this.model.setLod(tier, lean);
   }
 
-  constructor(scene: THREE.Scene, colorHex: string, loadout: Loadout = DEFAULT_LOADOUT) {
-    this.model = buildKartModel(colorHex, loadout.kart, loadout.character);
+  /**
+   * With a `loadout` the kart is painted from the CHARACTER's own palette (shared/characters.ts), so every
+   * driver has a recognisable kart; `colorHex` (the player's slot colour) is then only used for HUD badges
+   * and the minimap, elsewhere. Without a loadout (tests, dev pages) the body is painted `colorHex`.
+   */
+  constructor(scene: THREE.Scene, colorHex: string, loadout?: Loadout) {
+    const l = loadout ?? DEFAULT_LOADOUT;
+    this.model = buildKartModel(colorHex, l.kart, l.character, undefined, loadout ? paletteFor(l.character) : undefined);
     this.model.root.rotation.order = 'YXZ'; // yaw first, then pitch/roll in the kart's own frame
     scene.add(this.model.root);
     this.sparks = new SparkEmitter(scene);
