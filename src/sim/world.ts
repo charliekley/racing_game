@@ -207,7 +207,7 @@ export class World {
     if (this.items && this.race?.phase === 'racing') {
       // (a knocked-out kart is done with items too, like a finished one)
       const finished = new Set([...this.race.racers.values()].filter((r) => r.finished || r.out).map((r) => r.slot));
-      events.push(...this.items.tick(this.karts, inputs, this.race.standings(), finished));
+      events.push(...this.items.tick(this.karts, inputs, this.race.standings(), finished, ground));
       this.items.novaCollisions(this.karts, events as ItemEvent[]);
     }
 
