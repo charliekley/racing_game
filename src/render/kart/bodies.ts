@@ -174,9 +174,6 @@ const buildSprinter: StyleBuilder = (b) => {
 // 1. Mudlark: off-road buggy
 // ---------------------------------------------------------------------------------
 
-/** Underside of the roll cage roof (body space, m). */
-const CAGE_ROOF = 2.34;
-
 const buildMudlark: StyleBuilder = (b, high) => {
   b.tag = 'hull';
   // Chunky tub.
@@ -192,19 +189,20 @@ const buildMudlark: StyleBuilder = (b, high) => {
   b.pipe('detail', [[-0.4, 0.58, 0.95], [-0.34, 0.5, 1.1], [0, 0.46, 1.15], [0.34, 0.5, 1.1], [0.4, 0.58, 0.95]], 0.03, PAL.steel, SURF.metal);
   b.pipe('detail', [[-0.2, 0.46, 1.14], [-0.2, 0.7, 1.0]], 0.02, PAL.steel, SURF.metal);
   b.pipe('detail', [[0.2, 0.46, 1.14], [0.2, 0.7, 1.0]], 0.02, PAL.steel, SURF.metal);
-  // Roll cage (accent tone): main hoop, front pillars, roof rails and cross bars. It is built around the
-  // TALLEST, WIDEST driver head (Bruno's ears reach y 2.2 and his head is 1.1 m wide, see the clearance test):
-  // the pillars flare out above the tub and the roof sits at CAGE_ROOF. Nothing of the driver, at rest or in
-  // any pose, may poke through it.
-  const cage = (pts: V3[], pair = false) => b.pipe('accent', pts, 0.036, undefined, undefined, { pair });
-  cage([[0.48, 0.8, -0.6], [0.72, 1.3, -0.58], [0.78, 1.8, -0.52], [0.68, 2.2, -0.45], [0.4, 2.37, -0.4], [0, 2.43, -0.38], [-0.4, 2.37, -0.4], [-0.68, 2.2, -0.45], [-0.78, 1.8, -0.52], [-0.72, 1.3, -0.58], [-0.48, 0.8, -0.6]]);
-  cage([[0.44, 0.86, 0.3], [0.68, 1.4, 0.2], [0.72, 1.85, 0.1], [0.64, 2.25, 0.02], [0.42, 2.39, -0.04]], true);
-  cage([[0.68, 2.2, -0.45], [0.64, 2.25, -0.2], [0.64, 2.25, 0.02]], true);
-  cage([[-0.42, 2.39, -0.04], [0, 2.43, -0.04], [0.42, 2.39, -0.04]]);
-  cage([[0.72, 1.3, -0.58], [0.76, 1.34, -0.1], [0.72, 1.4, 0.2]], true);
-  // Light bar with three lamps, on top of the front roof bar.
-  b.part(roundBox(0.82, 0.1, 0.09, 0.035), { p: [0, 2.51, 0.0] }, PAL.black, SURF.plastic);
-  for (const x of [-0.26, 0, 0.26]) addLamp(b, [x, 2.51, 0.06], [0, 0.06, 1], 0.07, PAL.lampWhite);
+  // Roll protection (accent tone): an open buggy style with NO roof, so no head (even Bruno's ears or Juno's
+  // antenna, during any pick animation) can ever hit it. A rear hoop stands behind the driver's head, braced
+  // back to the tail, and a low side bar runs along each side of the tub. The light bar sits on top of the hoop.
+  const bar = (pts: V3[], pair = false) => b.pipe('accent', pts, 0.036, undefined, undefined, { pair });
+  // Rear hoop: up from the tub sides well behind the seat, rounded over at shoulder height (pick moves throw heads
+  // back toward it, so it sits low and far back).
+  bar([[0.5, 0.8, -1.12], [0.56, 1.05, -1.14], [0.52, 1.24, -1.15], [0.32, 1.34, -1.16], [0, 1.37, -1.16], [-0.32, 1.34, -1.16], [-0.52, 1.24, -1.15], [-0.56, 1.05, -1.14], [-0.5, 0.8, -1.12]]);
+  // Diagonal braces from the hoop shoulders back down to the tail.
+  bar([[0.5, 1.22, -1.15], [0.44, 0.95, -1.3], [0.36, 0.72, -1.34]], true);
+  // Low side bars along the tub (nerf bars), from the rear hoop to beside the dash.
+  bar([[0.55, 0.92, -1.12], [0.6, 0.98, -0.5], [0.6, 0.98, 0.0], [0.52, 0.9, 0.35]], true);
+  // Spot lamps on the hood (off-road lights) instead of a light bar over the driver's head.
+  b.part(roundBox(0.6, 0.08, 0.08, 0.03), { p: [0, 0.82, 0.86] }, PAL.black, SURF.plastic);
+  for (const x of [-0.2, 0, 0.2]) addLamp(b, [x, 0.82, 0.91], [0, 0.06, 1], 0.06, PAL.lampWhite);
   // Suspension: A-arms and coil springs over damper rods.
   const spring = (x: number, z: number) => {
     b.pipe('detail', helix(0.055, 0.5, 0.74, 3.5, 7, x, z), 0.014, PAL.red, SURF.metal, { rad: 5, segsPerPoint: 2 });
@@ -219,7 +217,7 @@ const buildMudlark: StyleBuilder = (b, high) => {
   addAxle(b, 0.36, 0.72, 0.68, 0.035);
   addAxle(b, 0.4, -0.7, 0.7, 0.04);
   // Spare tyre on the back and twin vertical exhaust stacks.
-  addWheelParts(b, { radius: 0.27, width: 0.14, rim: PAL.mustard, kind: 'retro', cap: PAL.mustard }, high, new THREE.Matrix4().compose(new THREE.Vector3(0, 0.72, -1.1), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1)));
+  addWheelParts(b, { radius: 0.27, width: 0.14, rim: PAL.mustard, kind: 'retro', cap: PAL.mustard }, high, new THREE.Matrix4().compose(new THREE.Vector3(0, 0.62, -1.24), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1)));
   for (const sx of [1, -1]) {
     b.pipe('detail', [[0.42 * sx, 0.8, -0.82], [0.42 * sx, 0.95, -0.84], [0.41 * sx, 1.1, -0.9]], 0.05, PAL.chrome, SURF.chrome, { rad: 10 });
     addBell(b, [0.41 * sx, 1.12, -0.92], [0, 0.4, -1], 0.05);
@@ -244,11 +242,9 @@ const buildMudlark: StyleBuilder = (b, high) => {
     ],
     hip: [0, 0.72, -0.28],
     wheel,
-    // The cage is roomy but a head must not rise into its roof (pick-animation hops are limited, see kartModel.ts),
-    // and the driver leans less into corners than in an open kart.
-    ceiling: CAGE_ROOF,
-    leanScale: 0.45,
-    twistScale: 0.3,
+    // Open top (no roof): no ceiling for hops. The side bars are low, so the driver leans and twists almost as in an open kart.
+    leanScale: 0.85,
+    twistScale: 0.8,
   };
 };
 
