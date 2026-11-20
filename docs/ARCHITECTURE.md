@@ -62,7 +62,7 @@ racing_game/
    │  └─ device.ts, settings.ts ✅ permissions, wake lock, vibration, prefs
    ├─ host/
    │  ├─ main.ts               ✅ host entry: lobby ⇄ race ⇄ results flow
-   │  ├─ playerSlots.ts        ✅ 4 slots, rejoin, ready logic (pure, tested)
+   │  ├─ playerSlots.ts        ✅ 4 slots, rejoin, ready logic, name->character->kart->ready state machine (pure, tested)
    │  ├─ playerManager.ts      ✅ phones + local devices → latest input per slot
    │  ├─ input/localInput.ts   ✅ keyboard + gamepad fallback
    │  ├─ lobbyView.ts          ✅ lobby cards + input debug readout

@@ -293,72 +293,99 @@ body.playing.need-rotate .rotate { display: flex; }
 .btn.item.has-item .item-label { display: none; }
 .chips { display: flex; gap: 8px; }
 
-/* ---------- Driver + kart picker (lobby only; built in picker.ts) ---------- */
+/* ---------- Pre-race flow: name -> character -> kart -> ready (built in selectFlow.ts) ---------- */
 /*
- * The picker sits in the centre column where the minimap is during a race. It is its own
- * size container, so cqh / cqw below are % of the picker, and it shrinks to fit any phone.
+ * A full-screen layer inside #stage (so it rotates with the controller). Sizes use cqh / cqw (% of the
+ * stage) so it fits a 844x390 phone as well as a small one. Everything tappable is at least ~44 px.
  */
-.picker {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  container-type: size;
+.sf {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 1.5cqh;
-  overflow: hidden;
-  text-align: center;
+  padding: calc(env(safe-area-inset-top) + 2cqh) calc(env(safe-area-inset-right) + 2.5cqw) calc(env(safe-area-inset-bottom) + 2cqh) calc(env(safe-area-inset-left) + 2.5cqw);
+  background: var(--bg);
   touch-action: none;
 }
-.pk-char { display: flex; align-items: center; justify-content: center; gap: 2cqw; width: 100%; }
-.pk-portrait { width: min(38cqh, 46cqw); height: min(38cqh, 46cqw); flex: none; }
-.pk-arrow {
-  flex: none;
-  width: max(44px, 13cqh);
-  height: max(44px, 13cqh);
+.sf-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+.sf-me { font-weight: 800; font-size: clamp(13px, 5cqh, 18px); color: var(--player); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sf-dots { display: flex; gap: 7px; }
+.sf-dots i { width: 10px; height: 10px; border-radius: 50%; background: #2a3166; }
+.sf-dots i.done { background: var(--player); opacity: 0.6; }
+.sf-dots i.now { background: var(--player); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25); }
+.sf-gear { width: 44px; height: 34px; border: none; border-radius: 10px; background: var(--panel); color: var(--text); font-size: 20px; }
+.sf-screen { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 1.5cqh; }
+.sf-screen.on { display: flex; }
+
+/* big buttons */
+.sf-next, .sf-confirm, .sf-back {
   border: none;
-  border-radius: 50%;
+  border-radius: 14px;
+  font-weight: 900;
+  font-size: clamp(18px, 7cqh, 28px);
+  min-height: 48px;
+  padding: 0 28px;
+}
+.sf-next, .sf-confirm { background: #ffbe0b; color: #222; }
+.sf-next:disabled { opacity: 0.35; }
+.sf-back { background: var(--panel); color: var(--text); font-size: clamp(14px, 5cqh, 20px); }
+.sf-next:active, .sf-confirm:active, .sf-back:active { filter: brightness(1.25); transform: scale(0.97); }
+
+/* NAME */
+.sf-screen[data-stage='name'] { align-items: center; justify-content: center; gap: 3cqh; }
+.sf-name-label { display: flex; flex-direction: column; gap: 6px; width: min(460px, 100%); font-size: 14px; font-weight: 800; letter-spacing: 0.15em; color: var(--muted); text-align: center; }
+.sf-name {
+  font-size: clamp(24px, 10cqh, 40px);
+  text-align: center;
+  font-weight: 800;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 3px solid var(--player);
   background: var(--panel);
   color: var(--text);
-  font-size: clamp(22px, 8cqh, 34px);
-  font-weight: 900;
-  line-height: 1;
-  padding: 0 0 3px;
 }
-.pk-arrow.small { width: 40px; height: 40px; font-size: 24px; }
-.pk-arrow:active { background: var(--player); color: #111; }
-.pk-name { font-weight: 900; font-size: clamp(14px, 7cqh, 22px); line-height: 1.1; display: flex; align-items: baseline; gap: 6px; justify-content: center; }
-.pk-name-text { color: var(--player); }
-.pk-class {
-  font-size: 0.55em;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--muted);
-}
-.pk-class[data-cls='light'] { color: #7fd8ff; }
-.pk-class[data-cls='medium'] { color: #ffd23a; }
-.pk-class[data-cls='heavy'] { color: #ff8a6a; }
-.pk-blurb { font-size: clamp(10px, 4.6cqh, 14px); color: var(--muted); line-height: 1.15; max-width: 100%; }
-.pk-kart { display: flex; align-items: center; justify-content: center; gap: 2cqw; width: 100%; }
-.pk-kart-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.1; }
-.pk-kart-text b { font-size: clamp(12px, 5.6cqh, 17px); }
-.pk-kart-text span { font-size: clamp(9px, 3.8cqh, 12px); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8cqh 3cqw; width: 100%; padding: 0 2cqw; }
-.pk-stat { display: flex; flex-direction: column; align-items: stretch; font-size: clamp(9px, 3.6cqh, 12px); color: var(--muted); text-align: left; line-height: 1.1; }
-.pk-bar { display: flex; gap: 2px; margin-top: 2px; }
-.pk-bar i { flex: 1; height: clamp(4px, 1.8cqh, 7px); border-radius: 3px; background: #2a3166; }
-.pk-bar i.on { background: var(--player); }
-.picker.locked { opacity: 0.5; }
-/* Very narrow column (phone upright, before the rotate prompt): one column of bars. */
-@container (max-width: 190px) {
-  .pk-stats { grid-template-columns: 1fr; }
-}
+.sf-screen[data-stage='name'] .sf-next { width: min(460px, 100%); }
+
+/* CHARACTER / KART */
+.sf-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 3cqw; align-items: center; }
+.sf-hero-box { display: flex; align-items: center; justify-content: center; gap: 1.5cqw; min-height: 0; height: 100%; }
+.sf-hero { width: min(52cqh, 26cqw); height: min(52cqh, 26cqw); flex: none; }
+.sf-arrow { width: 52px; height: 64px; flex: none; border: none; border-radius: 14px; background: var(--panel); color: var(--text); font-size: 38px; line-height: 1; }
+.sf-arrow:active { background: var(--player); color: #111; }
+.sf-info { display: flex; flex-direction: column; gap: 0.8cqh; min-width: 0; }
+.sf-title { font-weight: 900; font-size: clamp(24px, 11cqh, 44px); line-height: 1; color: var(--player); }
+.sf-sub { font-weight: 800; font-size: clamp(12px, 4.6cqh, 17px); text-transform: uppercase; letter-spacing: 0.1em; }
+.sf-sub[data-cls='light'] { color: #7fd8ff; }
+.sf-sub[data-cls='medium'] { color: #ffd23a; }
+.sf-sub[data-cls='heavy'] { color: #ff8a6a; }
+.sf-blurb { font-size: clamp(11px, 4.4cqh, 15px); color: var(--muted); line-height: 1.15; margin-bottom: 0.6cqh; }
+.sf-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1cqh 2.5cqw; }
+.sf-stat { display: flex; flex-direction: column; font-size: clamp(10px, 3.8cqh, 13px); color: var(--muted); line-height: 1.1; }
+.sf-bar { display: flex; gap: 2px; margin-top: 2px; }
+.sf-bar i { flex: 1; height: clamp(5px, 2.2cqh, 9px); border-radius: 3px; background: #2a3166; }
+.sf-bar i.on { background: var(--player); }
+.sf-strip { display: flex; gap: 6px; justify-content: center; }
+.sf-thumb { flex: none; min-width: 44px; height: 44px; padding: 3px; border: 3px solid transparent; border-radius: 12px; background: var(--panel); color: var(--text); font-weight: 800; font-size: 13px; }
+.sf-thumb canvas { width: 100%; height: 100%; display: block; }
+.sf-thumb.on { border-color: var(--player); background: #252c5c; }
+.sf-foot { display: flex; gap: 10px; justify-content: space-between; }
+.sf-foot .sf-confirm { flex: 1; }
+
+/* READY */
+.sf-screen[data-stage='ready'] { align-items: center; justify-content: center; gap: 2.5cqh; text-align: center; }
+.sf-ready-title { font-weight: 900; font-style: italic; letter-spacing: 0.12em; font-size: clamp(30px, 16cqh, 64px); color: #3ddc84; line-height: 1; }
+.sf-who { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.sf-chip { display: flex; flex-direction: column; align-items: center; min-width: 88px; padding: 5px 12px; border-radius: 12px; background: var(--panel); border: 2px solid transparent; line-height: 1.15; }
+.sf-chip b { font-size: 15px; }
+.sf-chip small { color: var(--muted); font-size: 11px; }
+.sf-chip.ok { border-color: #3ddc84; }
+.sf-chip.ok small { color: #3ddc84; }
+.sf-chip.me b { color: var(--player); }
+.sf-ready-slot { display: flex; flex-direction: column; align-items: center; gap: 1.5cqh; width: 100%; }
+.sf-ready-slot .ready-btn { font-size: clamp(18px, 7cqh, 28px); padding: 10px 36px; }
+.sf-back-ready { min-width: 160px; }
 
 /* ---------- Race modes (built in seriesMenu.ts, wired in main.ts) ---------- */
 /* One line under the top bar: mode + track button for the menu owner, place + points between races. */

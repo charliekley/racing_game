@@ -7,7 +7,7 @@
  * gives us our slot back.
  */
 import './controller.css';
-import { KART_COLORS, colorHex } from '../shared/colors';
+import { colorHex } from '../shared/colors';
 import { PeerControllerTransport } from '../shared/net/peerTransport';
 import { RoomNotFoundError, type Link } from '../shared/net/transport';
 import {
@@ -16,6 +16,7 @@ import {
   encodeInput,
   isHostMessage,
   MAX_TRACKS,
+  parseSelectEcho,
   parseSeriesInfo,
   parseTrackCards,
   sanitizeName,
@@ -38,7 +39,7 @@ import {
   vibrate,
 } from './device';
 import { ItemView } from './itemView';
-import { Picker } from './picker';
+import { SelectFlow } from './selectFlow';
 import { PhoneMap } from './phoneMap';
 import { SeriesMenu } from './seriesMenu';
 import { forcedChoice } from '../shared/forcedChoice';
@@ -139,22 +140,6 @@ function showConn(text: string | null) {
   if (text) $('conn-text').textContent = text;
 }
 
-function renderSwatches(container: HTMLElement, selected: number, onPick: (i: number) => void) {
-  container.replaceChildren();
-  const taken = new Set(lobby.filter((p) => p.slot !== mySlot).map((p) => p.color));
-  KART_COLORS.forEach((c, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'swatch';
-    b.style.background = c.hex;
-    b.title = c.name;
-    if (i === selected) b.classList.add('selected');
-    if (taken.has(i)) b.classList.add('taken');
-    b.addEventListener('click', () => onPick(i));
-    container.appendChild(b);
-  });
-}
-
 function applyPlayerColor() {
   document.documentElement.style.setProperty('--player', colorHex(myColor));
 }
@@ -163,16 +148,7 @@ function applyPlayerColor() {
 // Join form
 // ---------------------------------------------------------------------------
 const roomInput = $<HTMLInputElement>('room-input');
-const nameInput = $<HTMLInputElement>('name-input');
 roomInput.value = room ?? '';
-nameInput.value = prefs.name;
-let joinColor = prefs.color;
-const drawJoinSwatches = () =>
-  renderSwatches($('join-colors'), joinColor, (i) => {
-    joinColor = i;
-    drawJoinSwatches();
-  });
-drawJoinSwatches();
 
 $('join-form').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -182,10 +158,6 @@ $('join-form').addEventListener('submit', (e) => {
     return;
   }
   room = code;
-  prefs.name = sanitizeName(nameInput.value);
-  prefs.color = joinColor;
-  myColor = joinColor;
-  savePrefs(prefs);
   $('join-error').textContent = '';
   // Put the room in the URL so a page reload rejoins automatically.
   history.replaceState(null, '', `?room=${code}`);
@@ -263,34 +235,41 @@ function startPlaying() {
   motion.start();
   showScreen('pad-screen');
   applyPlayerColor();
-  $('player-name').textContent = prefs.name;
   itemView.set({ kind: 'none' });
   wantConnection = true;
   void connectLoop();
 }
 
-// --- Driver + kart picker: replaces the race HUD while in the lobby / results; locked during a race ---
-const picker = new Picker(prefs.loadout, (l) => {
-  prefs.loadout = l;
-  savePrefs(prefs);
-  // Tell the TV (same message as a name/colour change). The host ignores it if a race is running.
-  link?.sendEvent({ t: 'profile', name: prefs.name, color: myColor, loadout: l });
+// --- Pre-race flow (name -> character -> kart -> ready): full-screen on top of the pad while in the lobby / results ---
+// The host decides the stage; every tap here is a `select` message and the screen follows the host's answer.
+const flow = new SelectFlow({
+  select: (req) => link?.sendEvent({ t: 'select', ...req }),
+  settings: () => openSettings(),
 });
-document.querySelector('.center')!.insertBefore(picker.root, document.querySelector('.bottom'));
+$('stage').appendChild(flow.root);
+// The race-mode line (menu button / standings) and the RACE AGAIN button live on the READY screen.
+flow.readySlot.append($('series-bar'), $('ready-btn'));
 
-function updatePickerVisibility() {
-  const choosing = phase === 'lobby' || phase === 'results';
-  picker.root.classList.toggle('hidden', !choosing);
-  picker.setLocked(!choosing);
-  document.querySelector('.hud')!.classList.toggle('hidden', choosing);
-  if (choosing) picker.drawPortrait(); // size is only known once it is visible
+/** The flow covers the pad between races; during a race the pad (and its HUD) is what you see. */
+function updateFlowVisibility() {
+  const between = phase === 'lobby' || phase === 'results';
+  flow.setResults(phase === 'results');
+  flow.setVisible(between);
 }
-updatePickerVisibility();
-window.addEventListener('resize', () => picker.drawPortrait());
+updateFlowVisibility();
+window.addEventListener('resize', () => flow.relayout());
+
+/** "P1 · Dana" in the flow's header (the name comes from the lobby list so it follows changes). */
+function updateHeader() {
+  if (mySlot === null) return;
+  const text = `P${mySlot + 1} · ${nameOfSlot(mySlot)}`;
+  flow.setHeader(text);
+  $('player-name').textContent = text;
+}
 
 $('ready-btn').addEventListener('click', () => {
+  // Results screen only: "race again" / "next race". (In the lobby, reaching READY in the flow is the ready flag.)
   const next = !ready;
-  // Pressing Ready is also "this is how I hold the wheel straight".
   if (next) motion.calibrate();
   link?.sendEvent({ t: 'ready', ready: next });
   ready = next; // optimistic; the host's lobby message is the final word
@@ -301,7 +280,7 @@ function updateReadyButton() {
   const btn = $('ready-btn');
   // Between races the button means "go on": next Grand Prix race, race again, or back to the menu after the podium.
   let label = phase === 'results' ? 'RACE AGAIN' : 'READY';
-  let hidden = phase !== 'lobby' && phase !== 'results';
+  let hidden = phase !== 'results';
   if (phase === 'results' && series) {
     if (series.stage === 'over') label = 'MENU';
     else if (series.mode === 'gp') label = series.racesDone >= (series.raceTotal ?? 0) ? 'FINISH' : 'NEXT RACE';
@@ -451,21 +430,18 @@ function attachLink(l: Link) {
 function handleHostMessage(msg: HostToController) {
   switch (msg.t) {
     case 'welcome':
-      // The first welcome on a new link: the host's record of our driver wins (matters when we
-      // rejoin a game that already knows us); later welcomes are just echoes of our own changes.
-      if (!welcomed && msg.loadout) {
-        picker.setValue(msg.loadout);
-        prefs.loadout = picker.value;
-        savePrefs(prefs);
-      }
+      // The host's record of our stage and picks wins on a fresh link (a returning phone resumes where it
+      // was); later welcomes are just echoes of our own profile changes.
+      flow.applyHost(msg.stage ?? 'name', msg.name, msg.loadout ?? prefs.loadout, !welcomed);
       welcomed = true;
       mySlot = msg.slot;
       myColor = msg.color;
       ready = msg.ready;
       phase = msg.phase;
       recentering = phase === 'countdown';
-      updatePickerVisibility();
+      updateFlowVisibility();
       updateSeriesUi();
+      flow.setHeader(`P${msg.slot + 1} · ${msg.name}`);
       $('player-name').textContent = `P${msg.slot + 1} · ${msg.name}`;
       applyPlayerColor();
       updateReadyButton();
@@ -493,7 +469,24 @@ function handleHostMessage(msg: HostToController) {
         applyPlayerColor();
         updateReadyButton();
       }
+      flow.setPlayers(lobby, mySlot);
+      updateHeader();
       updateSeriesUi(); // names may have changed ("Dana is choosing")
+      break;
+    }
+    case 'select': {
+      // The host's answer to our `select` (or a change it made, e.g. the race started). The stage follows it.
+      const e = parseSelectEcho(msg);
+      if (!e) break;
+      const was = flow.currentStage;
+      flow.applyHost(e.stage, e.name, e.loadout);
+      if (e.stage !== was && e.stage !== 'name') {
+        // Remember the name and picks for next time (like the other settings).
+        prefs.name = e.name;
+        prefs.loadout = e.loadout;
+        savePrefs(prefs);
+        if (e.stage === 'ready' && was === 'kart') motion.calibrate(); // locking in = "this is how I hold the wheel straight"
+      }
       break;
     }
     case 'phase':
@@ -504,7 +497,7 @@ function handleHostMessage(msg: HostToController) {
       if (phase === 'lobby') phoneMap.clear();
       if (phase === 'lobby' || phase === 'results') ready = false;
       updateReadyButton();
-      updatePickerVisibility();
+      updateFlowVisibility();
       updateSeriesUi();
       break;
     case 'series': {
@@ -667,26 +660,17 @@ const setSens = $<HTMLInputElement>('set-sens');
 const setAngle = $<HTMLInputElement>('set-angle');
 const setInvert = $<HTMLInputElement>('set-invert');
 const setDebug = $<HTMLInputElement>('set-debug');
-let settingsColor = myColor;
 
 function refreshSettingLabels() {
   $('sens-val').textContent = `${Number(setSens.value).toFixed(2)}×`;
   $('angle-val').textContent = `${setAngle.value}°`;
 }
-const drawSettingsSwatches = () =>
-  renderSwatches($('set-colors'), settingsColor, (i) => {
-    settingsColor = i;
-    drawSettingsSwatches();
-  });
-
 function openSettings() {
   setName.value = prefs.name;
   setSens.value = String(prefs.steering.sensitivity);
   setAngle.value = String(prefs.steering.maxAngleDeg);
   setInvert.checked = prefs.steering.invert;
   setDebug.checked = prefs.showDebug;
-  settingsColor = myColor;
-  drawSettingsSwatches();
   refreshSettingLabels();
   $('settings-panel').classList.remove('hidden');
 }
@@ -725,11 +709,10 @@ $('recenter-btn').addEventListener('click', () => {
 $('settings-close').addEventListener('click', () => {
   applySettings();
   const newName = sanitizeName(setName.value);
-  const changed = newName !== prefs.name || settingsColor !== myColor;
+  const changed = newName !== prefs.name;
   prefs.name = newName;
-  prefs.color = settingsColor;
   savePrefs(prefs);
-  if (changed) link?.sendEvent({ t: 'profile', name: prefs.name, color: prefs.color });
+  if (changed) link?.sendEvent({ t: 'profile', name: prefs.name, color: myColor }); // (the colour is picked by the host now)
   $('settings-panel').classList.add('hidden');
 });
 debugEl.classList.toggle('hidden', !prefs.showDebug);
@@ -739,4 +722,4 @@ debugEl.classList.toggle('hidden', !prefs.showDebug);
 // wake lock and fullscreen anyway). Room/name are prefilled.
 // ---------------------------------------------------------------------------
 showScreen('join-screen');
-if (room && prefs.name) $<HTMLButtonElement>('join-btn').focus();
+if (room) $<HTMLButtonElement>('join-btn').focus();
