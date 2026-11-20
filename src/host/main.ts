@@ -21,6 +21,7 @@ import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../rende
 import { gpuName, presetByName, presetNameForGpu } from '../render/gpuTier';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
+import { nextRacers, sanitizeRacers, type RacerCount } from './raceSettings';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
 import { SeriesHost } from './seriesHost';
@@ -199,6 +200,29 @@ function cycleDifficulty() {
   }
 }
 
+// --- RACERS: 4 / 8 / 12 karts on the grid (R in the lobby; remembered on this computer) -------
+// People keep slots 0..3; computer drivers fill the rest (see raceSettings.ts).
+const RACERS_KEY = 'tiltkart.racers';
+function loadRacers(): RacerCount {
+  try {
+    return sanitizeRacers(new URLSearchParams(location.search).get('racers') ?? localStorage.getItem(RACERS_KEY)); // ?racers=12 for testing
+  } catch {
+    return sanitizeRacers(null);
+  }
+}
+let racers = loadRacers();
+const racersChip = $('chip-racers');
+racersChip.textContent = String(racers);
+function cycleRacers() {
+  racers = nextRacers(racers);
+  racersChip.textContent = String(racers);
+  try {
+    localStorage.setItem(RACERS_KEY, String(racers));
+  } catch {
+    /* ignore */
+  }
+}
+
 // --- Track picker (T in the lobby; remembered on this computer) -------------
 // localStorage keeps small strings per website, surviving page reloads and
 // browser restarts. We store the track's name (not its index) so adding new
@@ -354,6 +378,7 @@ function startDriving() {
   game.audio = audio; // AUDIO
   game.setTrack(seriesHost.currentTrack()); // the lobby's track, or the series' next one
   game.botDifficulty = botDifficulty;
+  game.racers = racers; // RACERS: bots fill the grid up to this many karts
   game.knockout = seriesHost.series?.mode === 'knockout'; // Knockout: more laps, the last kart is out after every lap
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
   // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, magnet, bumper, random) = endless supply of that item.
@@ -418,6 +443,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
     if (e.code === 'KeyD') cycleDifficulty();
+    if (e.code === 'KeyR') cycleRacers();
     if (e.code === 'KeyT') cycleTrack();
     // Menu without phones: arrows choose track (left/right) and mode (up/down), Enter starts.
     if (e.code === 'ArrowLeft') cycleTrack(-1);

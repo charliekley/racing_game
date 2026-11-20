@@ -19,14 +19,25 @@ export const SHORT_TRACK_LENGTH = 650;
 export const SHORT_TRACK_LAPS = 5;
 
 /**
+ * How many karts go out after each lap. Up to 6 racers: one (the classic rule). In a bigger field one kart per
+ * lap would need as many laps as there are karts, so it is the smallest number that leaves two karts for the last lap
+ * within MAX_KNOCKOUT_LAPS: 8 racers lose 2 per lap, 12 racers lose 3 per lap.
+ */
+export function knockoutsPerLap(racers: number): number {
+  return Math.max(1, Math.ceil((racers - 2) / (MAX_KNOCKOUT_LAPS - 2)));
+}
+
+/**
  * How many laps a Knockout race has: the track's normal laps + 2, at least 5 on a short track,
- * never more than MAX_KNOCKOUT_LAPS and never fewer than the racers need (one knockout per lap from lap 2).
+ * never more than MAX_KNOCKOUT_LAPS and never fewer than the racers need (knockouts from lap 2 on,
+ * `knockoutsPerLap` karts each, so that two karts are left for the last lap). 4 racers: 4 laps, 8: 5, 12: 6.
  */
 export function knockoutLaps(trackLaps: number, trackLength: number, racers = 4): number {
   let laps = trackLaps + 2;
   if (trackLength < SHORT_TRACK_LENGTH) laps = Math.max(laps, SHORT_TRACK_LAPS);
   laps = Math.min(laps, MAX_KNOCKOUT_LAPS);
-  return Math.max(laps, racers, 2);
+  const knockoutLapsNeeded = Math.ceil(Math.max(0, racers - 2) / knockoutsPerLap(racers));
+  return Math.max(laps, FIRST_KNOCKOUT_LAP + knockoutLapsNeeded, 2);
 }
 
 /** What `round` needs to know about each kart that is still racing. */
@@ -55,7 +66,11 @@ export class Knockout {
   /** Only a race that started with 2+ karts has a "last one standing". */
   private readonly contested: boolean;
 
-  constructor(slots: number[]) {
+  constructor(
+    slots: number[],
+    /** Karts knocked out after each lap (see `knockoutsPerLap`). */
+    private readonly perLap = knockoutsPerLap(slots.length),
+  ) {
     this.inGame = [...slots];
     this.contested = slots.length >= 2;
   }
@@ -90,12 +105,25 @@ export class Knockout {
    * only one kart left). Ties in distance go to the kart that crossed the line later, then the higher slot.
    */
   round(lap: number, contenders: Contender[]): Elimination | null {
-    if (lap < FIRST_KNOCKOUT_LAP || this.doneLaps.has(lap) || this.inGame.length < 2) return null;
-    const pool = contenders.filter((c) => this.inGame.includes(c.slot));
-    if (pool.length < 2) return null;
+    return this.roundAll(lap, contenders)[0] ?? null;
+  }
+
+  /**
+   * Like `round`, but a bigger field loses `perLap` karts: the last `perLap` karts, worst first (so the
+   * worst one gets the lowest place). Never knocks out the last kart standing.
+   */
+  roundAll(lap: number, contenders: Contender[]): Elimination[] {
+    if (lap < FIRST_KNOCKOUT_LAP || this.doneLaps.has(lap) || this.inGame.length < 2) return [];
+    if (contenders.filter((c) => this.inGame.includes(c.slot)).length < 2) return [];
     this.doneLaps.add(lap);
-    const victim = pool.reduce((worst, c) => (isBehind(c, worst) ? c : worst));
-    return this.remove(victim.slot, lap);
+    const out: Elimination[] = [];
+    for (let n = 0; n < this.perLap && this.inGame.length >= 2; n++) {
+      const pool = contenders.filter((c) => this.inGame.includes(c.slot));
+      if (pool.length < 2) break;
+      const victim = pool.reduce((worst, c) => (isBehind(c, worst) ? c : worst));
+      out.push(this.remove(victim.slot, lap));
+    }
+    return out;
   }
 
   /** A player left: the kart is out right now (counted as knocked out, lap 0). Null if it was not in. */

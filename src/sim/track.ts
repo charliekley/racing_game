@@ -22,6 +22,15 @@ export const SAMPLE_SPACING = 2;
 /** Curb width (m) – drivable like road, drawn red/white. */
 export const CURB_WIDTH = 1.2;
 
+/** Starting grid: up to 12 karts, 3 across (see `Track.gridSpot`). */
+export const GRID_SIZE = 12;
+const GRID_COLUMNS = 3;
+/** Distance (m) of the front row behind the start line, and between rows. */
+const GRID_FIRST_ROW = 9;
+const GRID_ROW_SPACING = 7;
+/** The side karts sit this fraction of the road width left / right of the centre line. */
+const GRID_SIDE = 0.28;
+
 export interface TrackSample {
   x: number;
   y: number;
@@ -631,13 +640,18 @@ export class Track implements Ground {
     return sampleAhead(this, route, i, k);
   }
 
-  /** World position and heading for a starting-grid slot (0 = pole). */
+  /**
+   * World position and heading for a starting-grid slot (0 = pole), up to GRID_SIZE (12) karts.
+   * Three across in rows: left and right kart side by side, the middle kart one half-row further back
+   * (a staggered grid), so 12 karts fit in four rows, the last about 37 m behind the line.
+   */
   gridSpot(index: number): { x: number; z: number; heading: number } {
-    const s = this.length - 9 - index * 6;
-    const k = Math.floor(s / this.spacing) % this.samples.length;
+    const row = Math.floor(index / GRID_COLUMNS);
+    const col = index % GRID_COLUMNS; // 0 = left, 1 = right, 2 = middle (set back)
+    const s = this.length - GRID_FIRST_ROW - row * GRID_ROW_SPACING - (col === 2 ? GRID_ROW_SPACING / 2 : 0);
+    const k = ((Math.floor(s / this.spacing) % this.samples.length) + this.samples.length) % this.samples.length;
     const a = this.samples[k];
-    const side = index % 2 === 0 ? -1 : 1; // pole on the left
-    const lateral = side * this.def.width * 0.22;
+    const lateral = [-1, 1, 0][col] * this.def.width * GRID_SIDE;
     return { x: a.x + a.rx * lateral, z: a.z + a.rz * lateral, heading: a.heading };
   }
 }

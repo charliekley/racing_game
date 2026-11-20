@@ -26,13 +26,22 @@ export const MODE_NAMES: Record<SeriesMode, string> = {
 };
 
 /**
- * Points per finishing place (index 0 = 1st). There are at most 4 racers (humans + bots),
- * so four entries cover everybody. Change the numbers here and everything follows.
+ * Points per finishing place in a field of up to 4 racers (index 0 = 1st). Change the numbers here and everything follows.
  */
 export const GP_POINTS: readonly number[] = [10, 7, 5, 3];
+/** Bonus points for the top four places in a bigger field (8 or 12 racers), on top of the "karts you beat" points. */
+const BIG_FIELD_BONUS: readonly number[] = [5, 3, 2, 1];
 
-export function pointsForPlace(place: number): number {
-  return GP_POINTS[place - 1] ?? 0;
+/**
+ * Points for finishing `place` (1-based) in a field of `racers` karts.
+ *  - up to 4 racers: the GP_POINTS table above (10, 7, 5, 3).
+ *  - more racers: one point for every kart you beat, plus a bonus for the top four. So 12 racers pay
+ *    16, 13, 11, 9, 7, 6, 5, 4, 3, 2, 1, 0 and 8 racers pay 12, 9, 7, 5, 3, 2, 1, 0.
+ */
+export function pointsForPlace(place: number, racers = GP_POINTS.length): number {
+  if (racers <= GP_POINTS.length) return GP_POINTS[place - 1] ?? 0;
+  if (place < 1 || place > racers) return 0;
+  return racers - place + (BIG_FIELD_BONUS[place - 1] ?? 0);
 }
 
 export function nextMode(m: SeriesMode, step = 1): SeriesMode {
@@ -71,6 +80,8 @@ export class Series {
   /** slot -> how often they finished 1st, 2nd, 3rd... (the tie-break after points). */
   private readonly placeCounts = new Map<number, number[]>();
   private readonly lastPlace = new Map<number, number>();
+  /** Karts in the most recent race (the points table depends on the size of the field). */
+  private field = 0;
 
   constructor(
     readonly mode: SeriesMode,
@@ -94,16 +105,17 @@ export class Series {
   /** Points a slot earned in the last race. */
   gainOf(slot: number): number {
     const p = this.lastPlacings.find((x) => x.slot === slot);
-    return this.scoring && p ? pointsForPlace(p.place) : 0;
+    return this.scoring && p ? pointsForPlace(p.place, this.field) : 0;
   }
 
   /** Record a finished race: award points, then decide what comes next. */
   recordRace(placings: Placing[]): void {
     this.lastPlacings = [...placings].sort((a, b) => a.place - b.place);
+    this.field = placings.length;
     for (const p of this.lastPlacings) {
       this.lastPlace.set(p.slot, p.place);
       if (!this.scoring) continue;
-      this.points.set(p.slot, (this.points.get(p.slot) ?? 0) + pointsForPlace(p.place));
+      this.points.set(p.slot, (this.points.get(p.slot) ?? 0) + pointsForPlace(p.place, this.field));
       const counts = this.placeCounts.get(p.slot) ?? [];
       while (counts.length < p.place) counts.push(0);
       counts[p.place - 1]++;

@@ -67,6 +67,12 @@
 .res-place sup { font-size: 0.45em; margin-left: 0.1em; }
 .res-row:not(.winner) .res-place { color: #fff; opacity: 0.85; }
 .res-dot { width: 0.9em; height: 0.9em; border-radius: 50%; background: var(--slot-color, #888); box-shadow: 0 0 0.6em var(--slot-color, #888); }
+/* RACERS 8 / 12: a long list, so tighter rows and no second line under the name. */
+.res-list.many { gap: 0.35vh; }
+.res-list.many .res-row { font-size: clamp(11px, 2.3vh, 22px); padding: 0.35vh 1.2vw; animation-delay: calc(0.35s + var(--i) * 0.07s); }
+.res-list.many .res-kart { display: none; }
+.results-box:has(.res-list.many) { padding-top: 2vh; padding-bottom: 2vh; }
+.results-box:has(.res-list.many) .res-actions { margin-top: 1.6vh; }
 .res-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.1; }
 .res-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .res-kart { font-size: 0.45em; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }

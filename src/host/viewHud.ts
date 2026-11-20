@@ -43,6 +43,9 @@ export class ViewHud {
   private pos: HTMLElement;
   private posBox: HTMLElement;
   private posSuffix: HTMLElement;
+  /** "/12": the field size, shown only when more than 4 karts race. */
+  private posOf!: HTMLElement;
+  private lastRacers = -1;
   private lap: HTMLElement;
   private time: HTMLElement;
   private speed: HTMLElement;
@@ -82,7 +85,7 @@ export class ViewHud {
     this.root.innerHTML = `
       <div class="hud-flash"></div>
       <div class="hud-speedlines"><i></i><i></i></div>
-      <div class="hud-pos"><span class="pos-num"></span><span class="pos-suffix"></span></div>
+      <div class="hud-pos"><span class="pos-num"></span><span class="pos-suffix"></span><span class="pos-of"></span></div>
       <div class="hud-tag"><span class="tag-slot">P${slot + 1}</span> <span class="tag-name"></span></div>
       <div class="hud-item" title="Item"><canvas width="96" height="96"></canvas></div>
       <div class="hud-topright"><div class="hud-lap"></div><div class="hud-time"></div></div>
@@ -96,6 +99,7 @@ export class ViewHud {
     this.pos = q('.pos-num');
     this.posBox = q('.hud-pos');
     this.posSuffix = q('.pos-suffix');
+    this.posOf = q('.pos-of');
     this.lap = q('.hud-lap');
     this.time = q('.hud-time');
     this.speed = q('.hud-speed');
@@ -145,6 +149,10 @@ export class ViewHud {
       this.lastShownPos = s.position;
       this.pos.textContent = String(s.position);
       this.posSuffix.textContent = ordinalSuffix(s.position);
+    }
+    if (s.racers !== this.lastRacers) {
+      this.lastRacers = s.racers;
+      this.posOf.textContent = s.racers > 4 ? `/${s.racers}` : '';
     }
     if (s.lap !== this.lastShownLap) {
       this.lastShownLap = s.lap;
