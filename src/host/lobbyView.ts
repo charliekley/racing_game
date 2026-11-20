@@ -10,7 +10,7 @@ import { CHARACTERS, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { KART_COLORS, colorHex } from '../shared/colors';
 import { BUTTON_NAMES, Buttons } from '../shared/protocol';
 import { MAX_PLAYERS, type PlayerManager } from './playerManager';
-import { KEY_CHARACTER, KEY_KART, KEY_SCHEMES } from './input/localInput';
+import { KEY_SCHEMES } from './input/localInput';
 import type { PlayerSlot } from './playerSlots';
 
 interface CardRefs {
@@ -91,15 +91,10 @@ export class LobbyView {
     const loadoutEl = el.querySelector('.slot-loadout') as HTMLElement;
     loadoutEl.textContent = `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`;
     loadoutEl.style.cssText = 'font-size:0.85em;opacity:0.8;margin:2px 0 6px';
-    if (slot.owner.kind === 'keyboard') {
-      const keys = (code: string) => code.replace('Key', '').replace('Comma', ',').replace('Period', '.');
+    if (slot.owner.kind === 'keyboard' || slot.owner.kind === 'gamepad') {
+      // Local players choose on the TV: left/right browse, item key / pad A confirms, trick key / pad B goes back.
       const hint = document.createElement('span');
-      hint.textContent = `  (${keys(KEY_CHARACTER[slot.owner.scheme])}: driver, ${keys(KEY_KART[slot.owner.scheme])}: kart)`;
-      hint.style.opacity = '0.6';
-      loadoutEl.appendChild(hint);
-    } else if (slot.owner.kind === 'gamepad') {
-      const hint = document.createElement('span');
-      hint.textContent = '  (D-pad: driver, kart)';
+      hint.textContent = '  (left/right browse, item key = OK, trick key = back)';
       hint.style.opacity = '0.6';
       loadoutEl.appendChild(hint);
     }

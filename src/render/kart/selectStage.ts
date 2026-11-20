@@ -456,14 +456,14 @@ class Stage {
     } else if (stage === 'kart') {
       // While the pick move plays, stay close on the driver; then pull back and orbit.
       const pulling = this.pickT >= 0 && this.pickT < PICK_DURATION - 0.1;
-      radius = pulling ? 1.35 : 1.55;
-      wantTy = pulling ? 0.75 : 0.5;
+      radius = pulling ? 1.6 : 1.85;
+      wantTy = pulling ? 0.8 : 0.55;
       wantEl = pulling ? 0.2 : 0.3;
       orbit = !pulling;
       wantAz = pulling ? 0.3 : this.az;
     } else if (stage === 'ready') {
-      radius = 1.5;
-      wantTy = 0.5;
+      radius = 1.75;
+      wantTy = 0.55;
       wantEl = 0.16;
       wantAz = 0.5;
     }

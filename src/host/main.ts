@@ -22,7 +22,6 @@ import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../rende
 import { gpuName, presetByName, presetNameForGpu } from '../render/gpuTier';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
-import { SelectionHub } from './selectionHub';
 import { SelectView } from './selectView';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
@@ -131,14 +130,24 @@ const lobbyView = new LobbyView($('slots'), players, {
 // --- Selection screen (TV side) ---------------------------------------------------
 // The hub is the shared contract (selectionHub.ts): the input side calls selectionHub.set(...) as players
 // choose, and this view only draws it (one quadrant per player). It is paused while a race is on screen.
-const selectionHub = new SelectionHub();
-const selectView = new SelectView($('select'), selectionHub, { onKick: (slot) => players.kick(slot) });
-if (import.meta.env.DEV) (window as unknown as { __selectionHub?: SelectionHub }).__selectionHub = selectionHub; // debugging aid
+// The quadrants show HUMAN players only: bots are published to the hub too (always 'ready'), so they are filtered
+// out here into a second hub that the view subscribes to.
+const humanHub = new SelectionHub();
+selectionHub.subscribe((views) => {
+  const humans = views.filter((v) => {
+    const kind = players.slots.slots[v.slot]?.owner.kind;
+    return kind === undefined || kind !== 'bot'; // (the dev demo has no slots behind its views: keep those)
+  });
+  for (const v of humans) humanHub.set(v);
+  for (const v of humanHub.list()) if (!humans.some((h) => h.slot === v.slot)) humanHub.remove(v.slot);
+});
+const selectView = new SelectView($('select'), humanHub, { onKick: (slot) => players.kick(slot) });
+if (import.meta.env.DEV) (window as unknown as { __selectView?: SelectView }).__selectView = selectView; // debugging aid
 // Dev: ?selectdemo=1..4 fakes that many players walking through the flow (no phones needed).
 const demoParam = new URLSearchParams(location.search).get('selectdemo');
 if (demoParam !== null) {
   void import('../dev/selectDemo').then(({ startSelectDemo }) => {
-    (window as unknown as { __selectDemo?: unknown }).__selectDemo = startSelectDemo(selectionHub, Number(demoParam) || 4);
+    (window as unknown as { __selectDemo?: unknown }).__selectDemo = startSelectDemo(humanHub, Number(demoParam) || 4);
   });
 }
 
