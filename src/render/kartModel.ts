@@ -23,7 +23,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CHARACTERS, DEFAULT_LOADOUT } from '../shared/characters';
+import { CHARACTERS, DEFAULT_LOADOUT, type KartPalette } from '../shared/characters';
 import { PartBuilder, withDetail, type Bucket } from './kart/geo';
 import { STYLE_BUILDERS, buildSteeringWheelGeometry, type StyleLayout } from './kart/bodies';
 import { buildDriverGeometries, HEAD_SCALE, NECK, SHOULDER_R, type DriverGeometries } from './kart/drivers';
@@ -187,6 +187,31 @@ function getStyleAssets(style: number, detail: KartDetail): StyleAssets {
   return a;
 }
 
+/**
+ * Wheels in a character palette's colours (rims and spokes = `wheels`, hub caps = `accent`). Built on demand
+ * and shared by every kart with that palette, like the default wheels above.
+ */
+const wheelCache = new Map<string, StyleAssets['wheels']>();
+
+function getPaletteWheels(style: number, detail: KartDetail, pal: KartPalette): StyleAssets['wheels'] {
+  const key = `${style}|${detail}|${pal.wheels}|${pal.accent}`;
+  let w = wheelCache.get(key);
+  if (!w) {
+    const high = detail === 'high';
+    const { layout } = getStyleAssets(style, detail);
+    const front = { ...layout.front, rim: pal.wheels, cap: pal.accent };
+    const rear = { ...layout.rear, rim: pal.wheels, cap: pal.accent };
+    w = withDetail(DETAIL_FACTOR[detail], () => [
+      buildWheelGeometry(front, false, high),
+      buildWheelGeometry(front, true, high),
+      buildWheelGeometry(rear, false, high),
+      buildWheelGeometry(rear, true, high),
+    ] as StyleAssets['wheels']);
+    wheelCache.set(key, w);
+  }
+  return w;
+}
+
 const driverCache = new Map<string, DriverGeometries>();
 
 function getDriverGeometries(character: number, detail: KartDetail): DriverGeometries {
@@ -217,21 +242,25 @@ export function kartTriangleCount(style: number, character: number, detail: Kart
  * Build one kart. `style` is an index into KART_STYLES and `character` an index
  * into CHARACTERS (both wrap around, so any integer is safe). Cheap to call
  * repeatedly: geometry is shared.
+ *
+ * `palette` (see KartPalette in shared/characters.ts; `paletteFor(character)` gives a character's own) paints
+ * the body, trim, hub caps and rims; `colorHex` is then ignored. Without a palette the body is `colorHex`.
  */
 export function buildKartModel(
   colorHex: string,
   style = 0,
   character: number = DEFAULT_LOADOUT.character,
   detail: KartDetail = currentDetail,
+  palette?: KartPalette,
 ): KartModel {
-  const model = buildOneLevel(colorHex, style, character, detail);
+  const model = buildOneLevel(colorHex, style, character, detail, palette);
   // Cheaper builds of the same kart: we only keep their geometry and materials (shared and cached),
   // and `setLod` swaps them onto the meshes of this model.
   const chain = LOD_CHAIN[detail];
   const byDetail = new Map<KartDetail, Map<string, THREE.Mesh>>();
   for (const d of chain) {
     if (d === detail || byDetail.has(d)) continue;
-    byDetail.set(d, meshesByKey(buildOneLevel(colorHex, style, character, d)));
+    byDetail.set(d, meshesByKey(buildOneLevel(colorHex, style, character, d, palette)));
   }
   const slots = [...meshesByKey(model)].map(([key, mesh]) => {
     const pick = (d: KartDetail) => (d === detail ? mesh : byDetail.get(d)!.get(key));
@@ -250,7 +279,7 @@ export function buildKartModel(
   let farMerged: THREE.Mesh | null = null;
   model.bakeFarModel = () => {
     if (farMerged || farParts.length === 0) return;
-    const key = `${model.style}|${model.character}|${chain[2]}`;
+    const key = `${model.style}|${model.character}|${chain[2]}|${palette ? palette.wheels + palette.accent : ''}`;
     let geo = farMergedCache.get(key);
     if (!geo) {
       model.root.updateMatrixWorld(true);
@@ -317,12 +346,14 @@ function buildOneLevel(
   style: number,
   character: number,
   detail: KartDetail,
+  palette?: KartPalette,
 ): KartModel {
   const wrap = (v: number, n: number) => ((Math.trunc(v) % n) + n) % n;
   style = wrap(style, STYLE_BUILDERS.length);
   character = wrap(character, CHARACTERS.length);
   const assets = getStyleAssets(style, detail);
-  const paint = getPaintMaterials(colorHex, detail === 'high');
+  const paint = palette ? getPaintMaterials(palette.body, detail === 'high', palette.trim) : getPaintMaterials(colorHex, detail === 'high');
+  const wheelGeos = palette ? getPaletteWheels(style, detail, palette) : assets.wheels;
   const detailMat = getDetailMaterial();
 
   const root = new THREE.Group();
@@ -394,10 +425,10 @@ function buildOneLevel(
   const rearWheelContacts: THREE.Vector3[] = [];
   const { front, rear } = assets.layout;
   const spots = [
-    { spec: front, side: 1, geo: assets.wheels[0], isFront: true },
-    { spec: front, side: -1, geo: assets.wheels[1], isFront: true },
-    { spec: rear, side: 1, geo: assets.wheels[2], isFront: false },
-    { spec: rear, side: -1, geo: assets.wheels[3], isFront: false },
+    { spec: front, side: 1, geo: wheelGeos[0], isFront: true },
+    { spec: front, side: -1, geo: wheelGeos[1], isFront: true },
+    { spec: rear, side: 1, geo: wheelGeos[2], isFront: false },
+    { spec: rear, side: -1, geo: wheelGeos[3], isFront: false },
   ];
   for (const { spec, side, geo, isFront } of spots) {
     const pivot = new THREE.Group();

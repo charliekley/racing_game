@@ -33,6 +33,7 @@
         </section>
 
         <div class="right-col">
+          <div class="top-row">
           <section class="mode-panel" aria-label="Race mode">
             <div class="mode-label">MODE <kbd>&uarr;</kbd><kbd>&darr;</kbd></div>
             <div id="mode-pills" class="mode-pills"></div>
@@ -49,6 +50,10 @@
             </div>
             <button id="track-next" class="arrow" tabindex="-1" title="Next track (right arrow)">&#9654;</button>
           </section>
+          </div>
+          <!-- Selection screen: one quadrant per player (name -> character -> kart -> ready), drawn by src/host/selectView.ts -->
+          <section id="select" class="select-area" aria-label="Player selection"></section>
+          <!-- Old player cards (debug readout, remove buttons): kept in the page but hidden; see lobby.css -->
           <section id="slots" class="slots"></section>
         </div>
       </main>

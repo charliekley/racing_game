@@ -9,6 +9,7 @@ import QRCode from 'qrcode';
 import './host.css';
 import './lobby.css'; // title screen + lobby polish (loaded after host.css so it overrides)
 import './series.css'; // race modes: mode chips, podium, loser-picks strip
+import './select.css'; // selection screen quadrants (name -> character -> kart -> ready)
 import { PeerHostTransport } from '../shared/net/peerTransport';
 import { RoomTakenError } from '../shared/net/transport';
 import type { ItemDisplay } from '../shared/protocol';
@@ -21,6 +22,8 @@ import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../rende
 import { gpuName, presetByName, presetNameForGpu } from '../render/gpuTier';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
+import { SelectionHub } from './selectionHub';
+import { SelectView } from './selectView';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
 import { SeriesHost } from './seriesHost';
@@ -113,6 +116,20 @@ const lobbyView = new LobbyView($('slots'), players, {
   },
   kick: (slot) => players.kick(slot),
 });
+
+// --- Selection screen (TV side) ---------------------------------------------------
+// The hub is the shared contract (selectionHub.ts): the input side calls selectionHub.set(...) as players
+// choose, and this view only draws it (one quadrant per player). It is paused while a race is on screen.
+const selectionHub = new SelectionHub();
+const selectView = new SelectView($('select'), selectionHub, { onKick: (slot) => players.kick(slot) });
+if (import.meta.env.DEV) (window as unknown as { __selectionHub?: SelectionHub }).__selectionHub = selectionHub; // debugging aid
+// Dev: ?selectdemo=1..4 fakes that many players walking through the flow (no phones needed).
+const demoParam = new URLSearchParams(location.search).get('selectdemo');
+if (demoParam !== null) {
+  void import('../dev/selectDemo').then(({ startSelectDemo }) => {
+    (window as unknown as { __selectDemo?: unknown }).__selectDemo = startSelectDemo(selectionHub, Number(demoParam) || 4);
+  });
+}
 
 // --- Graphics quality (Q in the lobby; remembered on this computer) ----------
 const QUALITY_KEY = 'tiltkart.quality'; // a preset the player picked with Q: always wins
@@ -330,6 +347,7 @@ let startTimer: ReturnType<typeof setTimeout> | null = null;
 function startDriving() {
   startTimer = null;
   if (players.slots.players.length === 0) return;
+  selectView.hide(); // free the selection screen's GPU memory while racing
   if (!seriesHost.series) seriesHost.begin(); // starting from the lobby: a new series with the chosen mode and track
   driving = true;
   players.setPhase('countdown');
@@ -381,6 +399,7 @@ function backToLobby() {
   gameEl.classList.add('hidden');
   $('app').classList.remove('hidden');
   lobbyView.render();
+  selectView.show();
 }
 
 players.onLobbyChange.add(() => {
@@ -433,6 +452,7 @@ window.addEventListener('keydown', (e) => {
 // Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into
 // a race; /host/?drive=4 also adds 3 bots (instant 4-way split-screen).
 const driveParam = new URLSearchParams(location.search).get('drive');
+if (driveParam === null) selectView.show(); // (the drive shortcut goes straight into a race, no selection screen needed)
 if (driveParam !== null) {
   if (!URL_MODE) seriesHost.mode = 'single'; // the dev shortcut stays a plain single race unless ?mode= says otherwise
   players.slots.join({ kind: 'keyboard', scheme: 0 }, 'Keys WASD', 2);

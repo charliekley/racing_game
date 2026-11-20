@@ -110,3 +110,39 @@ html, body {
 .kart-swatch { width: 1.6em; height: 0.8em; border-radius: 0.3em 0.9em 0.3em 0.9em; background: var(--slot-color, #888); box-shadow: 0 0 8px var(--slot-color, #888); }
 .banner { animation: banner-pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
 @keyframes banner-pop { from { transform: scale(0.8); opacity: 0; } }
+
+/* =====================================================================
+   Selection layout: the player quadrants (select.css) are the centre of the
+   lobby, so the title, the join panel and the track/mode row are compact.
+   The QR code and room code stay on the left so phones can always join.
+   ===================================================================== */
+.title .subtitle { display: none; }
+.logo { font-size: clamp(22px, 4.6vh, 52px); }
+.checker { height: clamp(4px, 0.8vh, 8px); }
+.lobby { grid-template-columns: minmax(150px, 15vw) 1fr; gap: 1.4vw; }
+.join-panel { padding: 1.2vh 0.8vw; gap: 0.8vh; }
+.qr-frame { padding: 6px; border-radius: 12px; box-shadow: 0 0 0 4px #ffbe0b, 0 0 24px rgba(255, 190, 11, 0.35); }
+/* (the QR library writes its own pixel size on the canvas, so !important) */
+#qr { width: min(100%, 22vh) !important; height: auto !important; }
+.room-code { font-size: clamp(24px, 5vh, 56px); border-radius: 10px; letter-spacing: 0.08em; }
+.room-label { letter-spacing: 0.2em; }
+.join-url { font-size: clamp(9px, 1.3vh, 12px); }
+.right-col { gap: 1vh; }
+.top-row { display: flex; gap: 1vw; min-height: 0; }
+.top-row .mode-panel { flex: 1.5 1 0; }
+.top-row .track-panel { flex: 1 1 0; }
+.top-row .mode-panel, .top-row .track-panel { min-width: 0; padding: 0.6vh 0.9vw; border-radius: 14px; }
+.top-row .mode-panel { flex-wrap: nowrap; }
+.top-row .mode-note { display: none; }
+.top-row .mode-label { white-space: nowrap; }
+.top-row .mode-pills { flex-wrap: nowrap; }
+.top-row .mode-pill { padding: 0.3vh 0.7vw; white-space: nowrap; font-size: clamp(11px, 1.7vh, 16px); }
+.top-row .mode-label kbd { display: none; }
+#track-map, #track-shot { height: clamp(40px, 8vh, 90px); }
+.track-meta { display: none; }
+.track-name { font-size: clamp(16px, 3.2vh, 34px); }
+.arrow { width: 34px; height: 34px; }
+/* The old player cards stay in the page for the debug readout but are not shown. */
+.slots { display: none; }
+.lobby-hint { font-size: clamp(11px, 1.7vh, 16px); }
+.help { font-size: clamp(10px, 1.4vh, 13px); gap: 0.4em 1.2em; }
