@@ -9,7 +9,9 @@
  *    `navigator.getGamepads()` every frame. Pads using the "standard" mapping
  *    (Xbox/PlayStation style) have fixed button indices.
  */
-import { Buttons, type ControlInput } from '../../shared/protocol';
+import { CHARACTERS, KART_BODIES, type Loadout } from '../../shared/characters';
+import { Buttons, type ControlInput, type GamePhase, type SelectRequest } from '../../shared/protocol';
+import { nextStage, previousStage, type SelectStage } from '../../shared/selectStage';
 
 export interface KeyScheme {
   label: string;
@@ -40,7 +42,10 @@ export const KEY_SCHEMES: KeyScheme[] = [
 /** Keys that add a keyboard player in the lobby ("1" -> WASD player, "2" -> arrows player). */
 export const KEY_JOIN = ['Digit1', 'Digit2'];
 
-/** Lobby keys to pick a driver (character) and a kart body: one per keyboard scheme (WASD player, arrows player). */
+/**
+ * DEPRECATED: the old "press C / V to cycle driver / kart" keys. Nothing reads them any more (see keySelectActions);
+ * kept only because lobbyView.ts still imports them for its hint text. Remove together with that text.
+ */
 export const KEY_CHARACTER = ['KeyC', 'Comma'];
 export const KEY_KART = ['KeyV', 'Period'];
 
@@ -122,10 +127,73 @@ export function readGamepad(pad: Gamepad): ControlInput {
   return { steer: x, buttons };
 }
 
-/** D-pad left / right / down as bits 1 / 2 / 4: the lobby uses them to pick a driver and a kart. */
-export function padLoadoutButtons(pad: Gamepad): number {
+// ---------------------------------------------------------------------------
+// Pre-race selection with keys / a gamepad (the same steps the phones have)
+// ---------------------------------------------------------------------------
+
+/** What a local player can do in the character / kart / ready flow. */
+export type SelectAction = 'left' | 'right' | 'confirm' | 'back';
+
+/**
+ * Which key does what, per keyboard scheme: the steering keys browse, the ITEM key confirms, the TRICK key goes back.
+ * (WASD player: A / D, E, R. Arrows player: left / right arrows, Enter, "/".)
+ */
+export function keySelectActions(pressed: ReadonlySet<string>, scheme: number): SelectAction[] {
+  const k = KEY_SCHEMES[scheme];
+  if (!k) return [];
+  const out: SelectAction[] = [];
+  if (pressed.has(k.left)) out.push('left');
+  if (pressed.has(k.right)) out.push('right');
+  if (pressed.has(k.item)) out.push('confirm');
+  if (pressed.has(k.trick)) out.push('back');
+  return out;
+}
+
+/** Gamepad bits for the flow: D-pad left = 1, D-pad right = 2, A = 4 (confirm), B = 8 (back). */
+export const PAD_LEFT = 1;
+export const PAD_RIGHT = 2;
+export const PAD_CONFIRM = 4;
+export const PAD_BACK = 8;
+
+export function padSelectBits(pad: Gamepad): number {
   const down = (i: number) => (pad.buttons[i]?.pressed ? 1 : 0);
-  return down(14) | (down(15) << 1) | (down(13) << 2);
+  return down(14) | (down(15) << 1) | (down(GP.A) << 2) | (down(GP.B) << 3);
+}
+
+/** Buttons that went down since last frame (edge-triggered: holding a button does not repeat). */
+export function padSelectActions(now: number, was: number): SelectAction[] {
+  const fresh = now & ~was;
+  const out: SelectAction[] = [];
+  if (fresh & PAD_LEFT) out.push('left');
+  if (fresh & PAD_RIGHT) out.push('right');
+  if (fresh & PAD_CONFIRM) out.push('confirm');
+  if (fresh & PAD_BACK) out.push('back');
+  return out;
+}
+
+/** What one action does to a local player: a stage / highlight request for the slot, a "race again" toggle, or nothing. */
+export type LocalStep = { kind: 'select'; req: SelectRequest } | { kind: 'toggleReady' } | null;
+
+/**
+ * Pure mapping from (action, where the player is, what is highlighted) to the effect. Local players
+ * start at the character step (their name is the key scheme's label, so there is no typing).
+ */
+export function localSelectStep(action: SelectAction, stage: SelectStage, loadout: Loadout, phase: GamePhase): LocalStep {
+  if (phase !== 'lobby' && phase !== 'results') return null;
+  if (action === 'left' || action === 'right') {
+    const dir = action === 'left' ? -1 : 1;
+    if (stage === 'character') return { kind: 'select', req: { stage, character: (loadout.character + dir + CHARACTERS.length) % CHARACTERS.length } };
+    if (stage === 'kart') return { kind: 'select', req: { stage, kart: (loadout.kart + dir + KART_BODIES.length) % KART_BODIES.length } };
+    return null;
+  }
+  if (action === 'confirm') {
+    const next = nextStage(stage);
+    if (next) return { kind: 'select', req: { stage: next } };
+    return phase === 'results' ? { kind: 'toggleReady' } : null; // at READY: "race again" on the results screen
+  }
+  // back: one step earlier, but never to the name step (there is no name to type)
+  const prev = previousStage(stage);
+  return prev && prev !== 'name' ? { kind: 'select', req: { stage: prev } } : null;
 }
 
 /** True if the pad's Start or A button is down (used to join from the lobby). */

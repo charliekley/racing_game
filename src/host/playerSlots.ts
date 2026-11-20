@@ -8,8 +8,9 @@
  */
 import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
 import { KART_COLORS, clampColorIndex } from '../shared/colors';
-import type { GamePhase, LobbyPlayerInfo } from '../shared/protocol';
+import type { GamePhase, LobbyPlayerInfo, SelectRequest } from '../shared/protocol';
 import { sanitizeName } from '../shared/protocol';
+import { canMoveStage, type SelectStage } from '../shared/selectStage';
 
 export const MAX_PLAYERS = 4;
 
@@ -27,6 +28,11 @@ export interface PlayerSlot {
   color: number;
   connected: boolean;
   ready: boolean;
+  /**
+   * Where the player is in the name -> character -> kart -> ready flow. In the lobby, `ready` simply follows
+   * "stage is 'ready'"; on the results screen `ready` means "race again" (see select()).
+   */
+  stage: SelectStage;
   /** Character + kart body. Kept with the slot, so it survives a phone reconnecting like name and colour do. */
   loadout: Loadout;
 }
@@ -66,7 +72,7 @@ export class PlayerSlots {
    * Add a player, or re-attach a returning one to their old slot.
    * New players may only join in the lobby; returning players can rejoin any time.
    */
-  join(owner: SlotOwner, name: string, preferredColor: number, loadout?: unknown): JoinResult {
+  join(owner: SlotOwner, name: string, preferredColor: number, loadout?: unknown, stage: SelectStage = 'name'): JoinResult {
     const existing = this.find(owner);
     if (existing) {
       existing.connected = true;
@@ -82,6 +88,7 @@ export class PlayerSlots {
       color: this.pickColor(preferredColor, index),
       connected: true,
       ready: false,
+      stage,
       loadout: loadout === undefined ? { ...DEFAULT_LOADOUT } : sanitizeLoadout(loadout),
     };
     this.slots[index] = slot;
@@ -126,6 +133,40 @@ export class PlayerSlots {
   }
 
   /**
+   * The pre-race flow. A player proposes a stage plus values (already shape-checked by parseSelect); we decide.
+   *  - only between races (lobby / results), never during one;
+   *  - forward one step at a time, back any distance (canMoveStage);
+   *  - a value is only taken while its own step is current or being entered: the name at 'name', the character at
+   *    'character', the kart at 'kart'. So a locked-in pick cannot be changed without first going back.
+   * Returns true if anything changed.
+   */
+  select(index: number, req: SelectRequest): boolean {
+    const s = this.slots[index];
+    if (!s || !this.canChangeLoadout() || !canMoveStage(s.stage, req.stage)) return false;
+    const at = (stage: SelectStage) => s.stage === stage || req.stage === stage;
+    const before = `${s.stage}|${s.name}|${s.loadout.character}|${s.loadout.kart}`;
+    if (req.name !== undefined && at('name')) s.name = sanitizeName(req.name);
+    if (req.character !== undefined && at('character')) s.loadout = { ...s.loadout, character: req.character };
+    if (req.kart !== undefined && at('kart')) s.loadout = { ...s.loadout, kart: req.kart };
+    const wasReady = s.stage === 'ready';
+    s.stage = req.stage;
+    // Entering / leaving READY flips the ready flag (lobby: that IS the flag; results: "race again").
+    if (!wasReady && s.stage === 'ready') s.ready = true;
+    if (wasReady && s.stage !== 'ready') s.ready = false;
+    return before !== `${s.stage}|${s.name}|${s.loadout.character}|${s.loadout.kart}`;
+  }
+
+  /** The race starts: every driver on the grid is locked in, so everyone counts as being at 'ready'. */
+  lockInAll(): void {
+    for (const p of this.players) p.stage = 'ready';
+  }
+
+  /** The race may start: everyone connected is ready and nobody still owes the mode / track choice (P1's pop-up comes first). */
+  canStart(modeChoicePending: boolean): boolean {
+    return this.phase === 'lobby' && !modeChoicePending && this.allReady();
+  }
+
+  /**
    * Colors are unique: use the preferred one if nobody else has it,
    * otherwise the first free one.
    */
@@ -147,7 +188,7 @@ export class PlayerSlots {
   resetToLobby(): void {
     this.phase = 'lobby';
     for (const p of this.players) {
-      p.ready = false;
+      p.ready = p.stage === 'ready'; // picks are kept: whoever was locked in stays locked in
       if (!p.connected) this.remove(p.index);
     }
   }
@@ -159,6 +200,7 @@ export class PlayerSlots {
       color: p.color,
       connected: p.connected,
       ready: p.ready,
+      stage: p.stage,
       loadout: { ...p.loadout },
     }));
   }

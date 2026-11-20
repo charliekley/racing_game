@@ -8,32 +8,34 @@
  * tick and always gets the *latest* input, whatever device it came from.
  */
 import {
-  Buttons,
   NEUTRAL_INPUT,
   PROTOCOL_VERSION,
   decodeInput,
   isControllerMessage,
+  parseSelect,
   type ControlInput,
   type ControllerToHost,
   type GamePhase,
   type HostToController,
 } from '../shared/protocol';
 import type { HostTransport, Link } from '../shared/net/transport';
-import { CHARACTERS, KART_BODIES } from '../shared/characters';
 import { botLoadoutFor } from '../sim/classes';
 import { Signal } from '../shared/signal';
 import { MAX_PLAYERS, PlayerSlots, type PlayerSlot } from './playerSlots';
+import type { SelectionHub } from './selectionHub';
 import {
-  KEY_CHARACTER,
   KEY_JOIN,
-  KEY_KART,
   KEY_SCHEMES,
   KeyboardPlayerInput,
   KeyboardState,
   connectedGamepads,
   gamepadWantsJoin,
-  padLoadoutButtons,
+  keySelectActions,
+  localSelectStep,
+  padSelectActions,
+  padSelectBits,
   readGamepad,
+  type SelectAction,
 } from './input/localInput';
 
 /** A phone that hasn't sent anything for this long is considered gone. */
@@ -75,9 +77,8 @@ export class PlayerManager {
   private sessionBySlot = new Map<number, PhoneSession>();
   private localInputs = new Map<number, ControlInput>();
   private keyboards: (KeyboardPlayerInput | null)[] = KEY_SCHEMES.map(() => null);
-  private prevLocalButtons = new Map<number, number>();
   private padJoinHeld = new Set<number>();
-  /** D-pad buttons held last frame per gamepad slot (bit 1 left, 2 right, 4 down), for edge detection. */
+  /** Flow buttons held last frame per gamepad slot (see PAD_* in localInput.ts), for edge detection. */
   private padHeld = new Map<number, number>();
 
   constructor(
@@ -133,11 +134,72 @@ export class PlayerManager {
     this.broadcast(msg);
   }
 
+  // --- Selection flow (name -> character -> kart -> ready) ---------------------------------------
+  /** Where the TV display learns what everyone is picking. Set by main.ts; every change is published from lobbyChanged(). */
+  hub: SelectionHub | null = null;
+  /** What we last gave the hub per slot (as JSON), so unchanged players do not make the display redraw. */
+  private published = new Map<number, string>();
+
+  /** Make the hub match the slots: add / update changed players, remove gone ones. Between lobby visits (a race) the hub is empty. */
+  private publishSelections(): void {
+    const hub = this.hub;
+    if (!hub) return;
+    if (this.slots.phase !== 'lobby') {
+      hub.clear();
+      this.published.clear();
+      return;
+    }
+    const present = new Set<number>();
+    for (const p of this.slots.players) {
+      present.add(p.index);
+      const view = {
+        slot: p.index,
+        name: p.name,
+        stage: p.stage,
+        character: p.loadout.character,
+        kart: p.loadout.kart,
+        // Phones choose on their own screen; keyboards, gamepads (and bots, which are always ready) on the TV.
+        input: p.owner.kind === 'phone' ? ('phone' as const) : ('local' as const),
+      };
+      const key = JSON.stringify(view);
+      if (this.published.get(p.index) === key) continue;
+      this.published.set(p.index, key);
+      hub.set(view);
+    }
+    for (const slot of [...this.published.keys()]) {
+      if (present.has(slot)) continue;
+      this.published.delete(slot);
+      hub.remove(slot);
+    }
+  }
+
+  /** Tell a phone its real stage, name and picks (its answer to a `select`, or a change the host made). */
+  private sendSelectEcho(slotIndex: number): void {
+    const p = this.slots.slots[slotIndex];
+    if (p) this.sendTo(slotIndex, { t: 'select', stage: p.stage, name: p.name, loadout: { ...p.loadout } });
+  }
+
+  /** One local player's key / button press in the flow (see localSelectStep for the rules). */
+  private localSelect(slotIndex: number, action: SelectAction): void {
+    const slot = this.slots.slots[slotIndex];
+    if (!slot) return;
+    const step = localSelectStep(action, slot.stage, slot.loadout, this.slots.phase);
+    if (!step) return;
+    if (step.kind === 'toggleReady') this.slots.setReady(slotIndex, !slot.ready);
+    else if (!this.slots.select(slotIndex, step.req)) return;
+    this.lobbyChanged();
+  }
+
   setPhase(phase: GamePhase): void {
     this.slots.phase = phase;
     if (phase === 'lobby') {
       this.slots.resetToLobby();
       this.trackMsg = null;
+    }
+    // The race is starting: everyone on the grid is locked in (a force-started player was mid-flow). Phones follow.
+    if (phase === 'countdown') {
+      this.slots.lockInAll();
+      for (const p of this.slots.players) this.sendSelectEcho(p.index);
     }
     // Results screen: "ready" now means "race again", so everyone starts un-ready.
     if (phase === 'results') for (const p of this.slots.players) p.ready = false;
@@ -177,18 +239,10 @@ export class PlayerManager {
     const r = this.slots.join({ kind: 'bot', id }, `Bot ${id}`, id + 3);
     if (!r.ok) return false;
     r.slot.loadout = botLoadoutFor(r.slot.index); // varied but fixed per slot
+    r.slot.stage = 'ready';
     r.slot.ready = true;
     this.lobbyChanged();
     return true;
-  }
-
-  /** Step a local player's character (or kart body) forwards/backwards through the lists. */
-  private cycleLoadout(slotIndex: number, what: 'character' | 'kart', dir = 1): void {
-    const slot = this.slots.slots[slotIndex];
-    if (!slot) return;
-    const n = what === 'character' ? CHARACTERS.length : KART_BODIES.length;
-    const next = { ...slot.loadout, [what]: (slot.loadout[what] + dir + n) % n };
-    if (this.slots.setLoadout(slotIndex, next)) this.lobbyChanged();
   }
 
   private readyBots(): void {
@@ -207,7 +261,6 @@ export class PlayerManager {
   updateLocal(dtSec: number): void {
     const pressed = this.keys.consumePressed();
     const inLobby = this.slots.phase === 'lobby';
-    const canReady = inLobby || this.slots.phase === 'results';
 
     // Join / leave with keys 1 and 2.
     KEY_JOIN.forEach((code, scheme) => {
@@ -216,7 +269,7 @@ export class PlayerManager {
       if (existing) {
         this.kick(existing.index);
       } else {
-        const r = this.slots.join({ kind: 'keyboard', scheme }, `Keys ${KEY_SCHEMES[scheme].label}`, scheme + 2);
+        const r = this.slots.join({ kind: 'keyboard', scheme }, `Keys ${KEY_SCHEMES[scheme].label}`, scheme + 2, undefined, 'character');
         if (r.ok) {
           this.keyboards[scheme] = new KeyboardPlayerInput(this.keys, KEY_SCHEMES[scheme]);
           this.lobbyChanged();
@@ -224,12 +277,10 @@ export class PlayerManager {
       }
     });
 
-    // Keyboard players pick their driver and kart with two keys each (lobby only; the race locks it in).
+    // Keyboard players go through character -> kart -> ready with their keys (browse, confirm, back).
     for (const slot of this.slots.players) {
-      if (slot.owner.kind !== 'keyboard' || !inLobby) continue;
-      const { scheme } = slot.owner;
-      if (pressed.has(KEY_CHARACTER[scheme])) this.cycleLoadout(slot.index, 'character');
-      if (pressed.has(KEY_KART[scheme])) this.cycleLoadout(slot.index, 'kart');
+      if (slot.owner.kind !== 'keyboard') continue;
+      for (const action of keySelectActions(pressed, slot.owner.scheme)) this.localSelect(slot.index, action);
     }
 
     // B adds a bot.
@@ -239,10 +290,9 @@ export class PlayerManager {
     for (const pad of connectedGamepads()) {
       const wants = gamepadWantsJoin(pad);
       if (wants && !this.padJoinHeld.has(pad.index) && inLobby && !this.slots.find({ kind: 'gamepad', index: pad.index })) {
-        const r = this.slots.join({ kind: 'gamepad', index: pad.index }, `Pad ${pad.index + 1}`, pad.index + 4);
+        const r = this.slots.join({ kind: 'gamepad', index: pad.index }, `Pad ${pad.index + 1}`, pad.index + 4, undefined, 'character');
         if (r.ok) {
-          this.padHeld.set(r.slot.index, 0);
-          this.prevLocalButtons.set(r.slot.index, Buttons.GAS); // don't count this press as "ready"
+          this.padHeld.set(r.slot.index, padSelectBits(pad)); // the join press (A) must not also count as "confirm"
           this.lobbyChanged();
         }
       }
@@ -262,26 +312,17 @@ export class PlayerManager {
         slot.connected = !!pad;
         if (wasConnected !== slot.connected) this.lobbyChanged();
         input = pad ? readGamepad(pad) : null;
-        // D-pad left/right = previous/next driver, D-pad down = next kart (edge-triggered, lobby only).
-        if (pad && inLobby) {
-          const dpad = padLoadoutButtons(pad);
+        // D-pad left / right browse, A confirms, B goes back (edge-triggered).
+        if (pad) {
+          const bits = padSelectBits(pad);
           const was = this.padHeld.get(slot.index) ?? 0;
-          if (dpad & ~was & 1) this.cycleLoadout(slot.index, 'character', -1);
-          if (dpad & ~was & 2) this.cycleLoadout(slot.index, 'character', 1);
-          if (dpad & ~was & 4) this.cycleLoadout(slot.index, 'kart');
-          this.padHeld.set(slot.index, dpad);
+          for (const action of padSelectActions(bits, was)) this.localSelect(slot.index, action);
+          this.padHeld.set(slot.index, bits);
         }
       }
       if (!input) continue;
       this.localInputs.set(slot.index, input);
 
-      // In the lobby, the ITEM button toggles ready for local players.
-      const prev = this.prevLocalButtons.get(slot.index) ?? 0;
-      if (canReady && input.buttons & Buttons.ITEM && !(prev & Buttons.ITEM)) {
-        this.slots.setReady(slot.index, !slot.ready);
-        this.lobbyChanged();
-      }
-      this.prevLocalButtons.set(slot.index, input.buttons);
     }
   }
 
@@ -347,16 +388,29 @@ export class PlayerManager {
         return;
       }
       case 'profile':
+        // Name (and the unused colour) only: character and kart now travel in `select`, so a profile can't skip the flow.
         if (session.slotIndex === null) return;
-        this.slots.setProfile(session.slotIndex, msg.name, msg.color, msg.loadout);
+        this.slots.setProfile(session.slotIndex, msg.name, msg.color);
         this.sendTo(session.slotIndex, this.welcomeFor(this.slots.slots[session.slotIndex]!));
         this.lobbyChanged();
         return;
-      case 'ready':
-        if (session.slotIndex === null || (this.slots.phase !== 'lobby' && this.slots.phase !== 'results')) return;
+      case 'ready': {
+        // Lobby: being ready is the READY step of the flow (`select`), not a flag. Results: "race again", only for players who are at READY.
+        if (session.slotIndex === null || this.slots.phase !== 'results') return;
+        if (this.slots.slots[session.slotIndex]?.stage !== 'ready') return;
         this.slots.setReady(session.slotIndex, !!msg.ready);
         this.lobbyChanged();
         return;
+      }
+      case 'select': {
+        if (session.slotIndex === null) return;
+        const req = parseSelect(msg); // untrusted: bad stage, indices, or names are refused
+        if (!req) return;
+        const changed = this.slots.select(session.slotIndex, req);
+        this.sendSelectEcho(session.slotIndex); // always: a refused step snaps the phone back to the real state
+        if (changed) this.lobbyChanged();
+        return;
+      }
       case 'setup':
       case 'pick':
       case 'series':
@@ -403,7 +457,7 @@ export class PlayerManager {
   }
 
   private welcomeFor(slot: PlayerSlot): HostToController {
-    return { t: 'welcome', slot: slot.index, name: slot.name, color: slot.color, ready: slot.ready, phase: this.slots.phase, loadout: { ...slot.loadout } };
+    return { t: 'welcome', slot: slot.index, name: slot.name, color: slot.color, ready: slot.ready, phase: this.slots.phase, loadout: { ...slot.loadout }, stage: slot.stage };
   }
 
   private lastSecond = performance.now();
@@ -430,6 +484,7 @@ export class PlayerManager {
   }
 
   private lobbyChanged(): void {
+    this.publishSelections();
     this.broadcast({ t: 'lobby', players: this.slots.lobbyInfo() });
     this.onLobbyChange.emit();
   }

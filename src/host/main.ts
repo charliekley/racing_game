@@ -26,6 +26,7 @@ import { SelectionHub } from './selectionHub';
 import { SelectView } from './selectView';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
+import { SelectionHub } from './selectionHub';
 import { SeriesHost } from './seriesHost';
 import { MODE_NAMES, SERIES_MODES, sanitizeMode } from './series';
 import { DEV_TRACKS, TRACKS, type TrackDef } from '../track';
@@ -45,6 +46,16 @@ const audio = new AudioEngine();
 audio.playMusic('lobby');
 if (import.meta.env.DEV) (window as unknown as { __audio?: AudioEngine }).__audio = audio; // debugging aid
 if (import.meta.env.DEV) (window as unknown as { __players?: PlayerManager }).__players = players; // debugging aid (dev server only)
+
+// --- Pre-race selection flow (name -> character -> kart -> ready) ----------------------------------
+// Phones and keyboard / gamepad players choose; PlayerManager publishes every change to this hub, and the
+// TV's selection display subscribes to it (the two sides never import each other). The hub is emptied when
+// the race starts and refilled when we are back in the lobby.
+const selectionHub = new SelectionHub();
+players.hub = selectionHub;
+if (import.meta.env.DEV) (window as unknown as { __selectionHub?: SelectionHub }).__selectionHub = selectionHub; // debugging aid
+/** A keyboard player using the arrow keys owns the arrows / Enter for the flow, so the TV shortcuts for them step aside (T and G still work). */
+const arrowsAreAPlayer = () => players.slots.find({ kind: 'keyboard', scheme: 1 }) !== null;
 
 const netStatus = $('net-status');
 function setStatus(text: string, cls: 'ok' | 'warn' | 'bad' | '') {
@@ -415,12 +426,13 @@ players.onLobbyChange.add(() => {
 /** When everyone is ready (and nobody is still choosing the mode), start after a short pause (cancelled if someone un-readies). */
 function updateStartBanner() {
   if (driving) return;
-  const all = players.slots.allReady() && !seriesHost.choosing;
+  // Everyone locked in at READY, and P1's mode / track pop-up is finished (it always comes first).
+  const all = players.slots.canStart(seriesHost.choosing);
   banner.classList.toggle('hidden', !all);
   banner.textContent = all ? 'Everyone is ready! Starting…' : '';
   const n = players.slots.players.length;
   $('lobby-hint').textContent =
-    n === 0 ? 'Waiting for players…' : `${n} player${n > 1 ? 's' : ''} · everyone taps READY to start (or press G to start now)`;
+    n === 0 ? 'Waiting for players…' : `${n} player${n > 1 ? 's' : ''} · everyone picks a driver and kart, then READY (or press G to start now)`;
   if (all && !startTimer) startTimer = setTimeout(startDriving, 1500);
   if (!all && startTimer) {
     clearTimeout(startTimer);
@@ -439,9 +451,9 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyD') cycleDifficulty();
     if (e.code === 'KeyT') cycleTrack();
     // Menu without phones: arrows choose track (left/right) and mode (up/down), Enter starts.
-    if (e.code === 'ArrowLeft') cycleTrack(-1);
-    if (e.code === 'ArrowRight') cycleTrack(1);
-    if (e.code === 'Enter' && players.slots.players.length > 0 && !(e.target instanceof HTMLButtonElement)) startDriving();
+    if (e.code === 'ArrowLeft' && !arrowsAreAPlayer()) cycleTrack(-1);
+    if (e.code === 'ArrowRight' && !arrowsAreAPlayer()) cycleTrack(1);
+    if (e.code === 'Enter' && !arrowsAreAPlayer() && players.slots.players.length > 0 && !(e.target instanceof HTMLButtonElement)) startDriving();
     if (seriesHost.key(e.code, true)) e.preventDefault();
     if (e.code.startsWith('Arrow')) e.preventDefault(); // don't scroll the page
   } else if (driving && seriesHost.key(e.code, false)) {

@@ -10,7 +10,8 @@
  *    packet with the highest sequence number.
  */
 
-import type { Loadout } from './characters';
+import { CHARACTERS, KART_BODIES, sanitizeLoadout, type Loadout } from './characters';
+import { isSelectStage, type SelectStage } from './selectStage';
 import type { MapData } from './mapDraw';
 
 /** Bump when the message format changes incompatibly. */
@@ -93,6 +94,8 @@ export interface LobbyPlayerInfo {
   ready: boolean;
   /** Character + kart body (indices, see shared/characters.ts). Optional so older hosts still work; always run it through sanitizeLoadout. */
   loadout?: Loadout;
+  /** Where this player is in the name -> character -> kart -> ready flow. Optional so older hosts still work. */
+  stage?: SelectStage;
 }
 
 // --- Race modes (see src/host/series.ts) ---------------------------------------
@@ -190,6 +193,11 @@ export type ControllerToHost =
   | { t: 'hello'; v: number; clientId: string; name: string; color: number; loadout?: Loadout }
   | { t: 'profile'; name: string; color: number; loadout?: Loadout }
   | { t: 'ready'; ready: boolean }
+  /**
+   * Pre-race flow: "I am at `stage`" plus the values that belong to it (name, the highlighted character, the highlighted kart).
+   * Sent on every browse step and on Next / Confirm / Back. The host validates everything (see parseSelect) and answers with a `select` echo.
+   */
+  | { t: 'select'; stage: SelectStage; character?: number; kart?: number; name?: string }
   /** Menu owner only (lobby): choose the mode and/or the track. The host validates both fields. */
   /** `done: true` = the owner finished the forced pop-up (mode and, where it matters, track): the host then stops waiting for them. */
   | { t: 'setup'; mode?: SeriesMode; track?: number; done?: boolean }
@@ -201,7 +209,9 @@ export type ControllerToHost =
   | { t: 'pong'; id: number; sentAt: number };
 
 export type HostToController =
-  | { t: 'welcome'; slot: number; name: string; color: number; ready: boolean; phase: GamePhase; loadout?: Loadout }
+  | { t: 'welcome'; slot: number; name: string; color: number; ready: boolean; phase: GamePhase; loadout?: Loadout; stage?: SelectStage }
+  /** The host's answer to a `select`: the player's real stage, name and picks (the phone follows the stage; run it through parseSelectEcho). */
+  | { t: 'select'; stage: SelectStage; name: string; loadout: Loadout }
   | { t: 'reject'; reason: 'full' | 'in-progress' | 'version' }
   | { t: 'lobby'; players: LobbyPlayerInfo[] }
   | { t: 'phase'; phase: GamePhase }
@@ -231,8 +241,8 @@ export type HostToController =
   | { t: 'ping'; id: number; sentAt: number }
   | { t: 'pong'; id: number; sentAt: number };
 
-const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'setup', 'pick', 'series', 'ping', 'pong']);
-const HOST_TYPES = new Set(['welcome', 'reject', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'series', 'tracks', 'drift', 'ping', 'pong']);
+const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'select', 'setup', 'pick', 'series', 'ping', 'pong']);
+const HOST_TYPES = new Set(['welcome', 'select', 'reject', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'series', 'tracks', 'drift', 'ping', 'pong']);
 
 /** Validate a phone's `setup` message. Bad fields are dropped; returns null if nothing valid is left. */
 export function parseSetup(m: unknown, trackCount: number): { mode?: SeriesMode; track?: number; done?: true } | null {
@@ -242,6 +252,51 @@ export function parseSetup(m: unknown, trackCount: number): { mode?: SeriesMode;
   const done = (m as { done?: unknown }).done === true;
   if (!mode && track === null && !done) return null;
   return { ...(mode ? { mode } : {}), ...(track !== null ? { track } : {}), ...(done ? { done: true as const } : {}) };
+}
+
+/** A phone's `select` message after validation. */
+export interface SelectRequest {
+  stage: SelectStage;
+  character?: number;
+  kart?: number;
+  name?: string;
+}
+
+/** Longest raw name the host will look at (it is then trimmed to 12 characters); anything longer is a broken or hostile client. */
+const MAX_RAW_NAME = 40;
+
+/**
+ * Validate a phone's `select` message strictly. Unknown stage, a character / kart that is not a whole number inside
+ * its list, a name that is not a string or is absurdly long: the whole message is refused (null).
+ */
+export function parseSelect(m: unknown): SelectRequest | null {
+  if (typeof m !== 'object' || m === null) return null;
+  const o = m as Record<string, unknown>;
+  if (!isSelectStage(o.stage)) return null;
+  const out: SelectRequest = { stage: o.stage };
+  if (o.character !== undefined) {
+    const c = sanitizeTrackIndex(o.character, CHARACTERS.length);
+    if (c === null) return null;
+    out.character = c;
+  }
+  if (o.kart !== undefined) {
+    const k = sanitizeTrackIndex(o.kart, KART_BODIES.length);
+    if (k === null) return null;
+    out.kart = k;
+  }
+  if (o.name !== undefined) {
+    if (typeof o.name !== 'string' || o.name.length > MAX_RAW_NAME) return null;
+    out.name = o.name;
+  }
+  return out;
+}
+
+/** Validate the host's `select` echo on the phone (it is shown on screen, so keep it clean). */
+export function parseSelectEcho(m: unknown): { stage: SelectStage; name: string; loadout: Loadout } | null {
+  if (typeof m !== 'object' || m === null) return null;
+  const o = m as Record<string, unknown>;
+  if (!isSelectStage(o.stage) || typeof o.name !== 'string') return null;
+  return { stage: o.stage, name: sanitizeName(o.name), loadout: sanitizeLoadout(o.loadout) };
 }
 
 /** Validate a phone's `series` action. */
