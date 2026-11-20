@@ -3,7 +3,7 @@ import { NEUTRAL_INPUT } from '../shared/protocol';
 import { TRACKS } from '../track';
 import { BotPack } from './bots';
 import { botLoadoutFor } from './classes';
-import { Knockout, knockoutLaps, type Contender } from './knockout';
+import { Knockout, knockoutLaps, knockoutsPerLap, type Contender } from './knockout';
 import { Race, COUNTDOWN_SECONDS, type RaceEvent } from './race';
 import { Track } from './track';
 import { World } from './world';
@@ -194,4 +194,52 @@ describe('Knockout in the world', () => {
     expect(first).toBe(0);
     expect(world.race!.phase).toBe('done');
   }, 120_000);
+});
+
+// --- Knockout with 8 and 12 karts: several karts go out per lap ----------------------------------------
+
+describe('Knockout with a big field', () => {
+  it('knocks out 1 / 2 / 3 karts per lap for 4 / 8 / 12 racers and needs at most 6 laps', () => {
+    expect([4, 6, 8, 12].map(knockoutsPerLap)).toEqual([1, 1, 2, 3]);
+    expect(knockoutLaps(3, 1200, 4)).toBe(5);
+    expect(knockoutLaps(1, 1200, 4)).toBe(4);
+    expect(knockoutLaps(1, 1200, 8)).toBe(5);
+    expect(knockoutLaps(1, 1200, 12)).toBe(6);
+    expect(knockoutLaps(9, 1200, 12)).toBe(6); // capped like the others
+  });
+
+  it('roundAll removes the last 3 of 12 at once, worst first, with places 12, 11, 10', () => {
+    const slots = Array.from({ length: 12 }, (_, i) => i);
+    const ko = new Knockout(slots);
+    const contenders: Contender[] = slots.map((s) => ({ slot: s, progress: 1000 - s * 10, lapStartTime: 60 }));
+    const out = ko.roundAll(2, contenders);
+    expect(out.map((e) => e.slot)).toEqual([11, 10, 9]);
+    expect(out.map((e) => e.place)).toEqual([12, 11, 10]);
+    expect(ko.roundAll(2, contenders)).toEqual([]); // once per lap
+    expect(ko.alive.length).toBe(9);
+  });
+
+  it('12 bots race a Knockout: 3 go out per lap and a single kart is left at the end', () => {
+    const track = new Track(TRACKS[0]);
+    const world = new World(track, track);
+    const slots = Array.from({ length: 12 }, (_, i) => i);
+    const laps = knockoutLaps(track.def.laps, track.length, 12);
+    world.startRace(slots, laps, new Map(slots.map((s) => [s, botLoadoutFor(s)])), { knockout: true });
+    const pack = new BotPack('normal');
+    const outs: { place: number; lap: number }[] = [];
+    let ticks = 0;
+    while (world.race!.phase !== 'done' && ticks < 60 * 600) {
+      for (const e of world.tick((slot) => pack.input(world, slot))) if (e.kind === 'knockout') outs.push({ place: e.place, lap: e.lap });
+      ticks++;
+    }
+    const race = world.race!;
+    expect(race.phase).toBe('done');
+    expect(laps).toBe(6);
+    expect(outs.length).toBe(11); // all but the winner
+    expect(outs.map((o) => o.place)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    expect(outs.map((o) => o.lap)).toEqual([2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5]); // 3 per lap from lap 2
+    expect(race.standings().length).toBe(12);
+    expect(new Set(race.standings()).size).toBe(12);
+    expect(race.racers.get(race.standings()[0])!.place).toBe(1);
+  }, 300_000);
 });

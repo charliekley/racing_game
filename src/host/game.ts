@@ -9,8 +9,10 @@
  */
 import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
+import { DEFAULT_RACERS, attackToast, fillBotColors, fillBotName, fillBotSlots, isFillBot, slotColor, type RacerCount } from './raceSettings'; // RACERS
 import type { ControlInput, HostToController } from '../shared/protocol';
 import { BotPack, DEFAULT_DIFFICULTY, type Difficulty } from '../sim/bots';
+import { botLoadoutFor } from '../sim/classes';
 import { ITEMS, KART, SIM_DT } from '../sim/config';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
@@ -103,6 +105,12 @@ export interface GameCallbacks {
   onQualityStepDown?(): void;
 }
 
+/** A computer driver that fills the grid up to the RACERS count (slot 4 and up): a kart with no screen, HUD or camera of its own. */
+interface BotKart {
+  slot: number;
+  kart: KartView;
+}
+
 /** Everything that belongs to one player's screen area. */
 interface PlayerView {
   slot: number;
@@ -125,6 +133,9 @@ export class Game {
   private trackView: TrackView;
   private world: World;
   private views: PlayerView[] = [];
+  /** RACERS: the fill-in bots of this race (see raceSettings.ts); their colours are picked at the start of every race. */
+  private botKarts: BotKart[] = [];
+  private fillColors = new Map<number, string>();
   private loop: FixedStepLoop;
   private elapsed = 0;
   private resultsShown = false;
@@ -146,6 +157,8 @@ export class Game {
   devItem: ItemId | 'random' | null = null;
   /** How good the computer drivers are (set from the lobby by main.ts before `start`). */
   botDifficulty: Difficulty = DEFAULT_DIFFICULTY;
+  /** RACERS setting (set from the lobby by main.ts before `start`): bots fill the grid up to this many karts. */
+  racers: RacerCount = DEFAULT_RACERS;
   /** The computer drivers of the current race (see sim/bots.ts). */
   private bots = new BotPack();
   /** Set when the sim reports two karts finishing within a fraction of a second ("photo finish"); the slow-motion moment itself is `photo`. */
@@ -372,6 +385,14 @@ export class Game {
       const d2 = dx * dx + dy * dy + dz * dz;
       other.kart.setLod(d2 < near * near ? 0 : d2 < mid * mid ? 1 : 2, lean);
     }
+    // Fill-in bots have no camera: the same distance rule, so bots far from this camera use the cheap far model.
+    for (const b of this.botKarts) {
+      const dx = b.kart.pose.x - cam.x;
+      const dy = b.kart.pose.y - cam.y;
+      const dz = b.kart.pose.z - cam.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      b.kart.setLod(d2 < near * near ? 0 : d2 < mid * mid ? 1 : 2, lean);
+    }
   }
 
   /** Start a new race with a kart and a viewport for each slot. */
@@ -380,13 +401,21 @@ export class Game {
       v.kart.dispose(this.scene);
       v.hud.dispose();
     }
+    for (const b of this.botKarts) b.kart.dispose(this.scene);
     this.world = new World(this.track, this.track);
+    // RACERS: bots without a screen fill the grid up to the chosen count (people and lobby bots keep slots 0..3, these use 4..11).
+    const fill = fillBotSlots(slots.length, this.racers);
+    const racing = [...slots, ...fill];
+    this.fillColors = fillBotColors(
+      slots.map((s) => colorHex(this.players.slots.slots[s]?.color ?? s)),
+      fill,
+    );
     // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
-    const loadouts = new Map(slots.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? DEFAULT_LOADOUT] as const));
+    const loadouts = new Map(racing.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? (isFillBot(slot) ? botLoadoutFor(slot) : DEFAULT_LOADOUT)] as const));
     // Knockout: more laps, and the sim runs the elimination rules (sim/knockout.ts).
-    const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, slots.length) : this.track.def.laps;
-    this.world.startRace(slots, laps, loadouts, { knockout: this.knockout });
-    this.bots = new BotPack(this.botDifficulty, (slot) => !this.players.isBot(slot));
+    const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, racing.length) : this.track.def.laps;
+    this.world.startRace(racing, laps, loadouts, { knockout: this.knockout });
+    this.bots = new BotPack(this.botDifficulty, (slot) => !this.isBot(slot));
     this.photoFinish = false;
     this.photo.skip();
     this.photoPlayed = false;
@@ -425,6 +454,7 @@ export class Game {
       // The slot colour is for the HUD badge and minimap; the kart itself is painted from the character's palette (KartView).
       return { slot, kart: new KartView(this.scene, color, loadouts.get(slot)), chase, hud, rect: layout.views[i] };
     });
+    this.botKarts = fill.map((slot) => ({ slot, kart: new KartView(this.scene, slotColor(slot, undefined, this.fillColors), loadouts.get(slot)) }));
     this.minimap.place(layout.minimap);
     this.applyViewScaling();
 
@@ -455,9 +485,19 @@ export class Game {
     this.audio?.playMusic(musicForTrack(this.track.def.name, TRACKS.indexOf(this.track.def)));
   }
 
+  /** Computer driver? Lobby bots (B) and the RACERS fill-in bots (slot 4 and up). */
+  private isBot(slot: number): boolean {
+    return isFillBot(slot) || this.players.isBot(slot);
+  }
+
+  /** The 3D kart of any racer, with or without a screen. */
+  private kartViewOf(slot: number): KartView | undefined {
+    return this.viewOf(slot)?.kart ?? this.botKarts.find((b) => b.slot === slot)?.kart;
+  }
+
   /** Bots drive themselves; everyone else uses their controller. */
   private inputFor(slot: number): ControlInput {
-    if (this.players.isBot(slot)) {
+    if (this.isBot(slot)) {
       if (this.world.karts.has(slot)) return this.bots.input(this.world, slot);
     }
     return this.players.inputFor(slot);
@@ -513,6 +553,14 @@ export class Game {
       cx += v.kart.pose.x;
       cz += v.kart.pose.z;
     }
+    // RACERS: the fill-in bots have a kart but no screen: same pose update and effects, but they do not move the shared shadow box.
+    for (const b of this.botKarts) {
+      const k = this.world.karts.get(b.slot)!;
+      const ist = items.states.get(b.slot);
+      b.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' ? ist.held.id : null;
+      b.kart.update(this.world.prevKarts.get(b.slot)!, k, alpha, dt, this.track);
+      this.fx.kartTick(b.slot, b.kart, k, dt);
+    }
     this.updateWrongWay(sdt);
     cx /= Math.max(1, this.views.length);
     cz /= Math.max(1, this.views.length);
@@ -549,23 +597,25 @@ export class Game {
     if (this.audio) {
       // PERF: the state objects are reused every frame (one per view) instead of building new ones.
       const states = this.audioScratch;
-      while (states.length < this.views.length) {
+      const total = this.views.length + this.botKarts.length;
+      while (states.length < total) {
         states.push({ slot: 0, human: false, speed: 0, boosting: false, grounded: true, drift: 0, silent: false, rolling: false, pan: 0 });
       }
-      states.length = this.views.length;
-      for (let i = 0; i < this.views.length; i++) {
-        const v = this.views[i];
-        const k = this.world.karts.get(v.slot)!;
+      states.length = total;
+      for (let i = 0; i < total; i++) {
+        const isView = i < this.views.length;
+        const slot = isView ? this.views[i].slot : this.botKarts[i - this.views.length].slot;
+        const k = this.world.karts.get(slot)!;
         const st = states[i];
-        st.slot = v.slot;
-        st.human = !this.players.isBot(v.slot);
+        st.slot = slot;
+        st.human = !this.isBot(slot);
         st.speed = k.speed;
         st.boosting = k.boostTime > 0;
         st.grounded = k.grounded;
         st.drift = k.driftDir !== 0 ? 1 + k.driftTier : 0;
         st.silent = !!k.flight || k.respawnTime > 0;
-        st.rolling = (items.states.get(v.slot)?.roulette ?? 0) > 0;
-        st.pan = panForRect(v.rect);
+        st.rolling = (items.states.get(slot)?.roulette ?? 0) > 0;
+        st.pan = isView ? panForRect(this.views[i].rect) : 0;
       }
       this.audio.update(dt, states);
     }
@@ -651,9 +701,9 @@ export class Game {
       const dots = this.dotScratch;
       dots.length = 0;
       for (const slot of race.standings()) {
-        const v = this.views.find((x) => x.slot === slot)!;
+        const kv = this.kartViewOf(slot)!;
         const p = this.players.slots.slots[slot];
-        dots.push({ x: v.kart.pose.x, z: v.kart.pose.z, color: colorHex(p?.color ?? slot), label: `P${slot + 1}` });
+        dots.push({ x: kv.pose.x, z: kv.pose.z, color: slotColor(slot, p?.color, this.fillColors), label: this.isBot(slot) ? '' : `P${slot + 1}` });
       }
       this.minimap.draw(dots);
     }
@@ -691,7 +741,7 @@ export class Game {
     const race = this.world.race;
     if (!race) return;
     for (const v of this.views) {
-      if (this.players.isBot(v.slot)) continue;
+      if (this.isBot(v.slot)) continue;
       const k = this.world.karts.get(v.slot);
       const racer = race.racers.get(v.slot);
       if (!k || !racer) continue;
@@ -754,8 +804,8 @@ export class Game {
 
   /** Driver faces: a sim event may make one or two karts grin, gasp or glance back (pure mapper in render/kart/expression.ts). */
   private reactFaces(e: WorldEvent): void {
-    this.faceCtx.racers = this.views.length;
-    for (const r of reactionsForEvent(e, this.faceCtx)) this.viewOf(r.slot)?.kart.face.react(r);
+    this.faceCtx.racers = this.world.karts.size;
+    for (const r of reactionsForEvent(e, this.faceCtx)) this.kartViewOf(r.slot)?.face.react(r);
   }
 
   /**
@@ -771,7 +821,14 @@ export class Game {
       const side = tailgateSide(o.kart.pose.x - v.kart.pose.x, o.kart.pose.z - v.kart.pose.z, v.kart.pose.heading);
       if (side !== 0) {
         face.tailgated(side);
-        break;
+        return;
+      }
+    }
+    for (const o of this.botKarts) {
+      const side = tailgateSide(o.kart.pose.x - v.kart.pose.x, o.kart.pose.z - v.kart.pose.z, v.kart.pose.heading);
+      if (side !== 0) {
+        face.tailgated(side);
+        return;
       }
     }
   }
@@ -783,23 +840,24 @@ export class Game {
       if (e.kind === 'itemDestroyed') this.fx.itemPop(e.x, (this.track.sample(e.x, e.z)?.height ?? 0) + 0.2, e.z);
       return;
     }
-    const v = this.viewOf(e.slot);
-    if (!v) return;
-    const p = v.kart.pose;
+    const kv = this.kartViewOf(e.slot);
+    if (!kv) return;
+    const p = kv.pose;
+    const hud = this.viewOf(e.slot)?.hud; // fill-in bots have a kart but no HUD
     const st = this.world.karts.get(e.slot);
     switch (e.kind) {
       case 'startBoost':
         this.fx.boostBurst(p.x, p.y, p.z, p.heading);
-        v.hud.flash('boost');
+        hud?.flash('boost');
         this.shake(e.slot, 0.25);
         break;
       case 'boostPad':
         this.fx.boostBurst(p.x, p.y, p.z, p.heading);
-        v.hud.flash('boost');
+        hud?.flash('boost');
         break;
       case 'miniTurbo':
         this.fx.miniTurbo(p.x, p.y, p.z, p.heading, e.tier);
-        v.hud.flash('boost');
+        hud?.flash('boost');
         this.shake(e.slot, 0.12 + 0.08 * e.tier);
         break;
       case 'trick':
@@ -810,7 +868,7 @@ export class Game {
         break;
       case 'slipBoost':
         this.fx.slipBoost(p.x, p.y, p.z, p.heading);
-        v.hud.flash('boost');
+        hud?.flash('boost');
         this.shake(e.slot, 0.15);
         break;
       case 'combo':
@@ -822,7 +880,7 @@ export class Game {
         break;
       case 'trickBoost':
         this.fx.boostBurst(p.x, p.y, p.z, p.heading);
-        v.hud.flash('boost');
+        hud?.flash('boost');
         break;
       case 'land':
         // Little hops land softly; real jumps puff dust and shake the camera.
@@ -843,12 +901,12 @@ export class Game {
         break;
       case 'hit':
         this.fx.hit(p.x, p.y, p.z);
-        v.hud.flash('hit');
+        hud?.flash('hit');
         this.shake(e.slot, 0.8);
         break;
       case 'hazardHit': // lava geyser (or another hazard) got this kart: same burst and shake as an item hit
         this.fx.hit(p.x, p.y, p.z);
-        v.hud.flash('hit');
+        hud?.flash('hit');
         this.shake(e.slot, 0.8);
         break;
       case 'blocked':
@@ -863,12 +921,12 @@ export class Game {
         this.fx.pickup(p.x, p.y, p.z);
         break;
       case 'itemGet':
-        v.hud.flash('item');
+        hud?.flash('item');
         break;
       case 'itemUse':
         if (e.id === 'dash') {
           this.fx.boostBurst(p.x, p.y, p.z, p.heading);
-          v.hud.flash('boost');
+          hud?.flash('boost');
         } else if (e.id === 'nova') {
           this.fx.pickup(p.x, p.y, p.z);
         }
@@ -893,14 +951,14 @@ export class Game {
       }
       case 'finish':
         this.fx.finishConfetti(p.x, p.y, p.z);
-        v.hud.flash('item');
+        hud?.flash('item');
         break;
     }
   }
 
   private handleEvents(events: WorldEvent[]): void {
     // AUDIO: one call turns every event into sounds (mapping lives in src/audio/mapping.ts).
-    this.audio?.handleEvents(events, { isHuman: (s) => !this.players.isBot(s), totalLaps: this.world.race?.totalLaps ?? this.track.def.laps });
+    this.audio?.handleEvents(events, { isHuman: (s) => !this.isBot(s), totalLaps: this.world.race?.totalLaps ?? this.track.def.laps });
     for (const e of events) {
       this.reactFx(e);
       this.reactFaces(e); // driver faces: events (and bot moods) become expressions and head turns
@@ -930,7 +988,7 @@ export class Game {
           this.photoFinish = true;
           // Slow motion + white flash + banner on every screen (all players are slowed equally, so nobody loses anything).
           // Not in Knockout, and not when only bots were involved (see worthSlowMotion).
-          if (worthSlowMotion({ slots: e.slots, isHuman: (s) => !this.players.isBot(s), knockout: this.knockout, alreadyPlayed: this.photoPlayed })) {
+          if (worthSlowMotion({ slots: e.slots, isHuman: (s) => !this.isBot(s), knockout: this.knockout, alreadyPlayed: this.photoPlayed })) {
             this.photoPlayed = true;
             this.photo.start();
             for (const v of this.views) {
@@ -946,7 +1004,7 @@ export class Game {
         case 'knockout':
           this.haptic(e.slot, HAPTICS.respawn);
           this.viewOf(e.slot)?.hud.knockedOut(e.place);
-          for (const v of this.views) if (v.slot !== e.slot) v.hud.showBanner(`P${e.slot + 1} OUT!`, 1.6, this.elapsed);
+          if (!this.isBot(e.slot)) for (const v of this.views) if (v.slot !== e.slot) v.hud.showBanner(`P${e.slot + 1} OUT!`, 1.6, this.elapsed); // (a field of 12 loses several bots per lap: no banner for them)
           this.sendStatus();
           break;
         // --- end Knockout ---
@@ -966,7 +1024,7 @@ export class Game {
           // Only the final lap gets a banner; the lap counter covers the rest.
           if (e.lap + 1 === this.world.race?.totalLaps) {
             this.viewOf(e.slot)?.hud.showBanner('FINAL LAP!', 1.9, this.elapsed);
-            if (!this.players.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
+            if (!this.isBot(e.slot)) this.audio?.setFinalLap(true); // AUDIO: music 15% faster
           }
           break;
         }
@@ -1018,7 +1076,7 @@ export class Game {
         case 'hit': {
           this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : HAPTICS.spunOut);
           this.players.sendTo(e.slot, { t: 'drift', tier: null });
-          if (e.attacker !== null && e.attacker !== e.slot) this.toast(e.attacker, `HIT ${this.nameOf(e.slot)}!`, 1.2);
+          if (e.attacker !== null && e.attacker !== e.slot) this.attackToast(e.attacker, 'hit', e.slot, 1.2);
           this.sendStatus();
           break;
         }
@@ -1031,7 +1089,7 @@ export class Game {
           break;
         case 'bumped':
           this.haptic(e.slot, HAPTICS.novaHit);
-          if (e.attacker !== e.slot) this.toast(e.attacker, `BUMPED ${this.nameOf(e.slot)}!`, 1.0);
+          if (e.attacker !== e.slot) this.attackToast(e.attacker, 'bumped', e.slot, 1.0);
           break;
         case 'jumbled':
           this.haptic(e.slot, HAPTICS.spunOut);
@@ -1042,7 +1100,13 @@ export class Game {
   }
 
   private nameOf(slot: number): string {
-    return (this.players.slots.slots[slot]?.name ?? `P${slot + 1}`).toUpperCase();
+    return (this.players.slots.slots[slot]?.name ?? (isFillBot(slot) ? fillBotName(slot) : `P${slot + 1}`)).toUpperCase();
+  }
+
+  /** "HIT NAME!" / "BUMPED NAME!" for the attacker, only when the victim is a person (not a bot): see attackToast in raceSettings.ts. */
+  private attackToast(attacker: number, kind: 'hit' | 'bumped', victim: number, seconds: number): void {
+    const text = attackToast(kind, this.nameOf(victim), !this.isBot(victim));
+    if (text) this.toast(attacker, text, seconds);
   }
 
   private haptic(slot: number, pattern: readonly number[]): void {
@@ -1053,6 +1117,7 @@ export class Game {
     const race = this.world.race;
     if (!race) return;
     for (const [slot, r] of race.racers) {
+      if (isFillBot(slot)) continue; // no phone behind a fill-in bot
       const msg: HostToController = {
         t: 'status',
         position: r.place ?? race.positionOf(slot),
@@ -1077,8 +1142,8 @@ export class Game {
       const row: ResultRow = {
         slot,
         place: r.place ?? 0,
-        name: p?.name ?? `P${slot + 1}`,
-        color: colorHex(p?.color ?? slot),
+        name: p?.name ?? (isFillBot(slot) ? fillBotName(slot) : `P${slot + 1}`),
+        color: slotColor(slot, p?.color, this.fillColors),
         loadoutText: `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`,
         time: this.knockout ? (r.out ? (r.outLap ? `OUT · LAP ${r.outLap}` : 'LEFT') : 'WINNER') : r.finished ? formatTime(r.finishTime!) : 'DNF',
         best: Number.isFinite(best) ? formatTime(best) : '–',
@@ -1092,7 +1157,7 @@ export class Game {
     const fastest = Math.min(...rows.map((r) => r.best));
     if (Number.isFinite(fastest)) rows.find((r) => r.best === fastest)!.row.fastest = true;
     // Series hook: places are taken from the ranking order (always unique, even for DNFs).
-    const placings: Placing[] = race.standings().map((slot, i) => ({ slot, place: i + 1, human: !this.players.isBot(slot) }));
+    const placings: Placing[] = race.standings().map((slot, i) => ({ slot, place: i + 1, human: !this.isBot(slot) }));
     const extras = this.callbacks.onRaceResults?.(placings);
     buildResults(
       this.results,

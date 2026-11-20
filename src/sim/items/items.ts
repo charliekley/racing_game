@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Item system: item boxes, roulette, held items, and the objects items create
  * (peels (internal id `slick`), ricochet shots, seeker shots, the magnet and bumper effects). Pure simulation: no Three.js, no
  * DOM, no Math.random (a seeded generator is injected), so it stays testable.
@@ -20,6 +20,7 @@ import { ITEMS, KART, SIM_DT, type KartConfig } from '../config';
 import { applyBoost, spinOut, type KartState } from '../kart';
 import { groundPose } from './groundPose';
 import type { Colliders } from '../colliders';
+import type { Ground } from '../ground';
 import type { Track } from '../track';
 import { rollItem } from './odds';
 import { ROULETTE_SECONDS, type HeldItem, type ItemBox, type ItemEntity, type ItemId } from './types';
@@ -109,7 +110,7 @@ export class ItemSystem {
   /** Solid scenery that destroys shots (null = shots fly through everything, as before). */
   private colliders: Colliders | null = null;
 
-  /** Let solid scenery (trees, houses…) stop Ricochet and Seeker shots. */
+  /** Let solid scenery (trees, housesâ€¦) stop Ricochet and Seeker shots. */
   setColliders(colliders: Colliders | null): void {
     this.colliders = colliders;
   }
@@ -150,6 +151,8 @@ export class ItemSystem {
     inputs: Map<number, ControlInput>,
     standings: Standings,
     finished: Set<number>,
+    /** What shots glide over. The World passes the hazard-aware ground (raised drawbridge leaves); default: the track. */
+    ground: Ground = this.track,
   ): ItemEvent[] {
     const events: ItemEvent[] = [];
     const racers = standings.length;
@@ -228,7 +231,7 @@ export class ItemSystem {
     }
 
     // --- Objects ------------------------------------------------------------------------
-    this.updateEntities(karts, events, dt);
+    this.updateEntities(karts, events, dt, ground);
     return events;
   }
 
@@ -419,7 +422,7 @@ export class ItemSystem {
   }
 
   // --- Objects: movement and collisions -------------------------------------------------------
-  private updateEntities(karts: Map<number, KartState>, events: ItemEvent[], dt: number): void {
+  private updateEntities(karts: Map<number, KartState>, events: ItemEvent[], dt: number, ground: Ground): void {
     const dead = new Set<Entity>();
     const slicks = this.entities.filter((e) => e.kind === 'slick');
     this.applyShoves(karts, dt);
@@ -476,8 +479,7 @@ export class ItemSystem {
       e.z += Math.cos(e.heading) * e.speed * dt;
       const p = this.track.project(e.x, e.z, e.trackIndex);
       e.trackIndex = p.index;
-      const ground = this.track.sample(e.x, e.z, e.trackIndex);
-      if (ground) e.y = ground.height;
+      e.y = followGround(ground, e, dt);
 
       // Scenery: a shot that runs into a solid tree/house/etc. is destroyed.
       if (this.colliders?.blocksPoint(e.x, e.z, e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius)) {
@@ -730,6 +732,30 @@ export class ItemSystem {
       }
     }
   }
+}
+
+/** How far ahead (s of flight) a shot looks at the ground, so it starts climbing before a slope arrives. */
+const SHOT_LOOKAHEAD_S = 0.12;
+/** How quickly (1/s) a shot's height eases toward the ground ahead when rising / when the ground falls away. */
+const SHOT_RISE_RATE = 20;
+const SHOT_FALL_RATE = 14;
+
+/**
+ * Height a ricochet / seeker shot should have after this tick: it glides over the ground it flies across.
+ * We look at the ground under the shot and a short way ahead (road, ramps, raised drawbridge leaves, terrain;
+ * the shot's track index keeps it on its own level on bridges and overpasses), ease toward the higher of the two
+ * (smooth over crests and slopes), but never go below the ground right under it (never sinks in).
+ * Where there is no ground at all (a gap, a hole) it keeps its height.
+ */
+function followGround(ground: Ground, e: { x: number; z: number; heading: number; speed: number; y: number; trackIndex: number }, dt: number): number {
+  const here = ground.sample(e.x, e.z, e.trackIndex);
+  if (!here) return e.y;
+  const reach = e.speed * SHOT_LOOKAHEAD_S;
+  const ahead = ground.sample(e.x + Math.sin(e.heading) * reach, e.z + Math.cos(e.heading) * reach, e.trackIndex);
+  const target = Math.max(here.height, ahead?.height ?? here.height);
+  const rate = target > e.y ? SHOT_RISE_RATE : SHOT_FALL_RATE;
+  const eased = e.y + (target - e.y) * (1 - Math.exp(-rate * dt));
+  return Math.max(here.height, eased);
 }
 
 function newState(): ItemState {

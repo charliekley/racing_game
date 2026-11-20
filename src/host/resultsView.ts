@@ -71,6 +71,7 @@ export function buildResults(
 
   const list = document.createElement('ol');
   list.className = extras ? 'res-list with-pts' : 'res-list';
+  if (rows.length > 6) list.classList.add('many'); // 8 or 12 racers: tighter rows (see results.css)
   rows.forEach((row, i) => {
     const li = document.createElement('li');
     li.className = `res-row${row.place === 1 ? ' winner' : ''}${row.finished ? '' : ' dnf'}`;

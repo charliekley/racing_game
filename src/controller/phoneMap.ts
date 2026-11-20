@@ -10,6 +10,7 @@
  * The drawing code is shared with the TV minimap (shared/mapDraw.ts), so both look alike.
  */
 import { isMapData, mapDataFromOutline, MapCache, type MapData, type MapDot } from '../shared/mapDraw';
+import { FIRST_FILL_BOT_SLOT, botColorsFor } from '../shared/colors';
 
 export class PhoneMap {
   private ctx: CanvasRenderingContext2D;
@@ -91,9 +92,19 @@ export class PhoneMap {
       this.ctx.stroke();
       return;
     }
+    // RACERS: karts in slot 4 and up are fill-in bots. The TV colours them with `botColorsFor` from the colours the
+    // people use; the phone knows those too (slots 0..3), so it gets the very same colours.
+    const botSlots: number[] = [];
+    const peopleHex: string[] = [];
+    for (let i = 0; i < this.dots.length; i += 3) {
+      if (this.dots[i] >= FIRST_FILL_BOT_SLOT) botSlots.push(this.dots[i]);
+      else peopleHex.push(this.colorOf(this.dots[i]));
+    }
+    const botColors = botSlots.length > 0 ? botColorsFor(peopleHex, botSlots) : null;
     const dots: MapDot[] = [];
     for (let i = 0; i + 2 < this.dots.length; i += 3) {
-      dots.push({ x: this.dots[i + 1], z: this.dots[i + 2], color: this.colorOf(this.dots[i]), own: this.dots[i] === this.me });
+      const slot = this.dots[i];
+      dots.push({ x: this.dots[i + 1], z: this.dots[i + 2], color: botColors?.get(slot) ?? this.colorOf(slot), own: slot === this.me });
     }
     this.cache.draw(this.ctx, size, this.data, dots, { panel: 'rounded', fit: 0.78, panelColor: '#0c0f1f' });
   }

@@ -9,7 +9,7 @@
  * just a ribbon whose profile rises and falls, which is how we get rounded shapes cheaply.
  */
 import * as THREE from 'three';
-import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
+import { CURB_WIDTH, GRID_SIZE, Track, type TrackSample } from '../sim/track';
 import { asphaltMaps, boostTexture, checkerTexture, concreteMaps, grassMaps, kerbMaps, roadTexture, snowMaps, metalMaps } from './textures';
 import { ENV_TIME, buildGantry, buildScenery } from './scenery';
 import { buildRamps } from './rampView';
@@ -313,7 +313,7 @@ export class TrackView {
       for (const [a, b] of c) gridPos.push(cx + rx * (ox + a * w / 2) + fx * (oz + b * l / 2), y, cz + rz * (ox + a * w / 2) + fz * (oz + b * l / 2));
       gridIdx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     };
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < GRID_SIZE; i++) {
       const g = track.gridSpot(i);
       const y = (track.sample(g.x, g.z)?.height ?? 0) + 0.05;
       quad(g.x, g.z, y, g.heading, 0, 1.6, 2.6, 0.22);

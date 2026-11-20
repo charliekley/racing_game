@@ -156,7 +156,7 @@ export class Race {
 
   /**
    * Knockout: after this tick's laps were counted (so every kart's distance is up to date), the first
-   * kart across the line on lap L knocks out whoever is last. The survivor wins as soon as it is alone.
+   * kart across the line on lap L knocks out whoever is last (the last few in a big field, see knockoutsPerLap). The survivor wins as soon as it is alone.
    */
   private runKnockout(lapEvents: RaceEvent[], events: RaceEvent[]): void {
     const ko = this.knockout;
@@ -164,8 +164,7 @@ export class Race {
     for (const e of lapEvents) {
       if (e.kind !== 'lap' || e.lap >= this.totalLaps) continue; // the last lap is the finish, not a knockout
       const contenders = [...this.racers.values()].filter((r) => !r.out && !r.finished);
-      const el = ko.round(e.lap, contenders);
-      if (el) events.push(this.markOut(el));
+      for (const el of ko.roundAll(e.lap, contenders)) events.push(this.markOut(el)); // a big field loses several karts per lap
     }
     this.crownWinner(events);
   }
