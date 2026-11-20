@@ -84,7 +84,7 @@ The phone and laptop must be on the **same Wi-Fi**.
 2. Safari says **"This Connection Is Not Private"**. Tap **Show Details →
    visit this website → Visit Website**. This is only your own laptop's
    self-signed certificate, and you do it once per server start.
-3. Enter your name, pick a color, tap **JOIN**.
+3. Tap **JOIN** (the room code is already filled in from the QR code).
 4. iOS asks to allow **Motion & Orientation** access. Tap **Allow**. If you tap
    *Cancel* by mistake, close the tab completely, scan again, and allow it.
 5. A one-time popup asks you to **turn on Rotation Lock** (Control Center → the
@@ -92,7 +92,7 @@ The phone and laptop must be on the **same Wi-Fi**.
    steering wheel. The controller turns itself to match the first time, then
    **locks that layout** for the session: buttons never move, and steering
    can't be thrown off by the screen rotating mid-turn.
-6. Tap **READY** while holding the wheel level. During the 3-2-1 countdown the
+6. Go through the pre-race screens (see *Characters and karts* below), holding the wheel level when you lock in your kart. During the 3-2-1 countdown the
    phone keeps re-centering itself, so however you're holding it at GO is
    "straight ahead" (even if you just picked it up). In a race, the **⟲** button
    in the phone's top bar recenters instantly.
@@ -217,8 +217,9 @@ Without phones, in the lobby: **Left/Right** = track, **Up/Down** = mode, **Ente
 | Gas | W | ↑ | A or RT |
 | Brake | S | ↓ | B or LT |
 | Drift | Space | Right Shift | RB or X |
-| Item / *ready in lobby* | E | Enter | LB or Y |
+| Item | E | Enter | LB or Y |
 | Trick | R | / | D-pad up |
+| *Pre-race:* browse / confirm / back | A,D / E / R | ←,→ / Enter / / | D-pad left,right / A / B |
 
 Press the same number again to remove a keyboard player. **B** adds a computer
 driver (always ready; remove it with its Remove button). **G** starts the race
@@ -255,11 +256,19 @@ instant 4-way split-screen (`=2`, `=3` work too).
 
 ### Characters and karts
 
-Everyone picks a **driver** (8 characters in three weight classes) and a **kart body** (4 bodies).
-On the phone the picker is in the lobby: tap the arrows (or swipe) to change driver and kart, and
-watch the six stat bars update. The choice is remembered on the phone, sent to the TV, and locked
-once the race starts. On the TV keyboard: **C** / **V** (WASD player) or **,** / **.** (arrows
-player) change driver / kart in the lobby; on a gamepad use the D-pad (left/right = driver, down = kart).
+Before every race each player goes through four full-screen steps (P1's mode / track pop-up comes first):
+
+1. **Name**: type a name (remembered; there is no colour choice any more, colour comes from the character).
+2. **Character**: arrows, swipe or tap a thumbnail to browse the 8 drivers (weight class, stat bars); the TV shows
+   the highlighted one live. **THIS ONE** confirms.
+3. **Kart**: the same for the 4 kart bodies; the stat bars change with the body. **LET'S GO** confirms.
+4. **Ready**: waiting screen that lists who is still choosing. **BACK** changes your picks until the race starts.
+   The race starts when every human is ready (the host keyboard's **G** still force-starts).
+
+After a race everyone keeps their picks and lands on Ready; **CHANGE** goes back to the character step.
+Keyboard / gamepad players skip the name step and use the same steps with their keys (table above).
+The host checks every step (`PlayerSlots.select`, `parseSelect` in `src/shared/protocol.ts`) and publishes each player's
+stage and highlight to the `SelectionHub` (`src/host/selectionHub.ts`) that the TV display reads.
 
 Each driver has stat points from 1 to 5, the kart body adds or subtracts a few, and
 `src/sim/classes.ts` turns the points into real physics numbers. **3 points = the original kart exactly.**
