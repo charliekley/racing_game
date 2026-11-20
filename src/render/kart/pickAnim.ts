@@ -114,8 +114,8 @@ export function pickPose(species: Species, t: number, out: PickPose = { ...NEUTR
       // Tongue flick (head and chest lunge forward), then a big hop with a squat before and after.
       const hop = bump(t, 0.62, 1.34);
       out.squash = -0.18 * bump(t, 0.0, 0.3) - 0.16 * bump(t, 1.34, 1.5) + 0.12 * hop;
-      out.torsoPitch = 0.22 * bump(t, 0.22, 0.62);
-      out.headPitch = 0.55 * bump(t, 0.22, 0.62) - 0.2 * hop;
+      out.torsoPitch = 0.18 * bump(t, 0.22, 0.62);
+      out.headPitch = 0.42 * bump(t, 0.22, 0.62) - 0.2 * hop;
       out.armsUp = 0.8 * bump(t, 0.7, 1.3);
       out.lift = 0.42 * hop;
       break;
@@ -141,7 +141,7 @@ export function pickPose(species: Species, t: number, out: PickPose = { ...NEUTR
     }
     case 'bear': {
       // Two chest thumps, then a roar with the head thrown back and the arms up.
-      out.torsoPitch = -0.3 * env(t, 0.08, 0.28, 0.9, 1.15);
+      out.torsoPitch = -0.2 * env(t, 0.08, 0.28, 0.9, 1.15);
       out.squash = -0.12 * bump(t, 0.28, 0.44) - 0.12 * bump(t, 0.52, 0.68) + 0.08 * bump(t, 0.85, 1.3);
       out.headPitch = -0.55 * env(t, 0.8, 0.95, 1.25, 1.45);
       out.headRoll = wiggle(t, 14, 0.9, 1.0, 1.2, 1.4) * 0.09;
@@ -152,7 +152,7 @@ export function pickPose(species: Species, t: number, out: PickPose = { ...NEUTR
     }
     case 'astronaut': {
       // Zero-g: float up, slow forward flip, drift back down gently.
-      out.lift = 0.5 * env(t, 0.05, 0.5, 1.0, 1.45);
+      out.lift = 0.7 * env(t, 0.05, 0.5, 1.0, 1.45);
       out.pitch = fullTurn(t, 0.2, 1.15);
       out.roll = 0.18 * Math.sin(t * 4) * env(t, 0.1, 0.4, 0.9, 1.4);
       out.yaw = 0.35 * Math.sin(t * 3) * env(t, 0.1, 0.4, 0.9, 1.4);

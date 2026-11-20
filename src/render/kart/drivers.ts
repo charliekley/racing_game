@@ -339,9 +339,10 @@ const SPECIES: Record<Species, SpeciesBuild> = {
   fox: {
     torso(p, c) {
       baseBody(p, { body: c.P, belly: c.S, shoes: '#4a3026', w: 0.95 });
-      // Big bushy tail with a cream tip.
-      p.b.part(sweep([[0, 0.12, -0.15], [0, 0.08, -0.38], [0, 0.2, -0.6], [0.02, 0.42, -0.66]], (t) => 0.06 + 0.075 * Math.sin(Math.PI * Math.min(1, t * 1.1)) , 22, 12), {}, c.P, SURF.fur);
-      p.e([0.025, 0.47, -0.67], [0.085, 0.1, 0.085], c.S, SURF.fur, [0.3, 0, 0]);
+      // Big bushy tail with a cream tip. It rises behind the seat (and stays within 0.52 of the hip) so it
+      // never pokes into an engine, a wing or a tail fin (see the clearance test).
+      p.b.part(sweep([[0, 0.12, -0.15], [0, 0.1, -0.3], [0, 0.24, -0.43], [0.02, 0.42, -0.46]], (t) => 0.06 + 0.07 * Math.sin(Math.PI * Math.min(1, t * 1.1)) , 22, 12), {}, c.P, SURF.fur);
+      p.e([0.025, 0.47, -0.47], [0.08, 0.1, 0.08], c.S, SURF.fur, [0.3, 0, 0]);
     },
     head(p, c) {
       p.e(HEAD_C, [0.31, 0.25, 0.25], c.P);
@@ -394,8 +395,8 @@ const SPECIES: Record<Species, SpeciesBuild> = {
   dino: {
     torso(p, c) {
       baseBody(p, { body: c.P, belly: c.S, shoes: c.D, w: 1.04 });
-      // Thick tail and row of rounded back spikes.
-      p.b.part(sweep([[0, 0.1, -0.12], [0, 0.04, -0.4], [0, 0.07, -0.66], [0, 0.18, -0.84]], (t) => 0.1 * (1 - 0.88 * t) + 0.01, 22, 10), {}, c.P, SURF.fur);
+      // Thick tail (short, curling up so it clears engines, wings and fins) and row of rounded back spikes.
+      p.b.part(sweep([[0, 0.1, -0.12], [0, 0.06, -0.3], [0, 0.12, -0.42], [0, 0.27, -0.5]], (t) => 0.1 * (1 - 0.8 * t) + 0.015, 22, 10), {}, c.P, SURF.fur);
       p.cone([0, 0.42, -0.15], 0.055, 0.13, c.S, [-0.75, 0, 0]);
       p.cone([0, 0.32, -0.2], 0.06, 0.14, c.S, [-1.0, 0, 0]);
       p.cone([0, 0.2, -0.22], 0.062, 0.14, c.S, [-1.35, 0, 0]);

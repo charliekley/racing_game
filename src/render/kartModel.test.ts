@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { CHARACTERS } from '../shared/characters';
+import { CHARACTERS, paletteFor } from '../shared/characters';
 import { KART_STYLES, buildKartModel, kartTriangleCount } from './kartModel';
 import { TARGET_COUNT } from './kart/expression';
 
@@ -125,6 +125,22 @@ describe('driver faces', () => {
     // Far tier: paint + accent + ONE merged mesh holding wheels, driver, head (frozen neutral face).
     expect(far).toBeLessThanOrEqual(4);
     expect(far).toBeLessThan(mid);
+  });
+
+  it('the far tier of all 32 character x body combos still merges to 3 draw calls (paint, accent, one merged detail mesh)', () => {
+    for (let style = 0; style < KART_STYLES.length; style++) {
+      for (let c = 0; c < CHARACTERS.length; c++) {
+        const m = buildKartModel('#3a86ff', style, c, 'mid', paletteFor(c));
+        m.bakeFarModel();
+        m.setLod(2);
+        expect(visibleMeshes(m), `${KART_STYLES[style].id} / ${CHARACTERS[c].name}`).toBeLessThanOrEqual(3);
+        // The merged mesh really holds the driver: a bigger head or tail must not drop out of it.
+        const far = m.body.children.find((o) => o.name === 'kart-far') as THREE.Mesh;
+        expect(far, `${KART_STYLES[style].id} / ${CHARACTERS[c].name} has a merged far mesh`).toBeTruthy();
+        expect(far.visible).toBe(true);
+        expect(far.geometry.getAttribute('position').count).toBeGreaterThan(1000);
+      }
+    }
   });
 
   it('the face poses all keep the vertex count (a mismatch would throw while building)', () => {

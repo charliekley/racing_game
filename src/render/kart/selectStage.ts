@@ -28,6 +28,7 @@ import { buildFlame } from '../effects';
 import { DriverRig, type DriverInput } from './driverRig';
 import { BLINK, DriverFace } from './expression';
 import { LruCache } from './modelCache';
+import { applyPickPose } from './driverPose';
 import { NEUTRAL_PICK, PICK_DURATION, facesDue, fitDistance, pickPose, popIn, type PickPose } from './pickAnim';
 
 /** A rectangle in CSS pixels, relative to the container the canvas fills (y from the top). */
@@ -114,6 +115,12 @@ interface Entry {
   face: DriverFace;
   /** Boost flames at the exhausts (shown while revving in the 'ready' stage). */
   flames: THREE.Group[];
+  /**
+   * Where the camera should look, measured once at rest (bodies differ a lot: a Mudlark driver sits 0.7 m higher
+   * than a Sprinter one and has a roll cage above): the head's centre height, and the whole kart's centre and
+   * bounding-sphere radius (cage, spare tyre and all).
+   */
+  frame: { headY: number; kartY: number; kartZ: number; kartRadius: number };
 }
 
 const baseInput = (): DriverInput => ({
@@ -123,6 +130,18 @@ const baseInput = (): DriverInput => ({
 function buildEntry(character: number, kart: number, detail: KartDetail, silhouette: boolean, flat: THREE.Material): Entry {
   const model = buildKartModel('#888888', kart, character, detail, paletteFor(character));
   model.root.name = `select-kart-${character}-${kart}`;
+  const rig = new DriverRig(model);
+  rig.update(0, baseInput());
+  model.root.updateMatrixWorld(true);
+  const kartBox = new THREE.Box3().setFromObject(model.root);
+  const kartSize = kartBox.getSize(new THREE.Vector3());
+  const kartMid = kartBox.getCenter(new THREE.Vector3());
+  const frame = {
+    headY: new THREE.Box3().setFromObject(model.head).getCenter(new THREE.Vector3()).y,
+    kartY: kartMid.y,
+    kartZ: kartMid.z,
+    kartRadius: kartSize.length() * 0.5,
+  };
   const flames = model.exhausts.map((m) => {
     const f = buildFlame();
     m.add(f);
@@ -139,10 +158,8 @@ function buildEntry(character: number, kart: number, detail: KartDetail, silhoue
     });
     flames.forEach((f) => (f.visible = false));
   }
-  const rig = new DriverRig(model);
   const face = new DriverFace();
-  rig.update(0, baseInput());
-  return { key: `${silhouette ? 's' : character}|${kart}|${detail}`, character, kart, silhouette, model, rig, face, flames };
+  return { key: `${silhouette ? 's' : character}|${kart}|${detail}`, character, kart, silhouette, model, rig, face, flames, frame };
 }
 
 // ---------------------------------------------------------------------------
@@ -398,22 +415,7 @@ class Stage {
 
   /** Add the pick pose and the idle breathing to the driver pieces (the rig has just written the base pose). */
   private applyPose(e: Entry, p: PickPose, lookOffset: number): void {
-    const m = e.model;
-    const d = m.driver;
-    const breath = Math.sin(this.t * 2.1) * 0.012;
-    const sq = p.squash + breath;
-    d.position.y += p.lift;
-    d.rotation.x = p.pitch;
-    d.rotation.y = p.yaw;
-    d.rotation.z = p.roll;
-    d.scale.set(d.scale.x * (1 - sq * 0.5), d.scale.y * (1 + sq), d.scale.z * (1 - sq * 0.5));
-    m.torso.rotation.x += p.torsoPitch;
-    m.torso.rotation.y += p.torsoYaw;
-    m.torso.rotation.z += p.torsoRoll + Math.sin(this.t * 1.3) * 0.025;
-    // The head follows the camera while the turntable swings, plus the move's own head motion.
-    m.head.rotation.x += p.headPitch;
-    m.head.rotation.y += p.headYaw - THREE.MathUtils.clamp(lookOffset, -0.8, 0.8) * 0.7;
-    m.head.rotation.z += p.headRoll;
+    applyPickPose(e.model, p, Math.sin(this.t * 2.1) * 0.012, Math.sin(this.t * 1.3) * 0.025, lookOffset);
   }
 
   private updateSparks(dt: number): void {
@@ -448,22 +450,28 @@ class Stage {
     let radius = 1.7;
     let wantTy = 0.55;
     let orbit = false;
+    // Per-model framing (see Entry.frame): the head sits at a different height on every kart body, and the
+    // Mudlark's roll cage makes it much taller than the others.
+    const fr = this.entry?.frame;
+    const headTy = fr ? fr.headY - 0.32 : 0.78; // the head in the upper half, shoulders and seat below it
+    const kartTy = fr ? fr.kartY : 0.55;
+    const kartR = fr ? Math.max(1.85, fr.kartRadius * 1.2) : 1.85;
     if (stage === 'character') {
       radius = 1.6;
-      wantTy = 0.78;
+      wantTy = headTy;
       wantEl = 0.22;
       wantAz = 0.3;
     } else if (stage === 'kart') {
       // While the pick move plays, stay close on the driver; then pull back and orbit.
       const pulling = this.pickT >= 0 && this.pickT < PICK_DURATION - 0.1;
-      radius = pulling ? 1.6 : 1.85;
-      wantTy = pulling ? 0.8 : 0.55;
+      radius = pulling ? 1.6 : kartR;
+      wantTy = pulling ? headTy + 0.02 : kartTy;
       wantEl = pulling ? 0.2 : 0.3;
       orbit = !pulling;
       wantAz = pulling ? 0.3 : this.az;
     } else if (stage === 'ready') {
-      radius = 1.75;
-      wantTy = 0.55;
+      radius = Math.max(1.75, kartR - 0.1);
+      wantTy = kartTy;
       wantEl = 0.16;
       wantAz = 0.5;
     }

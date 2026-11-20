@@ -82,6 +82,12 @@ export interface KartModel {
   faceInfluences: number[];
   /** Shoulder pivots [left, right] (children of `torso`); the hand is at local +Z. */
   arms: THREE.Group[];
+  /** 0..1: how much of the normal lean into corners the driver does on this body (a roll cage leaves less room). */
+  leanScale: number;
+  /** 0..1: how much the torso twists when looking back (an engine beside the seat leaves less room for a swinging tail). */
+  twistScale: number;
+  /** How high (m) the driver may be lifted off the seat (pick-animation hops) before the head would hit a roll cage roof. */
+  liftLimit: number;
   /** Spin this around its local Z to turn the steering wheel. */
   steeringWheel: THREE.Object3D;
   /** Steering wheel centre and tilt in body space, and the radius where the hands grip. */
@@ -442,9 +448,19 @@ function buildOneLevel(
     else rearWheelContacts.push(new THREE.Vector3(spec.x * side, 0, spec.z));
   }
 
+  // Headroom under a roll cage: the head's top at rest, measured once.
+  let liftLimit = Infinity;
+  if (assets.layout.ceiling !== undefined) {
+    root.updateMatrixWorld(true);
+    liftLimit = Math.max(0, assets.layout.ceiling - new THREE.Box3().setFromObject(head).max.y - 0.22); // 0.22: squash-and-stretch and arms-up bounce
+  }
+
   return {
     root, body, frontPivots, wheels, wheelRadii, exhausts, rearWheelContacts, style,
     character, driver, torso, head, arms, steeringWheel,
+    leanScale: assets.layout.leanScale ?? 1,
+    twistScale: assets.layout.twistScale ?? 1,
+    liftLimit,
     faceInfluences: headMesh.morphTargetInfluences ?? [],
     wheelSpec: { pos: new THREE.Vector3(...wheel.pos), tilt: wheel.tilt, handRadius: 0.15 },
     setLod: () => {},
