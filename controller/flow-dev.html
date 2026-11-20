@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- DEV ONLY (not part of the build): opens the phone's pick screens without a host.
+     /controller/flow-dev.html?stage=character|kart|name|ready&char=0..7&kart=0..3&name=Charlie
+     /controller/flow-dev.html?sheet=1   -> all 8 portraits and 4 karts, big and small -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Flow dev</title>
+  </head>
+  <body class="playing">
+    <div id="stage"></div>
+    <script type="module" src="/src/controller/flowDev.ts"></script>
+  </body>
+</html>
