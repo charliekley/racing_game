@@ -246,7 +246,7 @@ describe('bots and cannons', () => {
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
     for (const slot of [0, 1]) {
       expect(seen.filter((e) => e.kind === 'cannonFire' && e.slot === slot).length).toBeGreaterThanOrEqual(2); // once per lap
       expect(seen.filter((e) => e.kind === 'cannonLand' && e.slot === slot).length).toBeGreaterThanOrEqual(2);

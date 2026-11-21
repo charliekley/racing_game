@@ -113,7 +113,7 @@ describe.each([...TRACKS, ...DEV_TRACKS].map((t) => [t.name, t] as const))('bots
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
   });
 
   it('every plan collider (scenery and bridge piers) is also in the world colliders (what you see is what you hit)', () => {

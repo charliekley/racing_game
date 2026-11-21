@@ -96,11 +96,11 @@ describe('4 bots finish every track on every difficulty', () => {
       const race = world.race!;
       expect(race.phase).toBe('done');
       const racers = [...race.racers.values()];
-      // The race ends 20 s after the winner, so a clearly slower easy bot may be cut off; it must still have driven nearly all of it.
+      // The race ends when the second-to-last kart finishes, so the last kart is a DNF (and a slow easy bot may be cut off); it must still have driven nearly all of it.
       const total = track.def.laps * track.length;
       for (const r of racers) {
         if (difficulty === 'easy') expect(r.finished || r.progress > total * 0.9, `slot ${r.slot}`).toBe(true);
-        else expect(r.finished, `slot ${r.slot}`).toBe(true);
+        else expect(r.finished || (r.place === racers.length && r.progress > total * 0.9), `slot ${r.slot}`).toBe(true);
       }
       expect(racers.some((r) => r.finished)).toBe(true);
     }, 120_000);
@@ -185,6 +185,6 @@ describe('bot character: rivals and moods', () => {
     }
     for (const bot of [1, 2, 3]) expect(pack.rivalOf(bot)).not.toBeNull();
     expect(moods.size).toBeGreaterThan(0);
-    expect(world.race!.racers.get(1)!.finished).toBe(true);
+    expect(world.race!.racers.get(1)!.place).not.toBeNull(); // placed (bot 1 may be the DNF last kart)
   }, 120_000);
 });

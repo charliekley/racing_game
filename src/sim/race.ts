@@ -20,8 +20,14 @@ import { START } from './config';
 import { Knockout } from './knockout';
 
 export const COUNTDOWN_SECONDS = 3;
-/** After the first finisher, the others get this long before the race ends. */
-export const FINISH_GRACE_SECONDS = 20;
+/**
+ * Safety net so a race can never hang (e.g. two idle humans parked on the grid): if this long
+ * passes since the MOST RECENT finisher without the race ending, every kart still racing is
+ * placed by distance raced (DNF). Normal races end earlier, when the second-to-last kart finishes.
+ */
+export const STRAGGLER_TIMEOUT_SECONDS = 45;
+/** Knockout only: after the first finisher the others get this long (unchanged from before). */
+export const KNOCKOUT_FINISH_GRACE_SECONDS = 20;
 /** Rocket start: gas pressed no more than this long before GO -> boost. */
 export const START_BOOST_WINDOW = 0.8;
 /** Gas held longer than this before GO -> engine floods. */
@@ -88,6 +94,8 @@ export class Race {
   readonly racers = new Map<number, Racer>();
   finishOrder: number[] = [];
   private firstFinishAt: number | null = null;
+  /** Race clock of the latest finish (drives the straggler timeout). */
+  private lastFinishAt: number | null = null;
   /** Knockout rules (null in a normal race). */
   readonly knockout: Knockout | null;
   /** Events produced between ticks (a player leaving); delivered with the next tick's events. */
@@ -147,6 +155,7 @@ export class Race {
     this.finishOrder.push(r.slot);
     r.place = this.finishOrder.length;
     this.firstFinishAt ??= this.time;
+    this.lastFinishAt = this.time;
     events.push({ kind: 'finish', slot: r.slot, place: r.place, time: this.time });
     const before = this.finishOrder.length >= 2 ? this.racers.get(this.finishOrder[this.finishOrder.length - 2]) : undefined;
     if (before?.finishTime != null && this.time - before.finishTime <= START.photoFinishGap) {
@@ -312,7 +321,20 @@ export class Race {
 
     if (this.phase === 'racing') {
       const allDone = [...this.racers.values()].every((r) => r.finished || r.out);
-      const graceOver = this.firstFinishAt !== null && this.time - this.firstFinishAt > FINISH_GRACE_SECONDS;
+      let graceOver: boolean;
+      if (this.knockout) {
+        // Knockout keeps its old rule: the race ends a fixed time after the first finisher.
+        graceOver = this.firstFinishAt !== null && this.time - this.firstFinishAt > KNOCKOUT_FINISH_GRACE_SECONDS;
+      } else {
+        // Console-kart rule: the race ends the moment the second-to-last kart finishes. The one
+        // kart still racing is placed last by the loop below (finished stays false = DNF).
+        // (finishedCount >= 1 keeps a 1-kart race from ending before it has finished.)
+        const finishedCount = this.finishOrder.length;
+        const lastOneLeft = finishedCount >= 1 && this.racers.size - finishedCount <= 1;
+        // Or the straggler timeout since the latest finish (everyone left is a DNF by distance).
+        const timedOut = this.lastFinishAt !== null && this.time - this.lastFinishAt > STRAGGLER_TIMEOUT_SECONDS;
+        graceOver = lastOneLeft || timedOut;
+      }
       if (allDone || graceOver) {
         this.phase = 'done';
         if (this.knockout) {

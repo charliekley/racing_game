@@ -126,7 +126,7 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('track %s', (_name, def) 
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
     if (track.ramps.length) expect(jumped).toBe(true);
     if (track.boostPads.length) expect(boosted).toBe(true);
   });
@@ -404,7 +404,7 @@ describe('terrain, bridges, cliffs and voids (Terrain Test track)', () => {
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
   });
 });
 

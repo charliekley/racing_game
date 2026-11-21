@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Buttons, type ControlInput } from '../shared/protocol';
-import { COUNTDOWN_SECONDS, OFF_COURSE_SECONDS, Race, SKIP_CREDIT_DISTANCE } from './race';
+import { COUNTDOWN_SECONDS, KNOCKOUT_FINISH_GRACE_SECONDS, OFF_COURSE_SECONDS, Race, SKIP_CREDIT_DISTANCE, STRAGGLER_TIMEOUT_SECONDS } from './race';
 
 const L = 1600;
 const K = 16;
@@ -184,9 +184,10 @@ describe('perfect start and photo finish', () => {
 
   it('two karts finishing within 0.15 s raise photoFinish; further apart does not', () => {
     const finishBoth = (gapSeconds: number) => {
-      const r = racing([0, 1], 1);
+      // Three karts: the race only ends when the second-to-last one finishes, so kart 2 (parked) keeps it running.
+      const r = racing([0, 1, 2], 1);
       const events: { kind: string }[] = [];
-      const step = (s0: number, s1: number) => events.push(...r.tick(DT, new Map([[0, s0 % L], [1, s1 % L]]), none));
+      const step = (s0: number, s1: number) => events.push(...r.tick(DT, new Map([[0, s0 % L], [1, s1 % L], [2, L - 5]]), none));
       // Both karts drive the whole race side by side, then kart 0 crosses the final line and kart 1 follows later.
       for (let s = L - 5; s <= 2 * L - 15; s += 10) step(s, s);
       step(5, 2 * L - 15);
@@ -201,3 +202,91 @@ describe('perfect start and photo finish', () => {
   });
 });
 
+
+/** Drive one kart through the whole race (1 lap here) while every other kart stands still. */
+function finishKart(r: Race, slot: number) {
+  driveAlong(r, slot, L - 5, 2 * L + 5);
+  expect(r.racers.get(slot)!.finished).toBe(true);
+}
+/** Let `seconds` of race time pass with nobody moving. */
+function idle(r: Race, seconds: number) {
+  for (let t = 0; t < seconds && r.phase === 'racing'; t += DT) r.tick(DT, new Map(), none);
+}
+
+describe('finish rule (normal race)', () => {
+  it('ends the moment the second-to-last kart finishes; the last one is placed last as DNF', () => {
+    const r = racing([0, 1, 2, 3], 1);
+    finishKart(r, 2);
+    finishKart(r, 0);
+    expect(r.phase).toBe('racing'); // two still racing
+    finishKart(r, 3);
+    expect(r.phase).toBe('done');
+    expect(r.finishOrder).toEqual([2, 0, 3, 1]);
+    const dnf = r.racers.get(1)!;
+    expect(dnf.finished).toBe(false);
+    expect(dnf.place).toBe(4);
+    expect([2, 0, 3, 1].map((sl) => r.racers.get(sl)!.place)).toEqual([1, 2, 3, 4]);
+    expect(r.standings()).toEqual([2, 0, 3, 1]);
+  });
+
+  it('does not end 20 s after the first finisher any more', () => {
+    const r = racing([0, 1, 2], 1);
+    finishKart(r, 0);
+    idle(r, 30);
+    expect(r.phase).toBe('racing');
+  });
+
+  it('a 1-kart race ends when that kart finishes (and not before)', () => {
+    const r = racing([0], 1);
+    expect(r.phase).toBe('racing');
+    finishKart(r, 0);
+    expect(r.phase).toBe('done');
+    expect(r.racers.get(0)!.place).toBe(1);
+  });
+
+  it('a 2-kart race ends at the first finish; the other is last', () => {
+    const r = racing([0, 1], 1);
+    finishKart(r, 1);
+    expect(r.phase).toBe('done');
+    expect(r.racers.get(0)!.place).toBe(2);
+    expect(r.racers.get(0)!.finished).toBe(false);
+  });
+
+  it('straggler timeout: counted from the most recent finish, unfinished karts ranked by distance', () => {
+    const r = racing([0, 1, 2, 3], 1);
+    finishKart(r, 0);
+    // Kart 1 gets further than kart 2; kart 3 stays on the grid.
+    driveAlong(r, 1, L - 5, L + 400);
+    driveAlong(r, 2, L - 5, L + 100);
+    idle(r, STRAGGLER_TIMEOUT_SECONDS - 5);
+    expect(r.phase).toBe('racing');
+    finishKart(r, 3); // a later finish restarts the clock (and leaves two racing)
+    idle(r, STRAGGLER_TIMEOUT_SECONDS - 5);
+    expect(r.phase).toBe('racing');
+    idle(r, 10);
+    expect(r.phase).toBe('done');
+    expect(r.finishOrder).toEqual([0, 3, 1, 2]);
+    expect(r.racers.get(1)!.finished).toBe(false);
+    expect(r.racers.get(2)!.place).toBe(4);
+  });
+
+  it('never hangs when nobody finishes: no finisher means no timeout clock (the world must handle that)', () => {
+    // Documented limit: the timeout counts from a finish, so with zero finishers the race keeps running.
+    const r = racing([0, 1], 1);
+    idle(r, STRAGGLER_TIMEOUT_SECONDS + 5);
+    expect(r.phase).toBe('racing');
+  });
+});
+
+describe('finish rule (knockout)', () => {
+  it('keeps the old rule: ends a fixed time after the first finisher', () => {
+    const r = new Race(track, 1, [0, 1, 2], { knockout: true });
+    r.tick(COUNTDOWN_SECONDS + DT, new Map([[0, L - 5], [1, L - 5], [2, L - 5]]), none);
+    finishKart(r, 0);
+    if (r.phase === 'done') return; // the knockout itself may already have ended it: fine, rules unchanged
+    idle(r, KNOCKOUT_FINISH_GRACE_SECONDS - 1);
+    expect(r.phase).toBe('racing');
+    idle(r, 3);
+    expect(r.phase).toBe('done');
+  });
+});
