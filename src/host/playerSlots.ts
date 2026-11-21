@@ -58,6 +58,12 @@ function sameOwner(a: SlotOwner, b: SlotOwner): boolean {
 export class PlayerSlots {
   readonly slots: (PlayerSlot | null)[] = new Array(MAX_PLAYERS).fill(null);
   phase: GamePhase = 'lobby';
+  /**
+   * The results screen is "look only": Grand Prix between races and the final podium. Phones then cannot change
+   * their pick or press READY (the host moves on by itself, see postRaceFlow.ts). Single race / Knockout / Loser
+   * picks leave this false: there the results screen is where everybody chooses CHANGE or READY.
+   */
+  postLock = false;
 
   find(owner: SlotOwner): PlayerSlot | null {
     return this.slots.find((s) => s && sameOwner(s.owner, owner)) ?? null;
@@ -119,9 +125,28 @@ export class PlayerSlots {
     if (loadout !== undefined && this.canChangeLoadout()) s.loadout = sanitizeLoadout(loadout);
   }
 
-  /** Characters and karts can only be changed between races (lobby and results), never during one. */
+  /** Characters and karts can only be changed between races (lobby and results, unless the results are locked), never during one. */
   canChangeLoadout(): boolean {
-    return this.phase === 'lobby' || this.phase === 'results';
+    return this.phase === 'lobby' || (this.phase === 'results' && !this.postLock);
+  }
+
+  /** A phone's READY button on the results screen: only for someone locked in at 'ready', and only while the results are not locked. */
+  setPostReady(index: number, ready: boolean): boolean {
+    const s = this.slots[index];
+    if (!s || this.phase !== 'results' || this.postLock || s.stage !== 'ready') return false;
+    s.ready = ready;
+    return true;
+  }
+
+  /**
+   * The race ended and the results are up: everybody is still locked in at 'ready' (that is what the TV shows),
+   * but nobody has pressed READY for the next race yet. Computer drivers (lobby bots) are always ready.
+   * `locked` = look-only results (see postLock).
+   */
+  beginResults(locked: boolean): void {
+    this.phase = 'results';
+    this.postLock = locked;
+    for (const p of this.players) p.ready = p.owner.kind === 'bot';
   }
 
   /** Change a slot's loadout (ignored while a race is running). Returns true if it changed. */
@@ -184,16 +209,23 @@ export class PlayerSlots {
     return connected.length > 0 && connected.every((p) => p.ready);
   }
 
+  /** The next race is starting (or we are back in the lobby): the results lock is over. */
+  endResultsLock(): void {
+    this.postLock = false;
+  }
+
   /** Back to lobby: clear ready flags and drop players who never came back. */
   resetToLobby(): void {
     this.phase = 'lobby';
+    this.postLock = false;
     for (const p of this.players) {
       p.ready = p.stage === 'ready'; // picks are kept: whoever was locked in stays locked in
       if (!p.connected) this.remove(p.index);
     }
   }
 
-  lobbyInfo(): LobbyPlayerInfo[] {
+  /** What phones are told about everybody. `winsOf` gives each slot's race wins (crowns); without it nobody has any. */
+  lobbyInfo(winsOf?: (slot: PlayerSlot) => number): LobbyPlayerInfo[] {
     return this.players.map((p) => ({
       slot: p.index,
       name: p.name,
@@ -202,6 +234,7 @@ export class PlayerSlots {
       ready: p.ready,
       stage: p.stage,
       loadout: { ...p.loadout },
+      wins: winsOf?.(p) ?? 0,
     }));
   }
 }

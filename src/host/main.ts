@@ -77,12 +77,15 @@ transport.onStatus.add((s) => {
  * Right after a refresh the server may still hold our old registration for a
  * few seconds, so retry the same code a few times before picking a new one.
  */
+let roomCode: string | null = null;
 async function openRoom(): Promise<string> {
   let code = normalizeRoomCode(sessionStorage.getItem(ROOM_STORAGE_KEY)) ?? generateRoomCode();
   let sameCodeRetries = 3;
   for (;;) {
     try {
       await transport.start(code);
+      if (code !== roomCode) players.wins.clear(); // a different room: the crowns start from zero (a page reload does that too)
+      roomCode = code;
       sessionStorage.setItem(ROOM_STORAGE_KEY, code);
       return code;
     } catch (err) {
@@ -144,7 +147,8 @@ selectionHub.subscribe((views) => {
   for (const v of humans) humanHub.set(v);
   for (const v of humanHub.list()) if (!humans.some((h) => h.slot === v.slot)) humanHub.remove(v.slot);
 });
-const selectView = new SelectView($('select'), humanHub, { onKick: (slot) => players.kick(slot) });
+const selectEl = $('select');
+const selectView = new SelectView(selectEl, humanHub, { onKick: (slot) => players.kick(slot) });
 if (import.meta.env.DEV) (window as unknown as { __selectView?: SelectView }).__selectView = selectView; // debugging aid
 // Dev: ?selectdemo=1..4 fakes that many players walking through the flow (no phones needed).
 const demoParam = new URLSearchParams(location.search).get('selectdemo');
@@ -361,6 +365,29 @@ showMute();
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
 const gameEl = $('game');
+
+// --- Selection quadrants after a race ---------------------------------------------------------------
+// The selection screen normally lives in the lobby page (#app, hidden while racing). After a race the TV shows it
+// again, over the results: the same element is moved into this overlay (and back to the lobby afterwards), so there
+// is still ONE selection screen and ONE 3D renderer. See postRaceFlow.ts for when this happens.
+const selectHome = selectEl.parentElement!;
+const selectNextSibling = selectEl.nextElementSibling; // (the hidden #slots cards: we go back in front of them)
+const postSelect = document.createElement('div');
+postSelect.className = 'post-select hidden';
+gameEl.appendChild(postSelect);
+let postSelectOn = false;
+function showPostSelect(on: boolean) {
+  if (on === postSelectOn) return;
+  postSelectOn = on;
+  postSelect.classList.toggle('hidden', !on);
+  if (on) {
+    postSelect.appendChild(selectEl);
+    selectView.show();
+  } else {
+    selectView.hide();
+    selectHome.insertBefore(selectEl, selectNextSibling);
+  }
+}
 const seriesHost: SeriesHost = new SeriesHost({
   players,
   tracks: TRACKS,
@@ -375,6 +402,7 @@ const seriesHost: SeriesHost = new SeriesHost({
   startRace: () => startDriving(),
   toLobby: () => backToLobby(),
   gameEl,
+  showSelect: (on) => showPostSelect(on),
 });
 // Dev: ?mode=gp or ?mode=loser picks the mode from the address (handy with ?drive=4).
 const URL_MODE = sanitizeMode(new URLSearchParams(location.search).get('mode'));
@@ -393,6 +421,7 @@ let startTimer: ReturnType<typeof setTimeout> | null = null;
 function startDriving() {
   startTimer = null;
   if (players.slots.players.length === 0) return;
+  showPostSelect(false); // (the quadrants over the results, if they were up)
   selectView.hide(); // free the selection screen's GPU memory while racing
   if (!seriesHost.series) seriesHost.begin(); // starting from the lobby: a new series with the chosen mode and track
   driving = true;
@@ -408,7 +437,7 @@ function startDriving() {
       // Results screen buttons (same as the Enter / Esc keys).
       onRaceAgain: () => raceAgain(),
       onChangeTrack: () => backToLobby(),
-      onRaceResults: (placings) => seriesHost.onRaceResults(placings),
+      onRaceResults: (placings, fillColors) => seriesHost.onRaceResults(placings, fillColors),
       onQualityStepDown: () => stepDownQuality(),
     },
     quality,
@@ -429,17 +458,18 @@ function startDriving() {
 }
 
 /**
- * From the results screen: the next step of the series (same track again, next Grand Prix race, the
- * loser's pick, the podium, or back to the menu). `fromReady` = every phone tapped READY.
+ * From the results screen (Enter / the TV button): skip the waiting and go on (same track again, next Grand Prix
+ * race, the loser's pick, the podium, or back to the menu). Phones' READY flags are handled by SeriesHost.update.
  */
-function raceAgain(fromReady = false) {
-  if (driving && players.slots.phase === 'results') seriesHost.next(fromReady);
+function raceAgain() {
+  if (driving && players.slots.phase === 'results') seriesHost.next();
 }
 
 function backToLobby() {
   if (!driving) return;
   driving = false;
-  seriesHost.end();
+  seriesHost.end(); // (also takes the quadrants and the podium off the screen)
+  showPostSelect(false);
   players.setPhase('lobby');
   audio.stopKarts(); // AUDIO
   audio.playMusic('lobby');
@@ -452,11 +482,7 @@ function backToLobby() {
 players.onLobbyChange.add(() => {
   lobbyView.render();
   seriesHost.refresh(); // the menu owner may have changed (P1 left / joined)
-  if (driving) {
-    // Results screen: when every connected player taps RACE AGAIN, go again.
-    if (players.slots.phase === 'results' && players.slots.allReady()) raceAgain(true);
-    return;
-  }
+  if (driving) return; // (after a race SeriesHost.update watches the READY flags every frame)
   updateStartBanner();
 });
 /** When everyone is ready (and nobody is still choosing the mode), start after a short pause (cancelled if someone un-readies). */
@@ -525,8 +551,13 @@ let fpsTimer = performance.now();
 function frame(now: number) {
   const dt = clock.tick(now);
   players.updateLocal(dt);
-  if (driving && game) game.frame(dt);
-  else lobbyView.updateDebug();
+  if (driving && game) {
+    if (players.slots.phase === 'results') {
+      seriesHost.update(dt); // the clock after a race: quadrants, next race, podium, lobby
+      seriesHost.updatePodium(dt);
+    }
+    if (!postSelectOn) game.frame(dt); // (the quadrants cover the screen: the 3D game behind them rests)
+  } else lobbyView.updateDebug();
   frames++;
   if (now - fpsTimer > 500) {
     fpsEl.textContent = `${Math.round((frames * 1000) / (now - fpsTimer))} fps`;

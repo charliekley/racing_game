@@ -12,6 +12,7 @@
 import { CHARACTERS, KART_BODIES, STAT_KEYS, loadoutStats, sanitizeLoadout, type Loadout, type StatKey } from '../shared/characters';
 import type { LobbyPlayerInfo, SelectRequest } from '../shared/protocol';
 import { SELECT_STAGES, previousStage, stageRank, type SelectStage } from '../shared/selectStage';
+import { crownLabel, sanitizeWins } from '../shared/wins';
 import { drawKartPicture, drawPortrait } from './portrait';
 import { STEP_TITLES, bufferPx } from './pictureMath';
 
@@ -52,13 +53,31 @@ const STAGE_NOTE: Record<SelectStage, string> = { name: 'joining', character: 'p
 
 type Browse = 'character' | 'kart';
 
+/**
+ * What the READY screen is for right now:
+ *  'lobby'  : waiting for the others before the first race (BACK goes one step back);
+ *  'choose' : after a single race / Knockout / Loser picks: exactly two choices, CHANGE (driver and kart again) and READY;
+ *  'wait'   : Grand Prix between races / the podium: nothing to choose, the standings show while the next race comes by itself.
+ */
+export type PostMode = 'lobby' | 'choose' | 'wait';
+
+/** One line of the standings on the 'wait' screen (names of fill-in bots are made up by main.ts, e.g. "CPU 2"). */
+export interface StandingChip {
+  rank: number;
+  name: string;
+  wins: number;
+  points: number;
+  me: boolean;
+}
+
 export class SelectFlow {
   readonly root: HTMLElement;
   /** An empty box on the READY screen: main.ts parks the race-mode line and the RACE AGAIN button here. */
   readonly readySlot: HTMLElement;
   private stage: SelectStage = 'name';
   private loadout: Loadout = sanitizeLoadout(undefined);
-  private results = false;
+  private post: PostMode = 'lobby';
+  private standings: StandingChip[] | null = null;
   private visible = false;
 
   private readonly head: HTMLElement;
@@ -69,6 +88,7 @@ export class SelectFlow {
   private readonly nameNext: HTMLButtonElement;
   private readonly browse: Record<Browse, BrowseView>;
   private readonly who: HTMLElement;
+  private readonly readyTitle: HTMLElement;
   private readonly backBtn: HTMLButtonElement;
   private players: LobbyPlayerInfo[] = [];
   private mySlot: number | null = null;
@@ -106,6 +126,7 @@ export class SelectFlow {
     this.nameInput = root.querySelector('.sf-name') as HTMLInputElement;
     this.nameNext = root.querySelector('.sf-next') as HTMLButtonElement;
     this.who = root.querySelector('.sf-who') as HTMLElement;
+    this.readyTitle = root.querySelector('.sf-ready-title') as HTMLElement;
     this.readySlot = root.querySelector('.sf-ready-slot') as HTMLElement;
     this.backBtn = root.querySelector('.sf-back-ready') as HTMLButtonElement;
 
@@ -144,8 +165,8 @@ export class SelectFlow {
       }),
     };
 
-    // BACK on the READY screen: lobby = one step back (kart); results = "Change" = start again at the driver.
-    this.backBtn.addEventListener('click', () => actions.select({ stage: this.results ? 'character' : (previousStage('ready') ?? 'kart') }));
+    // BACK on the READY screen: lobby = one step back (kart); after a race it is CHANGE = start again at the driver.
+    this.backBtn.addEventListener('click', () => actions.select({ stage: this.post === 'choose' ? 'character' : (previousStage('ready') ?? 'kart') }));
     this.render();
   }
 
@@ -177,10 +198,20 @@ export class SelectFlow {
     this.head.textContent = text;
   }
 
-  /** True on the results screen: the READY screen's BACK button becomes CHANGE. */
-  setResults(results: boolean): void {
-    this.results = results;
-    this.backBtn.textContent = results ? 'CHANGE' : 'BACK';
+  /** What the READY screen is for (see PostMode). `title` is the big word on it (default READY). */
+  setPost(mode: PostMode, title = 'READY'): void {
+    this.post = mode;
+    this.root.dataset.post = mode;
+    this.readyTitle.textContent = title;
+    this.backBtn.textContent = mode === 'choose' ? 'CHANGE' : 'BACK';
+    this.backBtn.classList.toggle('hidden', mode === 'wait'); // nothing to change while the next race comes by itself
+    this.renderWho();
+  }
+
+  /** Grand Prix wait screen: the ranked standings to show instead of the player chips (null = show the chips). */
+  setStandings(rows: StandingChip[] | null): void {
+    this.standings = rows;
+    this.renderWho();
   }
 
   setVisible(visible: boolean): void {
@@ -239,14 +270,34 @@ export class SelectFlow {
 
   private renderWho(): void {
     this.who.replaceChildren();
+    // Names come from phones (or are made up here): textContent only.
+    const withCrown = (name: string, wins: number) => {
+      const crown = crownLabel(wins);
+      return crown ? `${name} ${crown}` : name;
+    };
+    if (this.post === 'wait' && this.standings) {
+      for (const r of this.standings) {
+        const chip = document.createElement('span');
+        chip.className = `sf-chip${r.me ? ' me' : ''}`;
+        const name = document.createElement('b');
+        name.textContent = withCrown(`${r.rank}. ${r.name}`, r.wins);
+        const pts = document.createElement('small');
+        pts.textContent = `${r.points} pts`;
+        chip.append(name, pts);
+        this.who.appendChild(chip);
+      }
+      return;
+    }
     for (const p of this.players) {
       const chip = document.createElement('span');
       const stage = p.stage ?? 'ready';
-      chip.className = `sf-chip${stage === 'ready' ? ' ok' : ''}${p.slot === this.mySlot ? ' me' : ''}`;
+      // Lobby: "ready" is reaching the READY step. After a race everybody is at that step, and the flag says who pressed READY again.
+      const isReady = this.post === 'choose' ? stage === 'ready' && p.ready : stage === 'ready';
+      chip.className = `sf-chip${isReady ? ' ok' : ''}${p.slot === this.mySlot ? ' me' : ''}`;
       const name = document.createElement('b');
-      name.textContent = p.name;
+      name.textContent = withCrown(p.name, sanitizeWins(p.wins));
       const note = document.createElement('small');
-      note.textContent = p.connected ? STAGE_NOTE[stage] : 'away';
+      note.textContent = !p.connected ? 'away' : this.post === 'choose' && stage === 'ready' && !p.ready ? 'not yet' : STAGE_NOTE[stage];
       chip.append(name, note);
       this.who.appendChild(chip);
     }

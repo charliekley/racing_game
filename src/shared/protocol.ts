@@ -11,6 +11,7 @@
  */
 
 import { CHARACTERS, KART_BODIES, sanitizeLoadout, type Loadout } from './characters';
+import { FIRST_FILL_BOT_SLOT } from './colors';
 import { isSelectStage, type SelectStage } from './selectStage';
 import type { MapData } from './mapDraw';
 
@@ -132,8 +133,15 @@ export interface SeriesInfo {
   racesDone: number;
   /** Grand Prix length, or null. */
   raceTotal: number | null;
-  /** Ranked standings, flat [slot, points, slot, points, ...]; empty in single races. */
+  /**
+   * Ranked standings, flat [slot, points, slot, points, ...]; empty in single races and Knockout. Besides the 4 player
+   * slots it lists the fill-in bots (slot 4 and up, see FIRST_FILL_BOT_SLOT), so up to 12 racers = 24 numbers.
+   */
   standings: number[];
+  /** Race wins (crowns, shared/wins.ts) of the fill-in bots only, flat [slot, wins, ...] (players' wins travel in the lobby list). Optional. */
+  wins?: number[];
+  /** Loser picks, stage 'between': the picker has chosen (`track` is now the next race's track); the race starts when everyone is ready. Optional. */
+  picked?: boolean;
   /**
    * Stage 'menu' only: nobody has made this round's mode / track choice yet, so the owner's phone shows
    * its forced pop-up (see src/shared/forcedChoice.ts). Optional: hosts from before the pop-up leave it out (= false).
@@ -169,6 +177,28 @@ export function parseTrackCards(list: unknown): TrackCard[] | null {
   return out;
 }
 
+/** The most racers a race can have (12 karts: 4 people + fill-in bots). Standings carry two numbers per racer. */
+export const MAX_RACERS_ON_WIRE = 12;
+
+/** Validate a flat [slot, value, slot, value, ...] list from the host: whole slot numbers (0..31), finite non-negative values, at most 12 pairs. Returns a clean copy or null. */
+export function parseSlotPairs(x: unknown): number[] | null {
+  if (!Array.isArray(x) || x.length > MAX_RACERS_ON_WIRE * 2 || x.length % 2 !== 0) return null;
+  const out: number[] = [];
+  for (let i = 0; i < x.length; i += 2) {
+    const slot = x[i];
+    const v = x[i + 1];
+    if (typeof slot !== 'number' || !Number.isInteger(slot) || slot < 0 || slot > 31) return null;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 99999) return null;
+    out.push(slot, v);
+  }
+  return out;
+}
+
+/** Name of a fill-in bot (slot 4 and up) as the phones show it: "CPU 1", "CPU 2"... (the host uses the same text, see raceSettings.ts). */
+export function fillBotLabel(slot: number): string {
+  return `CPU ${slot - FIRST_FILL_BOT_SLOT + 1}`;
+}
+
 /** Validate a SeriesInfo from the host (the phone shows it, so keep it strict). Returns a clean copy or null. */
 export function parseSeriesInfo(m: unknown, trackCount: number): SeriesInfo | null {
   if (typeof m !== 'object' || m === null) return null;
@@ -181,13 +211,20 @@ export function parseSeriesInfo(m: unknown, trackCount: number): SeriesInfo | nu
   const owner = slotOrNull(o.owner);
   const picker = slotOrNull(o.picker);
   if ((o.owner !== null && owner === null) || (o.picker !== null && picker === null)) return null;
-  if (!Array.isArray(o.standings) || o.standings.length > 8 || o.standings.length % 2 !== 0) return null;
-  if (!o.standings.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  const flat = parseSlotPairs(o.standings);
+  if (!flat) return null;
+  let wins: number[] | undefined;
+  if (o.wins !== undefined) {
+    const w = parseSlotPairs(o.wins);
+    if (!w) return null;
+    wins = w;
+  }
+  if (o.picked !== undefined && typeof o.picked !== 'boolean') return null;
   const racesDone = typeof o.racesDone === 'number' && Number.isInteger(o.racesDone) ? o.racesDone : null;
   const raceTotal = o.raceTotal === null ? null : typeof o.raceTotal === 'number' && Number.isInteger(o.raceTotal) ? o.raceTotal : undefined;
   if (racesDone === null || raceTotal === undefined) return null;
   if (o.pending !== undefined && typeof o.pending !== 'boolean') return null;
-  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: o.standings as number[], ...(o.pending ? { pending: true } : {}) };
+  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: flat, ...(wins && wins.length ? { wins } : {}), ...(o.picked ? { picked: true } : {}), ...(o.pending ? { pending: true } : {}) };
 }
 
 export type ControllerToHost =

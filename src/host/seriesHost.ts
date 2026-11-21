@@ -12,13 +12,20 @@
 import {
   parseSeriesAct,
   parseSetup,
+  sanitizeTrackIndex,
   type SeriesInfo,
   type SeriesMode,
   type TrackCard,
 } from '../shared/protocol';
+import { sanitizeLoadout, type Loadout } from '../shared/characters';
 import { colorHex } from '../shared/colors';
+import { botLoadoutFor } from '../sim/classes';
 import type { TrackDef } from '../track';
 import type { PlayerManager } from './playerManager';
+import { createPodium } from './podiumView';
+import { GP_NEXT_RACE_SECONDS, type PodiumApi, type PodiumEntry } from './postRace';
+import { PostRaceFlow, type PostKind } from './postRaceFlow';
+import { fillBotName, isFillBot } from './raceSettings';
 import type { ResultsExtras } from './resultsView';
 import { DEFAULT_MODE, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, sanitizeMode, type Placing } from './series';
 import { buildPickStrip, buildPodium } from './seriesView';
@@ -43,6 +50,17 @@ export interface SeriesHostDeps {
   toLobby(): void;
   /** The element that holds the 3D game; the podium and pick strip are added to it. */
   gameEl: HTMLElement;
+  /** Show (true) or hide (false) everybody's selection quadrants over the results screen (main.ts moves the selection screen there). */
+  showSelect(on: boolean): void;
+}
+
+/** One racer as the results, standings and podium show them. */
+interface RacerInfo {
+  slot: number;
+  name: string;
+  color: string;
+  loadout: Loadout;
+  wins: number;
 }
 
 export class SeriesHost {
@@ -58,6 +76,17 @@ export class SeriesHost {
   private lastKey = '';
   private readonly podiumLayer: HTMLElement;
   private readonly pickLayer: HTMLElement;
+  /** The 3D podium (podiumView.ts) and the element it draws into. */
+  private readonly podium3d: PodiumApi;
+  /** Which podium reveal is current (a reveal that finishes after the podium was hidden must not count). */
+  private podiumGen = 0;
+  private revealDone = true;
+  /** The clock of the screens after a race (null while racing / in the menu). */
+  private post: PostRaceFlow | null = null;
+  /** Loser picks: the track the picker chose for the next race (null = not chosen yet). The race starts when everyone is ready too. */
+  private pickedTrack: number | null = null;
+  /** Colours of the fill-in bots of the last race (the game picks them), so standings use the same ones. */
+  private fillColors: ReadonlyMap<number, string> = new Map();
 
   constructor(private readonly d: SeriesHostDeps) {
     this.mode = SeriesHost.loadMode();
@@ -66,7 +95,11 @@ export class SeriesHost {
     this.podiumLayer.className = 'results series-layer hidden';
     this.pickLayer = document.createElement('div');
     this.pickLayer.className = 'pick-layer hidden';
-    d.gameEl.append(this.podiumLayer, this.pickLayer);
+    // The 3D podium's home: no z-index of its own, so what podiumView puts inside layers against the results (20) and the other layers here.
+    const podiumMount = document.createElement('div');
+    podiumMount.className = 'podium-mount';
+    d.gameEl.append(podiumMount, this.podiumLayer, this.pickLayer);
+    this.podium3d = createPodium(podiumMount);
     d.players.onMenuMessage.add(({ slot, msg }) => this.handleMessage(slot, msg));
     d.players.onRemoved.add((slot) => this.series?.dropSlot(slot));
   }
@@ -151,6 +184,8 @@ export class SeriesHost {
     this.series = new Series(mode, this.d.tracks.length, this.d.tracks.indexOf(lobby));
     this.raceTrack = mode === 'gp' ? this.d.tracks[0] : lobby; // keeps dev tracks (?track=) working in single mode
     this.podium = false;
+    this.post = null;
+    this.pickedTrack = null;
   }
 
   /** The track of the race that is about to start / running. */
@@ -160,69 +195,179 @@ export class SeriesHost {
 
   /** Back in the lobby / menu: the series is over. */
   end(): void {
+    this.leavePost();
     this.series = null;
     this.podium = false;
     this.choice.reset(); // a new round: the owner's phone asks for mode and track again
     this.refresh();
   }
 
-  /** The race finished: record it and return what the results screen should add (points, labels). */
-  onRaceResults(placings: Placing[]): ResultsExtras | undefined {
+  /**
+   * The race finished: record it, start the post-race clock and return what the results screen should add
+   * (points, standings, labels). `fillColors` = colours of the fill-in bots (they have no player entry).
+   * What happens next depends on the mode (see postRace.ts and postRaceFlow.ts).
+   */
+  onRaceResults(placings: Placing[], fillColors: ReadonlyMap<number, string> = new Map()): ResultsExtras | undefined {
     const s = this.series;
     if (!s) return undefined;
+    this.fillColors = fillColors;
     s.recordRace(placings);
     this.tvPick = s.trackIndex;
+    this.pickedTrack = null;
+    const kind: PostKind = s.mode === 'gp' ? (s.stage === 'over' ? 'final' : 'auto') : 'choose';
+    this.post = new PostRaceFlow(kind);
+    // Grand Prix is look-only (the next race / the podium comes by itself); elsewhere phones choose CHANGE or READY.
+    this.d.players.slots.postLock = kind !== 'choose';
+    this.revealDone = true;
+    // Single race / Knockout: the top three of THIS race on the 3D podium next to the results table.
+    if (kind === 'choose' && !s.scoring) {
+      const top = placings.filter((p) => p.place <= 3).sort((a, b) => a.place - b.place);
+      void this.showPodium3d(top.map((p) => this.podiumEntry(p.slot, p.place as 1 | 2 | 3, null)), `${MODE_NAMES[s.mode].toUpperCase()} · ${this.raceTrack.name.toUpperCase()}`);
+    }
     this.refresh();
-    if (!s.scoring) return undefined; // single race: the plain results screen
+    if (!s.scoring) return undefined; // single race / Knockout: the plain results screen
     const total = s.raceTotal;
     const last = s.stage === 'over';
     return {
       heading: total ? `GRAND PRIX ${s.racesDone}/${total}` : `LOSER PICKS · RACE ${s.racesDone}`,
       gain: new Map(placings.map((p) => [p.slot, s.gainOf(p.slot)])),
-      standings: this.standingRows().map((r) => ({ name: r.name, color: r.color, points: r.points })),
+      standings: this.standingRows().map((r) => ({ name: r.name, color: r.color, points: r.points, wins: r.wins })),
       primary: s.mode === 'gp' ? (last ? 'PODIUM' : 'NEXT RACE') : '',
       secondary: 'MENU',
-      note: s.mode === 'gp' ? (last ? 'Tap FINISH on every phone' : `Next: ${this.d.tracks[s.trackIndex].name}`) : 'Last place picks the next track',
+      note: s.mode === 'gp' ? (last ? 'Final standings next' : `Next: ${this.d.tracks[s.trackIndex].name}`) : 'Last place picks the next track',
+      // The scoreboard shows a countdown to the next Grand Prix race (the last race goes on to the podium instead).
+      ...(kind === 'auto' ? { autoNextSeconds: GP_NEXT_RACE_SECONDS } : {}),
     };
   }
 
-  private standingRows() {
+  // --- racers: players AND fill-in bots ---------------------------------------------
+
+  /** Everybody who raced: the player slots plus the fill-in bots of the last race (slot 4 and up, which have no player entry). */
+  private racerSlots(): number[] {
+    const out = this.d.players.slots.players.map((p) => p.index);
+    for (const p of this.series?.lastPlacings ?? []) if (isFillBot(p.slot) && !out.includes(p.slot)) out.push(p.slot);
+    return out;
+  }
+
+  /** Name, colour, loadout and crowns of any racer. */
+  private racer(slot: number): RacerInfo {
+    const p = this.d.players.slots.slots[slot];
+    const wins = this.d.players.winsOfSlot(slot);
+    if (p) return { slot, name: p.name, color: colorHex(p.color), loadout: sanitizeLoadout(p.loadout), wins };
+    if (isFillBot(slot)) return { slot, name: fillBotName(slot), color: this.fillColors.get(slot) ?? colorHex(slot), loadout: botLoadoutFor(slot), wins };
+    return { slot, name: `P${slot + 1}`, color: colorHex(slot), loadout: sanitizeLoadout(undefined), wins }; // (a player who left)
+  }
+
+  private standingRows(): (RacerInfo & { points: number })[] {
     const s = this.series!;
-    return s.standings(this.d.players.slots.players.map((p) => p.index)).map((r) => {
-      const p = this.d.players.slots.slots[r.slot];
-      return { name: p?.name ?? `P${r.slot + 1}`, color: colorHex(p?.color ?? r.slot), points: r.points };
+    return s.standings(this.racerSlots()).map((r) => ({ ...this.racer(r.slot), points: r.points }));
+  }
+
+  private podiumEntry(slot: number, place: 1 | 2 | 3, points: number | null): PodiumEntry {
+    const r = this.racer(slot);
+    return { slot, place, name: r.name, color: r.color, loadout: r.loadout, wins: r.wins, points };
+  }
+
+  // --- the screens after a race -----------------------------------------------------
+
+  /** Called every frame while the results are up (main.ts): runs the post-race clock and does what it says. */
+  update(dt: number): void {
+    const f = this.post;
+    if (!f || !this.series) return;
+    const slots = this.d.players.slots;
+    const connectedHumans = this.humans().filter((p) => p.connected);
+    const act = f.tick(dt, {
+      // Somebody must still be here, and everybody (bots count as ready) must be ready.
+      allReady: connectedHumans.length > 0 && slots.allReady(),
+      someoneChanging: connectedHumans.some((p) => p.stage !== 'ready'),
+      trackChosen: this.trackChosen(),
+      revealDone: this.revealDone,
     });
+    if (act === 'showSelect') {
+      this.d.showSelect(true);
+      this.podium3d.hide(); // (the quadrants have their own 3D scene)
+      this.drawTv();
+    } else if (act === 'podium') this.showPodium();
+    else if (act === 'start') this.startNext();
+    else if (act === 'lobby') this.d.toLobby();
+  }
+
+  /** Per-frame update of the 3D podium (main.ts calls it while a race is on screen). */
+  updatePodium(dt: number): void {
+    this.podium3d.update(dt);
+  }
+
+  /** Loser picks: has the picker chosen the next track? (Always true in the other modes, and when nobody is left to pick.) */
+  private trackChosen(): boolean {
+    return this.series?.mode !== 'loser' || this.pickedTrack !== null || this.picker() === null;
+  }
+
+  /** Is the TV showing the quadrants (so main.ts can pause the 3D game behind them)? */
+  get selecting(): boolean {
+    return this.post?.stage === 'select';
+  }
+
+  private async showPodium3d(entries: PodiumEntry[], title: string): Promise<void> {
+    const gen = ++this.podiumGen;
+    this.revealDone = false;
+    try {
+      await this.podium3d.show(entries, title);
+    } catch (err) {
+      console.warn('Podium failed', err); // the table still works without it
+    }
+    if (gen === this.podiumGen) this.revealDone = true;
+  }
+
+  /** Back to "nothing special on screen": no podium, no quadrants, no clock. */
+  private leavePost(): void {
+    this.post = null;
+    this.podiumGen++;
+    this.revealDone = true;
+    this.podium3d.hide();
+    this.d.showSelect(false);
   }
 
   /**
-   * "Next" pressed (Enter, button, or every phone ready): the next Grand Prix race, the same track again,
-   * the podium, or back to the menu. `fromReady` = triggered by phones' READY flags, which never confirms
-   * a Loser-picks choice (only a deliberate pick does).
+   * "Next" pressed (Enter, the TV button): skip the waiting. Grand Prix: the next race / the podium; single race,
+   * Knockout, Loser picks: race again right now (Loser picks: with the TV's highlighted track if none was chosen).
    */
-  next(fromReady = false): void {
+  next(): void {
     const s = this.series;
     if (!s) return this.d.startRace();
     if (this.podium) return this.d.toLobby();
     if (s.stage === 'over') return this.showPodium();
+    if (s.mode === 'loser' && this.pickedTrack === null && this.picker() !== null) this.pickedTrack = this.tvPick;
+    this.startNext();
+  }
+
+  /** Start the next race of the series (everybody is ready, the clock ran out, or Enter). */
+  private startNext(): void {
+    const s = this.series;
+    if (!s) return;
+    this.leavePost();
     if (s.mode === 'loser') {
-      if (fromReady) return;
-      this.choose(this.picker(), this.tvPick);
-      return;
+      const picker = this.picker();
+      const t = this.pickedTrack ?? s.trackIndex;
+      if (picker === null || !s.pick(picker, t, this.isPresent, this.humans().map((p) => p.index))) s.stage = 'racing'; // nobody left to pick: same track again
+      this.raceTrack = this.d.tracks[s.trackIndex];
+    } else {
+      if (!s.advance()) return;
+      if (s.mode === 'gp') this.raceTrack = this.d.tracks[s.trackIndex];
     }
-    if (!s.advance()) return;
-    if (s.mode === 'gp') this.raceTrack = this.d.tracks[s.trackIndex];
+    this.pickedTrack = null;
     this.refresh();
     this.d.startRace();
   }
 
-  /** Loser mode: `slot` names the next track. Ignored unless it really is their turn. */
+  /** Loser mode: `slot` names the next track. Ignored unless it really is their turn; the race starts once everyone is ready too. */
   private choose(slot: number | null, track: unknown): void {
     const s = this.series;
-    if (!s || slot === null) return;
-    if (!s.pick(slot, track, this.isPresent, this.humans().map((p) => p.index))) return;
-    this.raceTrack = this.d.tracks[s.trackIndex];
-    this.refresh();
-    this.d.startRace();
+    if (!s || s.mode !== 'loser' || s.stage !== 'between' || this.podium || !this.post || slot === null) return;
+    const t = sanitizeTrackIndex(track, this.d.tracks.length);
+    if (t === null || slot !== this.picker()) return;
+    this.pickedTrack = t;
+    this.tvPick = t;
+    this.refresh(true);
   }
 
   /** One card per message: each carries a ~4 KB picture, and one big message would exceed the channel's size limit. */
@@ -233,16 +378,24 @@ export class SeriesHost {
 
   private stop(): void {
     const s = this.series;
-    if (!s || s.mode !== 'loser' || s.stage !== 'between') return;
+    if (!s || s.mode !== 'loser' || s.stage !== 'between' || this.podium) return;
     s.stop();
     this.showPodium();
   }
 
+  /** The final standings: the table (DOM) and the 3D podium with the top three, then back to the lobby after the reveal and a pause (postRaceFlow.ts). */
   private showPodium(): void {
+    const s = this.series;
+    if (!s) return;
     this.podium = true;
-    // Everyone un-readies, then "ready" on a phone means "back to the menu".
-    this.d.players.setPhase('results');
-    this.refresh();
+    this.pickedTrack = null;
+    this.post = new PostRaceFlow('final', 'podium');
+    this.d.players.slots.postLock = true; // look-only; the menu owner can still press MENU
+    this.d.showSelect(false);
+    const top = this.standingRows().slice(0, 3);
+    const title = `${MODE_NAMES[s.mode].toUpperCase()} · ${s.racesDone} RACE${s.racesDone === 1 ? '' : 'S'}`;
+    void this.showPodium3d(top.map((r, i) => this.podiumEntry(r.slot, (i + 1) as 1 | 2 | 3, r.points)), title);
+    this.refresh(true);
   }
 
   // --- messages from phones -----------------------------------------------------
@@ -308,16 +461,25 @@ export class SeriesHost {
       return { mode: this.mode, track: lobbyIdx, stage: 'menu', owner: this.owner(), picker: null, racesDone: 0, raceTotal: this.mode === 'gp' ? this.d.tracks.length : null, standings: [], pending: this.choice.pending };
     }
     const stage = s.stage === 'racing' ? 'racing' : this.podium ? 'over' : 'between';
-    const standings = s.scoring ? s.standings(this.d.players.slots.players.map((p) => p.index)).flatMap((r) => [r.slot, r.points]) : [];
+    // Everybody who raced scores, the fill-in bots too (phones show them as "CPU n"); their crowns travel here as well.
+    const racers = this.racerSlots();
+    const standings = s.scoring ? s.standings(racers).flatMap((r) => [r.slot, r.points]) : [];
+    const botWins = racers.filter(isFillBot).flatMap((slot) => {
+      const w = this.d.players.winsOfSlot(slot);
+      return w > 0 ? [slot, w] : [];
+    });
+    const picked = stage === 'between' && s.mode === 'loser' && this.pickedTrack !== null;
     return {
       mode: s.mode,
-      track: s.trackIndex,
+      track: picked ? this.pickedTrack! : s.trackIndex,
       stage,
       owner: this.owner(),
       picker: stage === 'between' ? this.picker() : null,
       racesDone: s.racesDone,
       raceTotal: s.raceTotal,
       standings,
+      ...(botWins.length ? { wins: botWins } : {}),
+      ...(picked ? { picked: true } : {}),
     };
   }
 
@@ -345,14 +507,22 @@ export class SeriesHost {
     this.pickLayer.classList.toggle('hidden', !showPick);
     this.d.gameEl.classList.toggle('pick-open', showPick); // CSS makes room for the strip under the results
     if (showPick) {
-      buildPickStrip(this.pickLayer, { who: this.nameOf(this.picker()), cards: this.cards(), selected: this.tvPick }, (i) => {
+      const cards = this.cards();
+      buildPickStrip(this.pickLayer, { who: this.nameOf(this.picker()), cards, selected: this.pickedTrack ?? this.tvPick }, (i) => {
         this.tvPick = i;
         this.choose(this.picker(), i);
       });
+      // Once chosen, say which track is next (the race starts when everybody is ready).
+      if (this.pickedTrack !== null) {
+        const next = document.createElement('div');
+        next.className = 'pick-next';
+        next.textContent = `NEXT · ${cards[this.pickedTrack]?.name ?? ''}`;
+        this.pickLayer.querySelector('.pick-strip')?.appendChild(next);
+      }
     }
     this.podiumLayer.classList.toggle('hidden', !this.podium);
     if (this.podium && s) {
-      const rows = this.standingRows();
+      const rows = this.standingRows().map((r) => ({ name: r.name, color: r.color, points: r.points, wins: r.wins }));
       buildPodium(this.podiumLayer, rows, `${MODE_NAMES[s.mode].toUpperCase()} · ${s.racesDone} RACE${s.racesDone === 1 ? '' : 'S'}`, () => this.d.toLobby());
     } else {
       this.podiumLayer.replaceChildren();

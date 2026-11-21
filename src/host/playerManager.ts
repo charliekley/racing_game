@@ -21,6 +21,8 @@ import {
 import type { HostTransport, Link } from '../shared/net/transport';
 import { botLoadoutFor } from '../sim/classes';
 import { Signal } from '../shared/signal';
+import { WinTally } from '../shared/wins';
+import { winKey } from './postRace';
 import { MAX_PLAYERS, PlayerSlots, type PlayerSlot } from './playerSlots';
 import type { SelectionHub } from './selectionHub';
 import {
@@ -70,6 +72,11 @@ interface PhoneSession {
 
 export class PlayerManager {
   readonly slots = new PlayerSlots();
+  /**
+   * Race wins (crowns) of this room. One tally per room: it lives as long as this page (a reload or a new
+   * room code starts everyone at zero), and it counts every race in every mode, fill-in bots included.
+   */
+  readonly wins = new WinTally();
   /** Fires whenever lobby-visible state changes (joins, leaves, ready, names...). */
   readonly onLobbyChange = new Signal<void>();
 
@@ -99,6 +106,17 @@ export class PlayerManager {
     if (!slot || !slot.connected) return NEUTRAL_INPUT;
     if (slot.owner.kind === 'phone') return this.sessionBySlot.get(slotIndex)?.latest ?? NEUTRAL_INPUT;
     return this.localInputs.get(slotIndex) ?? NEUTRAL_INPUT;
+  }
+
+  /** Race wins of a racer: a player slot, a lobby bot, or a fill-in bot (slot 4 and up, no player entry). */
+  winsOfSlot(slot: number): number {
+    return this.wins.get(winKey(slot, this.slots.slots[slot]?.owner));
+  }
+
+  /** `slot` won a race: one more crown. (Call before the results are built, so they show the new count.) */
+  recordWin(slot: number): void {
+    this.wins.record(winKey(slot, this.slots.slots[slot]?.owner));
+    this.lobbyChanged(); // phones and the selection quadrants show the crown
   }
 
   phoneStats(slotIndex: number): { stats: InputStats; rttMs: number | null } | null {
@@ -140,11 +158,14 @@ export class PlayerManager {
   /** What we last gave the hub per slot (as JSON), so unchanged players do not make the display redraw. */
   private published = new Map<number, string>();
 
-  /** Make the hub match the slots: add / update changed players, remove gone ones. Between lobby visits (a race) the hub is empty. */
+  /**
+   * Make the hub match the slots: add / update changed players, remove gone ones. The hub is filled in the lobby AND
+   * on the results screen (after a race the quadrants come back, with who is ready); it is empty while a race runs.
+   */
   private publishSelections(): void {
     const hub = this.hub;
     if (!hub) return;
-    if (this.slots.phase !== 'lobby') {
+    if (this.slots.phase !== 'lobby' && this.slots.phase !== 'results') {
       hub.clear();
       this.published.clear();
       return;
@@ -161,7 +182,7 @@ export class PlayerManager {
         // Phones choose on their own screen; keyboards, gamepads (and bots, which are always ready) on the TV.
         input: p.owner.kind === 'phone' ? ('phone' as const) : ('local' as const),
         ready: p.ready,
-        wins: 0, // (filled from the session win tally by the flow agent)
+        wins: this.winsOfSlot(p.index),
       };
       const key = JSON.stringify(view);
       if (this.published.get(p.index) === key) continue;
@@ -187,8 +208,9 @@ export class PlayerManager {
     if (!slot) return;
     const step = localSelectStep(action, slot.stage, slot.loadout, this.slots.phase);
     if (!step) return;
-    if (step.kind === 'toggleReady') this.slots.setReady(slotIndex, !slot.ready);
-    else if (!this.slots.select(slotIndex, step.req)) return;
+    if (step.kind === 'toggleReady') {
+      if (!this.slots.setPostReady(slotIndex, !slot.ready)) return;
+    } else if (!this.slots.select(slotIndex, step.req)) return;
     this.lobbyChanged();
   }
 
@@ -198,13 +220,15 @@ export class PlayerManager {
       this.slots.resetToLobby();
       this.trackMsg = null;
     }
+    if (phase === 'countdown') this.slots.endResultsLock();
     // The race is starting: everyone on the grid is locked in (a force-started player was mid-flow). Phones follow.
     if (phase === 'countdown') {
       this.slots.lockInAll();
       for (const p of this.slots.players) this.sendSelectEcho(p.index);
     }
-    // Results screen: "ready" now means "race again", so everyone starts un-ready.
-    if (phase === 'results') for (const p of this.slots.players) p.ready = false;
+    // Results screen: "ready" now means "race again", so everyone starts un-ready (bots are always ready).
+    // (The caller sets slots.postLock first when the results are look-only, see PlayerSlots.postLock.)
+    if (phase === 'results') this.slots.beginResults(this.slots.postLock);
     this.readyBots();
     this.broadcast({ t: 'phase', phase });
     this.lobbyChanged();
@@ -398,10 +422,8 @@ export class PlayerManager {
         return;
       case 'ready': {
         // Lobby: being ready is the READY step of the flow (`select`), not a flag. Results: "race again", only for players who are at READY.
-        if (session.slotIndex === null || this.slots.phase !== 'results') return;
-        if (this.slots.slots[session.slotIndex]?.stage !== 'ready') return;
-        this.slots.setReady(session.slotIndex, !!msg.ready);
-        this.lobbyChanged();
+        if (session.slotIndex === null) return;
+        if (this.slots.setPostReady(session.slotIndex, !!msg.ready)) this.lobbyChanged();
         return;
       }
       case 'select': {
@@ -487,7 +509,7 @@ export class PlayerManager {
 
   private lobbyChanged(): void {
     this.publishSelections();
-    this.broadcast({ t: 'lobby', players: this.slots.lobbyInfo() });
+    this.broadcast({ t: 'lobby', players: this.slots.lobbyInfo((p) => this.winsOfSlot(p.index)) });
     this.onLobbyChange.emit();
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fillBotLabel,
   isControllerMessage,
   isHostMessage,
   parseSeriesAct,
@@ -95,5 +96,32 @@ describe('host -> phone payload validation', () => {
     expect(parseSetup({ t: 'setup', done: 'true' }, 4)).toBeNull();
     expect(parseSetup({ t: 'setup', done: 1 }, 4)).toBeNull();
     expect(parseSetup({ t: 'setup', mode: 'gp', done: false }, 4)).toEqual({ mode: 'gp' });
+  });
+});
+
+describe('standings with fill-in bots, crowns and the picked flag', () => {
+  const good = { mode: 'gp', track: 1, stage: 'between', owner: 0, picker: null, racesDone: 1, raceTotal: 4, standings: [0, 10, 1, 7] };
+  const twelve = Array.from({ length: 12 }, (_, i) => [i, 12 - i]).flat();
+  it('carries up to 12 racers (slots 4 and up are the fill-in bots)', () => {
+    expect(parseSeriesInfo({ ...good, standings: twelve }, 4)?.standings).toEqual(twelve);
+    expect(parseSeriesInfo({ ...good, standings: [...twelve, 12, 0] }, 4)).toBeNull();
+  });
+  it('refuses slots that are not whole numbers or points that are negative', () => {
+    expect(parseSeriesInfo({ ...good, standings: [0.5, 10] }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...good, standings: [-1, 10] }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...good, standings: [0, -3] }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...good, standings: [99, 3] }, 4)).toBeNull();
+  });
+  it('wins and picked are optional but validated', () => {
+    const ok = parseSeriesInfo({ ...good, wins: [4, 2, 5, 1], picked: true }, 4);
+    expect(ok?.wins).toEqual([4, 2, 5, 1]);
+    expect(ok?.picked).toBe(true);
+    expect(parseSeriesInfo({ ...good, wins: [4] }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...good, picked: 'yes' }, 4)).toBeNull();
+    expect(parseSeriesInfo(good, 4)?.wins).toBeUndefined();
+  });
+  it('names fill-in bots CPU n', () => {
+    expect(fillBotLabel(4)).toBe('CPU 1');
+    expect(fillBotLabel(11)).toBe('CPU 8');
   });
 });
