@@ -152,7 +152,7 @@ describe('SelectionHub fits the slots', () => {
     const s = two();
     const hub = new SelectionHub();
     const publish = () => {
-      for (const p of s.players) hub.set({ slot: p.index, name: p.name, stage: p.stage, character: p.loadout.character, kart: p.loadout.kart, input: 'phone' });
+      for (const p of s.players) hub.set({ slot: p.index, name: p.name, stage: p.stage, character: p.loadout.character, kart: p.loadout.kart, input: 'phone', ready: p.ready, wins: 0 });
     };
     lockIn(s, 0);
     publish();
