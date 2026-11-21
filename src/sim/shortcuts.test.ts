@@ -465,8 +465,8 @@ describe('bots', () => {
     expect(race.phase).toBe('done');
     for (const slot of slots) {
       const r = race.racers.get(slot)!;
-      expect(r.finished).toBe(true);
-      expect(r.lapTimes.length).toBe(3);
+      expect(r.finished || r.place === slots.length, `slot ${slot}`).toBe(true); // the last kart is a DNF
+      if (r.finished) expect(r.lapTimes.length).toBe(3);
     }
 
     // Slots 0 and 2 like shortcuts: lots of time on branches. Slots 1 and 3 stay on the main road

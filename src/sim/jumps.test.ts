@@ -320,7 +320,7 @@ describe('bots on the jump test track', () => {
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
     expect(airborne).toBe(true);
     expect(respawns).toBeLessThanOrEqual(2); // the odd mishap is fine; they should mostly clear everything
   });

@@ -66,8 +66,8 @@ describe('a full field of 12 bots finishes a race', () => {
     const race = world.race!;
     expect(race.phase).toBe('done');
     const finished = [...race.racers.values()].filter((r) => r.finished);
-    // The race ends 20 s after the first finish, so a kart that was hit by items a few times may be a bit short: most finish...
-    expect(finished.length).toBeGreaterThanOrEqual(9);
+    // The race ends when the second-to-last kart finishes, so at least 11 of the 12 finish (the last is a DNF)...
+    expect(finished.length).toBeGreaterThanOrEqual(11);
     // ...and nobody is stuck: every kart got at least 80% of the way (progress counts from the start line).
     for (const r of race.racers.values()) expect(r.progress).toBeGreaterThan(track.length * 2 * 0.8);
     expect(new Set([...race.racers.values()].map((r) => r.place)).size).toBe(12); // unique places 1..12

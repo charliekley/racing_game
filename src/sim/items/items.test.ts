@@ -433,7 +433,7 @@ describe('items in a full race', () => {
       ticks++;
     }
     expect(world.race!.phase).toBe('done');
-    for (const r of world.race!.racers.values()) expect(r.finished).toBe(true);
+    for (const r of world.race!.racers.values()) expect(r.finished || r.place === world.race!.racers.size, `slot ${r.slot}`).toBe(true); // the last kart is a DNF by the finish rule
     expect(used.filter((e) => e.kind === 'itemBox').length).toBeGreaterThan(4);
     expect(used.filter((e) => e.kind === 'itemUse').length).toBeGreaterThan(2);
   });

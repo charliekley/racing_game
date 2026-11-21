@@ -3,7 +3,7 @@ import { ALL_KART_HEX, KART_COLORS, botColorsFor } from '../shared/colors';
 import { itemWeights } from '../sim/items/odds';
 import { MAX_PLAYERS } from './playerSlots';
 import { FILL_BOT_BASE, attackToast, DEFAULT_RACERS, fillBotSlots, isFillBot, nextRacers, sanitizeRacers } from './raceSettings';
-import { GP_POINTS, Series, pointsForPlace } from './series';
+import { Series, pointsForPlace } from './series';
 
 describe('RACERS setting', () => {
   it('defaults to 4, cycles 4 -> 8 -> 12 -> 4 and sanitises stored values', () => {
@@ -67,25 +67,25 @@ describe('toasts only for people', () => {
 });
 
 describe('Grand Prix points for up to 12 places', () => {
-  it('keeps 10, 7, 5, 3 for a field of 4', () => {
-    expect([1, 2, 3, 4].map((p) => pointsForPlace(p, 4))).toEqual([...GP_POINTS]);
+  it('pays 10, 6, 3, 0 for a field of 4', () => {
+    expect([1, 2, 3, 4].map((p) => pointsForPlace(p, 4))).toEqual([10, 6, 3, 0]);
     expect(pointsForPlace(5, 4)).toBe(0);
   });
 
-  it('pays 12 places in a field of 12: highest first, steadily down to 0, bonus for the top four', () => {
+  it('pays 12 places in a field of 12: highest first, down to 0 for last', () => {
     const table = Array.from({ length: 12 }, (_, i) => pointsForPlace(i + 1, 12));
-    expect(table).toEqual([16, 13, 11, 9, 7, 6, 5, 4, 3, 2, 1, 0]);
+    expect(table).toEqual([12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
     for (let i = 1; i < table.length; i++) expect(table[i]).toBeLessThan(table[i - 1]);
     expect(pointsForPlace(13, 12)).toBe(0);
-    expect(Array.from({ length: 8 }, (_, i) => pointsForPlace(i + 1, 8))).toEqual([12, 9, 7, 5, 3, 2, 1, 0]);
+    expect(Array.from({ length: 8 }, (_, i) => pointsForPlace(i + 1, 8))).toEqual([10, 8, 6, 5, 4, 2, 1, 0]);
   });
 
   it('a series of 12 racers awards them by the size of the field', () => {
     const series = new Series('gp', 4);
     series.recordRace(Array.from({ length: 12 }, (_, i) => ({ slot: i, place: i + 1, human: i < 2 })));
-    expect(series.gainOf(0)).toBe(16);
+    expect(series.gainOf(0)).toBe(12);
     expect(series.gainOf(11)).toBe(0);
-    expect(series.standings([0, 1, 11]).map((r) => r.points)).toEqual([16, 13, 0]);
+    expect(series.standings([0, 1, 11]).map((r) => r.points)).toEqual([12, 10, 0]);
   });
 });
 
