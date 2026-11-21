@@ -24,6 +24,8 @@ export interface ResultRow {
   /** True for the single fastest lap of the race. */
   fastest: boolean;
   finished: boolean;
+  /** Race wins this session INCLUDING this race (crown count, see shared/wins.ts). */
+  wins?: number;
 }
 
 /** Extra information for Grand Prix / Loser-picks results (see seriesHost.ts). Absent for a single race. */
@@ -33,12 +35,14 @@ export interface ResultsExtras {
   /** Points each slot earned in this race. */
   gain: Map<number, number>;
   /** Running standings, best first. */
-  standings: { name: string; color: string; points: number }[];
+  standings: { name: string; color: string; points: number; wins?: number }[];
   /** Label of the main button (e.g. "NEXT RACE"); empty hides it. */
   primary: string;
   secondary: string;
   /** One line under the buttons, e.g. who picks next. */
   note: string;
+  /** Grand Prix: seconds until the next race starts by itself (the screen shows a countdown); absent = no countdown. */
+  autoNextSeconds?: number;
 }
 
 export interface ResultsActions {
