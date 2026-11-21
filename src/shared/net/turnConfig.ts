@@ -13,8 +13,8 @@
  * Setup: metered.ca -> sign up (free) -> TURN Server -> create an app -> copy the app name (the part before
  * ".metered.live") and an API key.
  */
-export const METERED_APP = ''; // e.g. 'tiltkart'  (from https://tiltkart.metered.live)
-export const METERED_API_KEY = ''; // e.g. 'a1b2c3...'
+export const METERED_APP = 'tiltkart'; // https://tiltkart.metered.live
+export const METERED_API_KEY = '0ab8ea9c0f03100b1a533892fb7139e97fc6'; // credential API key (safe for a web page; NOT the account secret key)
 
 /** Free public STUN servers: they only tell a device its public address (several, in case one is down). */
 const STUN: RTCIceServer = {
