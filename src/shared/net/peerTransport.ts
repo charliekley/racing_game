@@ -19,6 +19,7 @@
 import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import { Signal } from '../signal';
 import { peerIdForRoom } from '../roomCode';
+import { iceServers } from './turnConfig';
 import {
   LinkFailedError,
   RoomNotFoundError,
@@ -37,19 +38,14 @@ const INPUT_CHANNEL_ID = 42;
  * Options passed to every Peer. Swap `host`/`port`/`path` here to use a
  * self-hosted PeerJS server (`npx peer --port 9000`) instead of the public one.
  */
-const PEER_OPTIONS: PeerOptions = {
+const BASE_OPTIONS: PeerOptions = {
   debug: 1, // 0 = silent, 3 = verbose (handy when debugging connection issues)
-  config: {
-    // ICE servers help two devices find a network path to each other. STUN servers just tell a device its
-    // public address (cheap, several providers so one being down doesn't matter); TURN servers relay the
-    // data when no direct path exists (PeerJS's free ones, kept from its default list).
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
-      { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
-    ],
-    sdpSemantics: 'unified-plan',
-  } as RTCConfiguration,
 };
+
+/** Peer options with the current ICE servers (STUN + TURN relays, see turnConfig.ts). */
+async function peerOptions(): Promise<PeerOptions> {
+  return { ...BASE_OPTIONS, config: { iceServers: await iceServers() } };
+}
 
 /** How long a phone waits for the direct link to open before trying again (ICE can need >10 s on a slow Wi-Fi). */
 const LINK_TIMEOUT_MS = 20000;
@@ -141,10 +137,11 @@ export class PeerHostTransport implements HostTransport {
   private peer: Peer | null = null;
   private destroyed = false;
 
-  start(roomCode: string): Promise<void> {
+  async start(roomCode: string): Promise<void> {
     this.peer?.destroy();
+    const options = await peerOptions();
     return new Promise((resolve, reject) => {
-      const peer = new Peer(peerIdForRoom(roomCode), PEER_OPTIONS);
+      const peer = new Peer(peerIdForRoom(roomCode), options);
       this.peer = peer;
       let opened = false;
 
@@ -200,7 +197,7 @@ export class PeerControllerTransport implements ControllerTransport {
     const existing = this.peer;
     if (existing && !existing.destroyed && existing.open) return existing;
     existing?.destroy();
-    const peer = new Peer(PEER_OPTIONS); // random id; phones don't need a fixed one
+    const peer = new Peer(await peerOptions()); // random id; phones don't need a fixed one
     this.peer = peer;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new SignalingError('timeout')), 10000);
