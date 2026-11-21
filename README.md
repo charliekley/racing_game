@@ -202,9 +202,16 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 
 The first player's phone (P1, or the next player if P1 leaves) gets a **forced pop-up** when it joins and every time the game returns to the menu: pick the mode, then the track (Grand Prix needs none). It has no close button; it goes away when the choice is made, when the host keyboard / TV picks a mode or track instead, or when someone else becomes the menu owner (who then gets it). Other phones say "<name> is choosing...", and phones' READY does not start the race meanwhile (the host keyboard still can). In Loser picks the last-place player gets the same pop-up for the track. Track cards are small pictures of the real 3D course (`src/render/trackShot.ts`, rendered one at a time in the background and cached, about 4-6 KB each); the TV lobby shows the same picture.
 
-* **Single race**: one track, then back to the menu (Enter / RACE AGAIN repeats it).
-* **Grand Prix**: all tracks in order. Points per place **10 / 7 / 5 / 3** for 4 racers (`GP_POINTS` in `src/host/series.ts`; with 8 or 12 racers: one point per kart you beat plus 5 / 3 / 2 / 1 for the top four, so 12 racers pay 16, 13, 11, 9, 7, 6, 5, 4, 3, 2, 1, 0), standings on the TV after each race, a podium at the end. Ties: more wins, then more 2nd places..., then the last race, then slot number.
-* **Loser picks**: after each race the last-place *human* picks the next track on their phone (the others see who is choosing). Points are kept like in a Grand Prix. P1 taps STOP for the podium.
+**Finishing a race** (every mode except Knockout): everyone keeps racing until the second-to-last kart crosses the line; the last kart is then placed last automatically (DNF). Safety net: if nobody finishes for 45 s (`STRAGGLER_TIMEOUT_SECONDS` in `src/sim/race.ts`), the karts still racing are placed by distance.
+
+**Points** (Grand Prix and Loser picks; `POINTS_TABLES` in `src/host/series.ts`): every place scores except last. 4 racers **10 / 6 / 3 / 0**, 8 racers **10 / 8 / 6 / 5 / 4 / 2 / 1 / 0**, 12 racers **12 / 10 / 9 / 8 / 7 / 6 / 5 / 4 / 3 / 2 / 1 / 0**. Bots score too and are in the standings. Ties: more wins, then more 2nd places..., then the last race, then slot number.
+
+**Crowns**: 👑N next to a name = race wins this session (any mode, bots included; `src/shared/wins.ts`). Shown on the TV (results, standings, podium, selection quadrants, race HUD) and on the phones. A new room starts everyone at zero.
+
+**After a race** (`src/host/postRace.ts` describes it; clocks in `src/host/postRaceFlow.ts`): the scoreboard flips in (last place first, points count up).
+* **Single race / Knockout**: the top three stand on a 3D podium and are revealed 3rd, 2nd, 1st with their pick animation. Then the TV shows everyone's selection quadrant (turntable + READY / NOT READY). Each phone offers **READY** or **CHANGE CHARACTER**; the race starts again when everyone is ready.
+* **Grand Prix**: all tracks in order; results + standings, then the next race starts by itself after 10 s (no ready step). After the last race: the final standings next to the 3D podium, then back to the menu.
+* **Loser picks**: after each race the last-place *human* picks the next track on their phone while the others choose READY / CHANGE CHARACTER; the race starts when the track is picked and everyone is ready. P1 taps STOP for the final podium.
 * **Knockout**: one longer race (5 laps on these tracks). When the first kart finishes lap 2, 3, ... the kart in last place is knocked out: the carrier drone lifts it away and its view greys out with its final place. With 8 or 12 racers several karts go out per lap (2 / 3, so the race stays at 5 / 6 laps; `knockoutsPerLap` in `src/sim/knockout.ts`). The last kart standing wins; places follow the reverse knockout order and the results list the lap each kart went out on. No points. Rules are pure logic in `src/sim/knockout.ts` (decided from race state, so the sim stays deterministic). `?mode=knockout` picks it from the address.
 
 Without phones, in the lobby: **Left/Right** = track, **Up/Down** = mode, **Enter** = start. In Loser picks the TV shows the track strip: Left/Right + Enter to pick, **S** to stop. `?drive` and `?track=` work as before (a single race); `?mode=gp` or `?mode=loser` picks a mode from the address.
@@ -231,7 +238,7 @@ the debug readouts on the TV.
 In the lobby, **C** / **V** (or **,** / **.** for the arrows player) pick driver / kart (see Characters and karts).
 
 While racing, **Esc** returns to the lobby. On the results screen: **Enter**
-(or everyone tapping RACE AGAIN on their phones) starts another race.
+(or everyone tapping READY on their phones) starts another race.
 
 Shortcuts for testing: **`/host/?drive`** skips the lobby and races immediately
 with WASD; **`/host/?drive=4`** does the same with 3 computer drivers, for

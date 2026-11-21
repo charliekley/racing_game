@@ -72,6 +72,9 @@ racing_game/
    │  ├─ series.ts             ✅ race modes state machine: single / Grand Prix / Loser picks,
    │  │                           points table, tie-breaks, who picks (pure, tested)
    │  ├─ seriesHost.ts         ✅ wires series to phones (menu owner, picker) + TV podium / pick strip
+   │  ├─ postRace.ts           ✅ contract for the post-race flow (per mode), podium API, timings, win keys
+   │  ├─ postRaceFlow.ts       ✅ pure post-race clock: results -> podium / quadrants / next race / lobby
+   │  ├─ podiumView.ts         ✅ 3D podium on the TV (scene in render/podium/)
    ├─ sim/                     ✅ pure TS, no DOM/Three.js
    │  ├─ config.ts             ✅ ALL handling / camera tuning numbers
    │  ├─ loop.ts               ✅ fixed-timestep accumulator
