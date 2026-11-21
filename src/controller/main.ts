@@ -9,7 +9,7 @@
 import './controller.css';
 import { colorHex } from '../shared/colors';
 import { PeerControllerTransport } from '../shared/net/peerTransport';
-import { RoomNotFoundError, type Link } from '../shared/net/transport';
+import { LinkFailedError, RoomNotFoundError, SignalingError, type Link } from '../shared/net/transport';
 import {
   Buttons,
   PROTOCOL_VERSION,
@@ -426,8 +426,9 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------------------
 async function connectLoop() {
   let attempt = 0;
+  let why = ''; // the last failure reason, kept on screen while the next try runs
   while (wantConnection && !link && room) {
-    showConn(attempt === 0 ? 'Connecting…' : `Reconnecting… (try ${attempt + 1})`);
+    showConn(attempt === 0 ? 'Connecting…' : `Reconnecting… (try ${attempt + 1})${why ? `\n${why}` : ''}`);
     try {
       const l = await transport.connect(room);
       attachLink(l);
@@ -435,6 +436,16 @@ async function connectLoop() {
     } catch (err) {
       if (err instanceof RoomNotFoundError) {
         showConn(`No game found with code ${room}.\nIs the TV page open? Retrying…`);
+      } else if (err instanceof SignalingError) {
+        // Can't reach the PeerJS server at all (common on Android: Private DNS / ad blocker / VPN).
+        why = `Can't reach the game server. Turn off VPN / ad-blocking DNS (Settings › Private DNS).`;
+        showConn(why);
+        console.warn('connect failed', err);
+      } else if (err instanceof LinkFailedError) {
+        // Server found the TV, but the direct phone <-> TV link did not open.
+        why = `Found the TV but can't link to it (${err.message}). Same Wi-Fi as the TV? VPN off?`;
+        showConn(why);
+        console.warn('connect failed', err);
       } else {
         console.warn('connect failed', err);
       }

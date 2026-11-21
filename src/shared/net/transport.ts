@@ -54,3 +54,23 @@ export class RoomNotFoundError extends Error {
     super('No game found with that room code');
   }
 }
+
+/**
+ * The phone could not reach the signaling server (0.peerjs.com) at all, so it cannot even look for the TV.
+ * On phones this is usually a DNS ad-blocker ("Private DNS"), a VPN, or a network that blocks the server.
+ */
+export class SignalingError extends Error {
+  constructor(detail: string) {
+    super(`Signaling server unreachable (${detail})`);
+  }
+}
+
+/**
+ * The TV was found, but the direct phone <-> TV link (WebRTC) never opened: the two devices could not find a
+ * network path to each other (e.g. a Wi-Fi with "client isolation", a VPN, or a strict mobile network).
+ */
+export class LinkFailedError extends Error {
+  constructor(detail: string) {
+    super(`Direct link failed (${detail})`);
+  }
+}

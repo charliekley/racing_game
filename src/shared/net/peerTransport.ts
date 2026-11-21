@@ -20,7 +20,9 @@ import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import { Signal } from '../signal';
 import { peerIdForRoom } from '../roomCode';
 import {
+  LinkFailedError,
   RoomNotFoundError,
+  SignalingError,
   RoomTakenError,
   type ControllerTransport,
   type HostStatus,
@@ -37,7 +39,20 @@ const INPUT_CHANNEL_ID = 42;
  */
 const PEER_OPTIONS: PeerOptions = {
   debug: 1, // 0 = silent, 3 = verbose (handy when debugging connection issues)
+  config: {
+    // ICE servers help two devices find a network path to each other. STUN servers just tell a device its
+    // public address (cheap, several providers so one being down doesn't matter); TURN servers relay the
+    // data when no direct path exists (PeerJS's free ones, kept from its default list).
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+      { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+    ],
+    sdpSemantics: 'unified-plan',
+  } as RTCConfiguration,
 };
+
+/** How long a phone waits for the direct link to open before trying again (ICE can need >10 s on a slow Wi-Fi). */
+const LINK_TIMEOUT_MS = 20000;
 
 class PeerLink implements Link {
   readonly onEvent = new Signal<unknown>();
@@ -188,14 +203,14 @@ export class PeerControllerTransport implements ControllerTransport {
     const peer = new Peer(PEER_OPTIONS); // random id; phones don't need a fixed one
     this.peer = peer;
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Signaling server timeout')), 10000);
+      const timer = setTimeout(() => reject(new SignalingError('timeout')), 10000);
       peer.once('open', () => {
         clearTimeout(timer);
         resolve();
       });
       peer.once('error', (err) => {
         clearTimeout(timer);
-        reject(err);
+        reject(new SignalingError((err as { type?: string }).type ?? String(err)));
       });
     });
     return peer;
@@ -228,9 +243,11 @@ export class PeerControllerTransport implements ControllerTransport {
         fn();
       };
       const timer = setTimeout(() => finish(() => {
+        // Report how far the browser got (the ICE state), so the phone can say WHY it could not connect.
+        const ice = conn.peerConnection?.iceConnectionState ?? 'no connection';
         conn.close();
-        reject(new Error('Connection timed out'));
-      }), 12000);
+        reject(new LinkFailedError(`ICE ${ice}`));
+      }), LINK_TIMEOUT_MS);
       const onPeerError = (err: unknown) => {
         const type = (err as { type?: string }).type;
         if (type === 'peer-unavailable') finish(() => reject(new RoomNotFoundError()));
@@ -238,7 +255,7 @@ export class PeerControllerTransport implements ControllerTransport {
       };
       peer.on('error', onPeerError);
       conn.on('open', () => finish(() => resolve(new PeerLink(conn))));
-      conn.on('error', (err) => finish(() => reject(err)));
+      conn.on('error', (err) => finish(() => reject(new LinkFailedError((err as { type?: string }).type ?? String(err)))));
     });
   }
 
