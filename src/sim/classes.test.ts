@@ -21,12 +21,12 @@ describe('kartConfigFor', () => {
   });
 
   it('more stat points means a better number, within the documented ranges', () => {
-    // Pip + Sprinter (speed 2, accel 5, weight 1) vs Rex + Comet (speed 5, accel 2, weight 4):
+    // Pip + Sprinter (speed 1, accel 5, weight 1) vs Rex + Comet (speed 5, accel 2, weight 4):
     // speed is -2% .. +2% around 28 m/s per 2 points from the middle, accel -15% .. +15%, mass 0.6 .. 1.4.
     const pip = kartConfigFor({ character: 0, kart: 0 });
     const rex = kartConfigFor({ character: 7, kart: 2 });
-    expect(loadoutStats({ character: 0, kart: 0 })).toMatchObject({ speed: 2, accel: 5, weight: 1 });
-    expect(pip.maxSpeed).toBeCloseTo(KART.maxSpeed * 0.99, 6);
+    expect(loadoutStats({ character: 0, kart: 0 })).toMatchObject({ speed: 1, accel: 5, weight: 1 });
+    expect(pip.maxSpeed).toBeCloseTo(KART.maxSpeed * 0.98, 6);
     expect(rex.maxSpeed).toBeCloseTo(KART.maxSpeed * 1.02, 6);
     expect(pip.accel).toBeCloseTo(KART.accel * 1.15, 6);
     expect(pip.accel).toBeGreaterThan(rex.accel);
