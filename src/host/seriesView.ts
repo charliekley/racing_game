@@ -1,9 +1,11 @@
 /**
- * TV screens for a series: the final podium, and the "last place picks the next track" strip.
+ * TV screens for a series: the final standings (next to the 3D podium), and the "last place picks the next track" strip.
  * Plain DOM like resultsView.ts. Player names come from phones, so they only ever go
  * through `textContent`, never innerHTML.
  */
 import type { TrackCard } from '../shared/protocol';
+import { crownLabel } from '../shared/wins';
+import { COUNT_TIME, ROW_FLIP, prefersReducedMotion, rowTiming, startTicker, countUpJob, type TickJob } from './revealTiming';
 
 export interface PodiumRow {
   name: string;
@@ -14,12 +16,14 @@ export interface PodiumRow {
   wins?: number;
 }
 
-const BAR_HEIGHT = ['100%', '72%', '56%', '42%']; // 1st .. 4th
-
-/** Final standings: the top three on steps (2nd, 1st, 3rd) and any 4th place below. */
+/**
+ * Final standings of a series, as a table. It sits next to the 3D podium (podiumView.ts), which shows the top
+ * three with their karts; this table lists EVERYONE with their points. Rows flip in from last place to first and
+ * the points count up, like the scoreboard in resultsView.ts. `onDone` is the BACK TO MENU button.
+ */
 export function buildPodium(container: HTMLElement, rows: PodiumRow[], title: string, onDone: () => void): void {
   const box = document.createElement('div');
-  box.className = 'results-box podium-box';
+  box.className = 'results-box standings-box';
 
   const head = document.createElement('div');
   head.className = 'res-head';
@@ -27,46 +31,51 @@ export function buildPodium(container: HTMLElement, rows: PodiumRow[], title: st
   flag.className = 'res-flag';
   flag.textContent = title;
   const h = document.createElement('h2');
-  h.textContent = 'Podium';
+  h.textContent = 'Standings';
   head.append(flag, h);
   box.appendChild(head);
 
-  const steps = document.createElement('div');
-  steps.className = 'podium-steps';
-  // Visual order: 2nd, 1st, 3rd (like a real podium).
-  for (const i of [1, 0, 2]) {
-    const r = rows[i];
-    if (!r) continue;
-    const step = document.createElement('div');
-    step.className = `podium-step place-${i + 1}`;
-    step.style.setProperty('--slot-color', r.color);
-    step.style.setProperty('--i', String(2 - i));
-    const name = document.createElement('div');
-    name.className = 'podium-name';
-    name.textContent = r.name;
-    const bar = document.createElement('div');
-    bar.className = 'podium-bar';
-    bar.style.height = BAR_HEIGHT[i];
-    const place = document.createElement('b');
+  const reduced = prefersReducedMotion();
+  const timing = rowTiming(rows.length);
+  const jobs: TickJob[] = [];
+  const list = document.createElement('ol');
+  list.className = 'res-list fin-list';
+  if (rows.length > 6) list.classList.add('many');
+  list.style.setProperty('--t0', `${timing.startOf(0)}s`);
+  list.style.setProperty('--step', `${timing.step}s`);
+  rows.forEach((row, i) => {
+    const r = rows.length - 1 - i; // the last place flips in first
+    const li = document.createElement('li');
+    li.className = `res-row fin-row${i === 0 ? ' winner' : ''}`;
+    li.style.setProperty('--r', String(r));
+    li.style.setProperty('--slot-color', row.color);
+    const place = document.createElement('span');
+    place.className = 'res-place';
     place.textContent = String(i + 1);
+    const dot = document.createElement('span');
+    dot.className = 'res-dot';
+    const name = document.createElement('span');
+    name.className = 'res-name';
+    const text = document.createElement('span');
+    text.className = 'res-name-text';
+    text.textContent = row.name; // names come from phones: textContent only
+    const crown = document.createElement('span');
+    crown.className = 'res-crown';
+    crown.textContent = crownLabel(row.wins ?? 0);
+    name.append(text, crown);
     const pts = document.createElement('span');
-    pts.textContent = `${r.points} pts`;
-    bar.append(place, pts);
-    step.append(name, bar);
-    steps.appendChild(step);
-  }
-  box.appendChild(steps);
-
-  if (rows[3]) {
-    const fourth = document.createElement('div');
-    fourth.className = 'podium-fourth';
-    fourth.style.setProperty('--slot-color', rows[3].color);
-    fourth.textContent = `4  ${rows[3].name}  ${rows[3].points} pts`;
-    box.appendChild(fourth);
-  }
+    pts.className = 'fin-pts';
+    const fmt = (n: number) => `${n} pts`;
+    pts.textContent = fmt(reduced ? row.points : 0);
+    if (!reduced) jobs.push(countUpJob(pts, 0, row.points, timing.startOf(r) + ROW_FLIP * 0.5, COUNT_TIME, fmt));
+    li.append(place, dot, name, pts);
+    list.appendChild(li);
+  });
+  box.appendChild(list);
 
   const actions = document.createElement('div');
   actions.className = 'res-actions';
+  actions.style.setProperty('--delay', `${(timing.end * 0.7).toFixed(2)}s`);
   const b = document.createElement('button');
   b.className = 'res-btn primary';
   b.innerHTML = 'BACK TO MENU <kbd>Enter</kbd>';
@@ -75,6 +84,7 @@ export function buildPodium(container: HTMLElement, rows: PodiumRow[], title: st
   box.appendChild(actions);
 
   container.replaceChildren(box);
+  startTicker(box, jobs);
 }
 
 export interface PickState {

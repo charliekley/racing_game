@@ -11,6 +11,7 @@
  *   /host/       -> host/index.html       (the game, on the TV)
  *   /controller/ -> controller/index.html (the phone controller)
  *   /karts/      -> karts/index.html      (dev page: kart model preview)
+ *   /host/podium-dev.html -> dev page: 3D podium + fake scoreboard
  */
 import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
@@ -67,6 +68,7 @@ export default defineConfig(({ command }) => ({
         host: `${root}host/index.html`,
         controller: `${root}controller/index.html`,
         karts: `${root}karts/index.html`,
+        podiumDev: `${root}host/podium-dev.html`,
       },
     },
   },
