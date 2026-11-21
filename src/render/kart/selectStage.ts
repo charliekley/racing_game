@@ -46,7 +46,12 @@ const smooth = (x: number) => {
   return u * u * (3 - 2 * u);
 };
 /** Move `cur` toward `target`, frame-rate independent (`tau` = time constant in seconds). */
-const chase = (cur: number, target: number, dt: number, tau: number) => cur + (target - cur) * (1 - Math.exp(-dt / tau));
+/**
+ * Move `cur` smoothly toward `target` (exponential smoothing with time constant `tau` seconds).
+ * `dt` is clamped to >= 0: a negative step makes exp() explode, which once turned the camera into NaN and left
+ * every turntable empty after a race (see SelectView.loop).
+ */
+const chase = (cur: number, target: number, dt: number, tau: number) => cur + (target - cur) * (1 - Math.exp(-Math.max(0, dt) / tau));
 /** `a` shifted by whole turns so it is the closest equivalent angle to `ref`. */
 const nearAngle = (a: number, ref: number) => a - TAU * Math.round((a - ref) / TAU);
 

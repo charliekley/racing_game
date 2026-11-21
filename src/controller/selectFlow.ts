@@ -203,7 +203,7 @@ export class SelectFlow {
     this.post = mode;
     this.root.dataset.post = mode;
     this.readyTitle.textContent = title;
-    this.backBtn.textContent = mode === 'choose' ? 'CHANGE' : 'BACK';
+    this.backBtn.textContent = mode === 'choose' ? 'CHANGE CHARACTER' : 'BACK';
     this.backBtn.classList.toggle('hidden', mode === 'wait'); // nothing to change while the next race comes by itself
     this.renderWho();
   }

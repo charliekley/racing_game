@@ -180,7 +180,7 @@ export function buildResults(
   const help = document.createElement('p');
   help.className = 'res-help';
   if (extras) help.textContent = extras.note;
-  else help.innerHTML = 'Or tap <b>RACE AGAIN</b> on every phone';
+  else help.innerHTML = 'Tap <b>READY</b> on every phone';
   box.appendChild(help);
 
   // Grand Prix: a slim bar and a number counting down to the next race (the flow side starts the race itself).

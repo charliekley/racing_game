@@ -115,7 +115,9 @@ export class SelectView {
 
   private loop(now: number): void {
     this.raf = requestAnimationFrame((t) => this.loop(t));
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // The first rAF timestamp after show() can be slightly EARLIER than the performance.now() taken in show()
+    // (rAF passes the time the frame started), so clamp to 0: a negative dt broke the camera after a race.
+    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     this.last = now;
     const r = this.renderer;
     if (!r) return;

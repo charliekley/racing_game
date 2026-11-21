@@ -99,3 +99,9 @@
 .series-layer.beside-podium .results-box {
   width: min(52vw, 900px);
 }
+
+/* While the podium is up, the scoreboard layer behind it gets a solid backdrop, so the podium stands in a clean
+   "stage" instead of floating over the frozen race view (same colours as the podium dev page). */
+.results.beside-podium {
+  background: radial-gradient(circle at 25% 30%, #26306b 0%, #0f1226 65%);
+}
