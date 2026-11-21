@@ -1,3 +1,4 @@
+@import './podium.css';
 /* Results screen (see resultsView.ts). */
 .results {
   position: absolute;
@@ -55,27 +56,41 @@
   font-size: clamp(16px, 3.4vh, 34px);
   font-variant-numeric: tabular-nums;
   opacity: 0;
-  animation: res-row 0.55s cubic-bezier(0.2, 1.3, 0.4, 1) calc(0.45s + var(--i) * 0.2s) both;
+  /* Scoreboard reveal: rows flip in from the LAST place to the first. --r = order of appearance (0 = last place),
+     --t0 / --step are set on the list by resultsView.ts from revealTiming.ts. */
+  transform-origin: 50% 0;
+  animation: res-flip 0.55s cubic-bezier(0.2, 1.25, 0.4, 1) calc(var(--t0, 0.35s) + var(--r, 0) * var(--step, 0.2s)) both;
 }
+.res-list { perspective: 900px; }
+@keyframes res-flip {
+  from { transform: rotateX(-90deg) translateY(-40%); opacity: 0; }
+  50% { opacity: 1; }
+  to { transform: none; opacity: var(--final-opacity, 1); }
+}
+/* Used by other things that simply slide in (the buttons). */
 @keyframes res-row { from { transform: translateX(80px); opacity: 0; } to { transform: none; opacity: 1; } }
 .res-row.winner {
   background: linear-gradient(90deg, rgba(255, 210, 63, 0.3), rgba(255, 210, 63, 0.08));
   box-shadow: 0 0 0 3px #ffd23f inset, 0 0 28px rgba(255, 210, 63, 0.35);
 }
-.res-row.dnf { opacity: 0.6; }
+.res-row.dnf { --final-opacity: 0.6; }
 .res-place { font: italic 900 1.4em 'Arial Black', Impact, sans-serif; color: #ffd23f; line-height: 1; }
 .res-place sup { font-size: 0.45em; margin-left: 0.1em; }
 .res-row:not(.winner) .res-place { color: #fff; opacity: 0.85; }
 .res-dot { width: 0.9em; height: 0.9em; border-radius: 50%; background: var(--slot-color, #888); box-shadow: 0 0 0.6em var(--slot-color, #888); }
 /* RACERS 8 / 12: a long list, so tighter rows and no second line under the name. */
 .res-list.many { gap: 0.35vh; }
-.res-list.many .res-row { font-size: clamp(11px, 2.3vh, 22px); padding: 0.35vh 1.2vw; animation-delay: calc(0.35s + var(--i) * 0.07s); }
+.res-list.many .res-row { font-size: clamp(11px, 2.3vh, 22px); padding: 0.35vh 1.2vw; }
 .res-list.many .res-kart { display: none; }
 .results-box:has(.res-list.many) { padding-top: 2vh; padding-bottom: 2vh; }
 .results-box:has(.res-list.many) .res-actions { margin-top: 1.6vh; }
 .res-who { display: flex; flex-direction: column; min-width: 0; line-height: 1.1; }
-.res-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.res-kart { font-size: 0.45em; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }
+.res-name { display: flex; align-items: baseline; gap: 0.35em; min-width: 0; font-weight: 800; }
+.res-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Crown + race wins next to a name (shared/wins.ts crownLabel); empty = nothing shown. */
+.res-crown { flex: none; font-size: 0.72em; font-weight: 900; color: #ffd23f; white-space: nowrap; }
+.res-crown:empty { display: none; }
+.res-kart { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.45em; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }
 .res-time { font-weight: 800; }
 .res-best { font-size: 0.65em; color: var(--muted); min-width: 5.6em; text-align: right; }
 .res-best.fastest { color: #c77dff; font-weight: 800; }
@@ -84,7 +99,7 @@
 .res-row.winner .res-dot { position: relative; }
 .res-row.winner .res-dot::after { content: ''; position: absolute; left: 50%; top: -0.55em; transform: translateX(-50%); border: 0.35em solid transparent; border-bottom: 0.45em solid #ffd23f; border-top: 0; }
 
-.res-actions { display: flex; gap: 1.6vw; justify-content: center; margin-top: 3vh; animation: res-row 0.5s ease-out 1.6s both; }
+.res-actions { display: flex; gap: 1.6vw; justify-content: center; margin-top: 3vh; animation: res-row 0.5s ease-out var(--delay, 1.6s) both; }
 .res-btn {
   font: italic 900 clamp(14px, 2.6vh, 26px) 'Arial Black', Impact, system-ui, sans-serif;
   letter-spacing: 0.05em;
@@ -105,3 +120,49 @@
 .res-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .res-confetti i { position: absolute; top: -5%; width: 10px; height: 16px; border-radius: 2px; opacity: 0.9; animation: res-fall 4s linear infinite; }
 @keyframes res-fall { to { transform: translateY(115vh) rotate(720deg); } }
+
+/* Standings chips under the rows: they pop in last-to-first after the rows, totals count up (resultsView.ts). */
+.results-box .res-standings {
+  animation: none;
+  --t0: 1.4s;
+  perspective: 600px;
+}
+.results-box .res-chip {
+  opacity: 0;
+  animation: res-chip-in 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) calc(var(--t0) + var(--r, 0) * var(--step, 0.15s)) both;
+}
+@keyframes res-chip-in { from { transform: scale(0.4) translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.res-chip em { min-width: 3.6em; font-variant-numeric: tabular-nums; }
+.res-chip-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-pts, .fin-pts { font-variant-numeric: tabular-nums; }
+
+/* Grand Prix: slim countdown to the next race, along the bottom of the box. */
+.res-next { display: flex; align-items: center; gap: 0.7em; margin-top: 2vh; font-size: clamp(12px, 2vh, 20px); font-weight: 800; letter-spacing: 0.2em; color: var(--muted); }
+.res-next b { color: #fff; font-size: 1.3em; min-width: 1.4em; text-align: right; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.res-next i { flex: 1; height: 0.5em; border-radius: 99px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.res-next u { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #3ddc84, #ffd23f); transform-origin: left center; animation: res-next-bar linear both; }
+@keyframes res-next-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* Final standings table (seriesView.ts buildPodium), next to the 3D podium. */
+.standings-box .res-list { margin-top: 0.5vh; }
+.fin-row { grid-template-columns: 2.2em 1.1em 1fr auto; }
+.fin-row .res-place { text-align: center; }
+.fin-pts { font-weight: 900; color: #3ddc84; text-align: right; min-width: 3.8em; }
+.fin-row.winner .fin-pts { color: #ffd23f; }
+
+/* 8 / 12 racers with points and a countdown: squeeze the head, chips and buttons so it all fits at 720p. */
+.results-box:has(.res-list.many) .res-head { margin-bottom: 1vh; }
+.results-box:has(.res-list.many) h2 { font-size: clamp(26px, 5.6vh, 60px); }
+.results-box:has(.res-list.many) .res-standings { gap: 0.4vh 0.6vw; margin-top: 1vh; }
+.results-box:has(.res-list.many) .res-chip { font-size: clamp(10px, 1.8vh, 18px); padding: 0.2vh 0.7vw; }
+.results-box:has(.res-list.many) .res-next { margin-top: 1vh; }
+.results-box:has(.res-list.many) .res-btn { padding: 0.5vh 1.8vw; font-size: clamp(12px, 2.1vh, 22px); }
+.results-box:has(.res-list.many) .res-help { margin-top: 0.8vh; }
+.results-box:has(.res-list.many) .res-flag { font-size: clamp(10px, 1.5vh, 15px); }
+
+/* Less motion: no flips, slides, pops, confetti or pulses; the numbers are final straight away. */
+@media (prefers-reduced-motion: reduce) {
+  .results, .results-box, .res-row, .res-actions, .results-box .res-chip, .res-btn.primary { animation: none; }
+  .res-row, .results-box .res-chip { opacity: var(--final-opacity, 1); }
+  .res-confetti { display: none; }
+}
