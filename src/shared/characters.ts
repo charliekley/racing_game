@@ -78,14 +78,14 @@ const HEAVY: Stats = { speed: 5, accel: 2, handling: 2, weight: 5, drift: 2, off
 
 /** The index in this list is what goes over the network and into saved settings. Only ever append. */
 export const CHARACTERS: readonly CharacterDef[] = [
-  { id: 'pip', name: 'Pip', blurb: 'Tiny chick, instant pickup', weightClass: 'light', stats: { ...LIGHT, accel: 5, handling: 5, speed: 1 }, look: { species: 'chick', primary: '#ffd84a', secondary: '#ff8a2a', scale: 0.82 }, palette: { body: '#ffc928', trim: '#ff7a2a', accent: '#fff6c8', wheels: '#ffa03a' } },
-  { id: 'mochi', name: 'Mochi', blurb: 'Nimble cat, drift artist', weightClass: 'light', stats: { ...LIGHT, drift: 5, accel: 4 }, look: { species: 'cat', primary: '#f4f1ea', secondary: '#f2a7b8', scale: 0.86 }, palette: { body: '#f4a3c2', trim: '#ffffff', accent: '#6fd3e8', wheels: '#c3a2f0' } },
-  { id: 'fizz', name: 'Fizz', blurb: 'Bouncy frog, loves the rough', weightClass: 'light', stats: { ...LIGHT, offroad: 5, handling: 3 }, look: { species: 'frog', primary: '#5fd068', secondary: '#f6f38a', scale: 0.88 }, palette: { body: '#33c157', trim: '#d9f55c', accent: '#ff6fa8', wheels: '#f6f38a' } },
+  { id: 'pip', name: 'Pip', blurb: 'Tiny chick, instant pickup', weightClass: 'light', stats: { ...LIGHT, accel: 5, drift: 3 }, look: { species: 'chick', primary: '#ffd84a', secondary: '#ff8a2a', scale: 0.82 }, palette: { body: '#ffc928', trim: '#ff7a2a', accent: '#fff6c8', wheels: '#ffa03a' } },
+  { id: 'mochi', name: 'Mochi', blurb: 'Nimble cat, drift artist', weightClass: 'light', stats: { ...LIGHT, drift: 5, accel: 4, offroad: 2 }, look: { species: 'cat', primary: '#f4f1ea', secondary: '#f2a7b8', scale: 0.86 }, palette: { body: '#f4a3c2', trim: '#ffffff', accent: '#6fd3e8', wheels: '#c3a2f0' } },
+  { id: 'fizz', name: 'Fizz', blurb: 'Bouncy frog, loves the rough', weightClass: 'light', stats: { ...LIGHT, offroad: 4, handling: 3, accel: 4 }, look: { species: 'frog', primary: '#5fd068', secondary: '#f6f38a', scale: 0.88 }, palette: { body: '#33c157', trim: '#d9f55c', accent: '#ff6fa8', wheels: '#f6f38a' } },
   { id: 'juno', name: 'Juno', blurb: 'Astronaut, good at everything', weightClass: 'medium', stats: { ...MEDIUM }, look: { species: 'astronaut', primary: '#f2f4f8', secondary: '#3aa0ff', scale: 1.0 }, palette: { body: '#2c6be0', trim: '#f2f4f8', accent: '#ff6a3d', wheels: '#c9d6ec' } },
-  { id: 'bolt', name: 'Bolt', blurb: 'Robot with a quick launch', weightClass: 'medium', stats: { ...MEDIUM, accel: 4, drift: 2 }, look: { species: 'robot', primary: '#b9c4d0', secondary: '#ffcf33', scale: 1.0 }, palette: { body: '#8b97a7', trim: '#ffcf33', accent: '#35e3cb', wheels: '#ffcf33' } },
-  { id: 'sable', name: 'Sable', blurb: 'Sly fox, sharp in corners', weightClass: 'medium', stats: { ...MEDIUM, handling: 4, drift: 4, weight: 2 }, look: { species: 'fox', primary: '#e8742c', secondary: '#fff4e0', scale: 0.96 }, palette: { body: '#d8431d', trim: '#fff0d6', accent: '#2b2d4a', wheels: '#fff0d6' } },
-  { id: 'bruno', name: 'Bruno', blurb: 'Big bear, big bumps', weightClass: 'heavy', stats: { ...HEAVY }, look: { species: 'bear', primary: '#8a5a3c', secondary: '#e6c9a0', scale: 1.16 }, palette: { body: '#7b4b2b', trim: '#e8b74e', accent: '#d9443b', wheels: '#e8b74e' } },
-  { id: 'rex', name: 'Rex', blurb: 'Dino, flat-out top speed', weightClass: 'heavy', stats: { ...HEAVY, weight: 4, handling: 3, accel: 1 }, look: { species: 'dino', primary: '#3fae8f', secondary: '#f2e56b', scale: 1.12 }, palette: { body: '#6a3fc2', trim: '#b8f24b', accent: '#ff8a3a', wheels: '#b8f24b' } },
+  { id: 'bolt', name: 'Bolt', blurb: 'Robot with a quick launch', weightClass: 'medium', stats: { ...MEDIUM, accel: 4, offroad: 2 }, look: { species: 'robot', primary: '#b9c4d0', secondary: '#ffcf33', scale: 1.0 }, palette: { body: '#8b97a7', trim: '#ffcf33', accent: '#35e3cb', wheels: '#ffcf33' } },
+  { id: 'sable', name: 'Sable', blurb: 'Sly fox, sharp in corners', weightClass: 'medium', stats: { ...MEDIUM, handling: 4, offroad: 2 }, look: { species: 'fox', primary: '#e8742c', secondary: '#fff4e0', scale: 0.96 }, palette: { body: '#d8431d', trim: '#fff0d6', accent: '#2b2d4a', wheels: '#fff0d6' } },
+  { id: 'bruno', name: 'Bruno', blurb: 'Big bear, big bumps', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, accel: 3, offroad: 3 }, look: { species: 'bear', primary: '#8a5a3c', secondary: '#e6c9a0', scale: 1.16 }, palette: { body: '#7b4b2b', trim: '#e8b74e', accent: '#d9443b', wheels: '#e8b74e' } },
+  { id: 'rex', name: 'Rex', blurb: 'Dino, flat-out top speed', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, weight: 4, handling: 3, accel: 3, drift: 3, offroad: 1 }, look: { species: 'dino', primary: '#3fae8f', secondary: '#f2e56b', scale: 1.12 }, palette: { body: '#6a3fc2', trim: '#b8f24b', accent: '#ff8a3a', wheels: '#b8f24b' } },
 ];
 
 export interface KartBodyDef {
@@ -101,8 +101,8 @@ export interface KartBodyDef {
 export const KART_BODIES: readonly KartBodyDef[] = [
   { id: 'sprinter', name: 'Sprinter', blurb: 'Balanced open-wheel kart', bonus: {} },
   { id: 'mudlark', name: 'Mudlark', blurb: 'Buggy: great off-road, heavy', bonus: { offroad: 2, weight: 1, speed: -1, drift: -1 } },
-  { id: 'comet', name: 'Comet', blurb: 'Bullet: fast, wide turns', bonus: { speed: 1, handling: -1, offroad: -1 } },
-  { id: 'splash', name: 'Splash', blurb: 'Bathtub: quick and slidey', bonus: { accel: 1, drift: 1, speed: -1, weight: -1 } },
+  { id: 'comet', name: 'Comet', blurb: 'Bullet: fast, wide turns', bonus: { speed: 1, accel: -1, handling: -1 } },
+  { id: 'splash', name: 'Splash', blurb: 'Bathtub: quick and slidey', bonus: { accel: 1, drift: 1, handling: -1, weight: -1 } },
 ];
 
 /** The kart paint job of a character (any integer is safe: it wraps around the list). */

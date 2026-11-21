@@ -9,12 +9,14 @@
  *
  * Engineering shorthand: with `t = (points - 3) / 2` (so t = -1 .. 0 .. +1) each
  * stat is `base * (1 + range * t)`. The ranges are small on purpose, so no class is
- * simply better (see classes.test.ts: lap times stay within a few % of each other).
+ * simply better. They were tuned with the bot sweep in balance.test.ts (BALANCE_SWEEP=1): one point of
+ * top speed is worth about 1% of lap time and one point of acceleration about 0.5%, so a 2 point
+ * swing in `speed` between a light and a heavy driver is paid back by the lighter driver's pickup.
  *
  * | stat     | what changes                                    | 1 pt      | 3 pts   | 5 pts     |
  * |----------|-------------------------------------------------|-----------|---------|-----------|
- * | speed    | maxSpeed                                        | -2.5%     | 28 m/s  | +2.5%     |
- * | accel    | accel, and off-road accel factor               | -25%      | 18 m/s² | +25%      |
+ * | speed    | maxSpeed                                        | -2%       | 28 m/s  | +2%       |
+ * | accel    | accel                                           | -15%      | 18 m/s² | +15%      |
  * | handling | turnRateLow/High, grip, driftGrip               | -15%      | 1×      | +15%      |
  * | weight   | mass in kart bumps; spin-out knock-back         | 0.6       | 1.0     | 1.4       |
  * | drift    | mini-turbo charge time                          | +20% time | 1×      | -20% time |
@@ -60,8 +62,8 @@ export function kartConfigFor(loadout: Loadout): Readonly<KartConfig> {
 
   const cfg: KartConfig = {
     ...KART,
-    maxSpeed: scaled(KART.maxSpeed, 0.025, speed),
-    accel: scaled(KART.accel, 0.25, accel),
+    maxSpeed: scaled(KART.maxSpeed, 0.02, speed),
+    accel: scaled(KART.accel, 0.15, accel),
     turnRateLow: KART.turnRateLow * turn,
     turnRateHigh: KART.turnRateHigh * turn,
     grip: KART.grip * turn,
