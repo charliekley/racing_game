@@ -160,6 +160,8 @@ export class PlayerManager {
         kart: p.loadout.kart,
         // Phones choose on their own screen; keyboards, gamepads (and bots, which are always ready) on the TV.
         input: p.owner.kind === 'phone' ? ('phone' as const) : ('local' as const),
+        ready: p.ready,
+        wins: 0, // (filled from the session win tally by the flow agent)
       };
       const key = JSON.stringify(view);
       if (this.published.get(p.index) === key) continue;

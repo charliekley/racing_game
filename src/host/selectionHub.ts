@@ -24,6 +24,13 @@ export interface SelectionView {
   kart: number;
   /** How this player makes choices: on their phone, or with keyboard/gamepad on the TV. */
   input: 'phone' | 'local';
+  /**
+   * Ready flag. In the lobby it follows stage === 'ready'. After a race (results phase) everyone is still at
+   * stage 'ready' (locked in), and this says whether they pressed READY (race again) yet.
+   */
+  ready: boolean;
+  /** Race wins this session (crown count, see shared/wins.ts). */
+  wins: number;
 }
 
 type Listener = (views: readonly SelectionView[]) => void;
