@@ -388,6 +388,7 @@ function showPostSelect(on: boolean) {
     selectHome.insertBefore(selectEl, selectNextSibling);
   }
 }
+if (import.meta.env.DEV) setTimeout(() => ((window as unknown as { __seriesHost?: SeriesHost }).__seriesHost = seriesHost)); // debugging aid (dev server only)
 const seriesHost: SeriesHost = new SeriesHost({
   players,
   tracks: TRACKS,

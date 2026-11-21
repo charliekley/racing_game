@@ -60,6 +60,22 @@ if (q.has('sheet')) {
   flow.setVisible(true);
   const picks = { character: Number(q.get('char') ?? 3), kart: Number(q.get('kart') ?? 0) };
   flow.applyHost((q.get('stage') ?? 'character') as SelectStage, q.get('name') ?? 'Charlie', picks, true);
+  // ?post=choose | wait: the READY screen as it looks after a race (CHANGE + READY, or the Grand Prix standings), with crowns.
+  const post = q.get('post');
+  if (post === 'choose' || post === 'wait') {
+    const mk = (slot: number, name: string, ready: boolean, wins: number) => ({ slot, name, color: slot, connected: true, ready, stage: 'ready' as const, wins });
+    flow.setPlayers([mk(0, q.get('name') ?? 'Charlie', true, 2), mk(1, 'Eli', false, 0), mk(2, 'Fay', true, 1)], 0);
+    flow.setPost(post, post === 'choose' ? 'READY?' : 'NEXT RACE');
+    if (post === 'choose') {
+      const btn = document.createElement('button');
+      btn.className = 'ready-btn';
+      btn.textContent = 'READY';
+      flow.readySlot.appendChild(btn);
+    } else {
+      const names = ['Charlie', 'CPU 1', 'Eli', 'CPU 2', 'Fay', 'CPU 3', 'CPU 4', 'CPU 5', 'CPU 6', 'CPU 7', 'CPU 8', 'CPU 9'];
+      flow.setStandings(names.map((n, i) => ({ rank: i + 1, name: n, wins: i === 0 ? 2 : i === 1 ? 1 : 0, points: 40 - i * 3, me: i === 0 })));
+    }
+  }
   addEventListener('resize', () => flow.relayout());
   requestAnimationFrame(() => flow.relayout());
 }

@@ -33,6 +33,8 @@ export class PostRaceFlow {
   stage: PostStage;
   /** Seconds in the current stage (for the podium stage: seconds since the reveal finished). */
   elapsed = 0;
+  /** Seconds since the results appeared (never reset by the podium reveal). */
+  private shown = 0;
 
   constructor(
     readonly kind: PostKind,
@@ -54,6 +56,7 @@ export class PostRaceFlow {
    */
   tick(dt: number, f: PostFacts): PostAction {
     this.elapsed += dt;
+    this.shown += dt;
     if (this.stage === 'podium') {
       if (!f.revealDone) this.elapsed = 0; // the hold starts when the reveal is over
       return this.elapsed >= FINAL_PODIUM_HOLD_SECONDS ? 'lobby' : 'none';
@@ -61,12 +64,14 @@ export class PostRaceFlow {
     if (this.kind === 'auto') return this.elapsed >= GP_NEXT_RACE_SECONDS ? 'start' : 'none';
     if (this.kind === 'final') return this.elapsed >= GP_NEXT_RACE_SECONDS ? this.go('podium') : 'none';
 
-    // 'choose': everybody ready (and the track chosen) starts the race.
+    // 'choose': the hold only starts once the podium reveal is over.
+    if (this.stage === 'results' && !f.revealDone) this.elapsed = 0;
+    // everybody ready (and the track chosen) starts the race.
     const go = f.allReady && f.trackChosen;
     if (this.stage === 'select') return go ? 'start' : 'none';
     // Results stage. The scoreboard (and podium) get their moment first; after that, a CHANGE press, a full
     // house of READY, or the hold running out all move things along.
-    const seen = this.elapsed >= SCOREBOARD_REVEAL_SECONDS && f.revealDone;
+    const seen = this.shown >= SCOREBOARD_REVEAL_SECONDS && f.revealDone;
     if (seen && go) return 'start';
     if ((seen && f.someoneChanging) || this.elapsed >= RESULTS_HOLD_SECONDS) return this.go('showSelect');
     return 'none';

@@ -286,6 +286,7 @@ export class SeriesHost {
     if (act === 'showSelect') {
       this.d.showSelect(true);
       this.podium3d.hide(); // (the quadrants have their own 3D scene)
+      this.besidePodium(false);
       this.drawTv();
     } else if (act === 'podium') this.showPodium();
     else if (act === 'start') this.startNext();
@@ -310,12 +311,20 @@ export class SeriesHost {
   private async showPodium3d(entries: PodiumEntry[], title: string): Promise<void> {
     const gen = ++this.podiumGen;
     this.revealDone = false;
+    this.besidePodium(true);
     try {
       await this.podium3d.show(entries, title);
     } catch (err) {
       console.warn('Podium failed', err); // the table still works without it
     }
-    if (gen === this.podiumGen) this.revealDone = true;
+    if (gen !== this.podiumGen) return;
+    this.revealDone = true;
+  }
+
+  /** While the 3D podium is up the scoreboard (results layer or final table) moves to the right (podium.css: beside-podium). */
+  private besidePodium(on: boolean): void {
+    this.d.gameEl.querySelector('.results:not(.series-layer)')?.classList.toggle('beside-podium', on);
+    this.podiumLayer.classList.toggle('beside-podium', on);
   }
 
   /** Back to "nothing special on screen": no podium, no quadrants, no clock. */
@@ -324,6 +333,7 @@ export class SeriesHost {
     this.podiumGen++;
     this.revealDone = true;
     this.podium3d.hide();
+    this.besidePodium(false);
     this.d.showSelect(false);
   }
 
@@ -393,8 +403,8 @@ export class SeriesHost {
     this.d.players.slots.postLock = true; // look-only; the menu owner can still press MENU
     this.d.showSelect(false);
     const top = this.standingRows().slice(0, 3);
-    const title = `${MODE_NAMES[s.mode].toUpperCase()} · ${s.racesDone} RACE${s.racesDone === 1 ? '' : 'S'}`;
-    void this.showPodium3d(top.map((r, i) => this.podiumEntry(r.slot, (i + 1) as 1 | 2 | 3, r.points)), title);
+    // (title '': the standings table already says what this is)
+    void this.showPodium3d(top.map((r, i) => this.podiumEntry(r.slot, (i + 1) as 1 | 2 | 3, r.points)), '');
     this.refresh(true);
   }
 
