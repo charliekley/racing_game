@@ -10,6 +10,8 @@ export interface PodiumRow {
   /** CSS colour. */
   color: string;
   points: number;
+  /** Race wins this session (crown count). */
+  wins?: number;
 }
 
 const BAR_HEIGHT = ['100%', '72%', '56%', '42%']; // 1st .. 4th

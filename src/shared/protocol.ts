@@ -96,6 +96,8 @@ export interface LobbyPlayerInfo {
   loadout?: Loadout;
   /** Where this player is in the name -> character -> kart -> ready flow. Optional so older hosts still work. */
   stage?: SelectStage;
+  /** Race wins this session (crown count, shared/wins.ts). Optional so older hosts still work; run it through sanitizeWins. */
+  wins?: number;
 }
 
 // --- Race modes (see src/host/series.ts) ---------------------------------------

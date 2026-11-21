@@ -21,7 +21,7 @@ const LEAD = 3.2;
 export function demoView(slot: number, c: number): SelectionView {
   const name = NAMES[slot % NAMES.length];
   const startChar = (slot * 3 + 1) % CHARACTERS.length;
-  const base = { slot, input: slot % 2 === 0 ? ('phone' as const) : ('local' as const) };
+  const base = { slot, input: slot % 2 === 0 ? ('phone' as const) : ('local' as const), ready: false, wins: 0 };
   const t = ((c % DEMO_CYCLE) + DEMO_CYCLE) % DEMO_CYCLE;
   if (t < 3) {
     // Typing the name, one letter every 0.4 s.
@@ -37,7 +37,7 @@ export function demoView(slot: number, c: number): SelectionView {
     const kart = Math.floor((t - 10) / 1.5) % KART_BODIES.length;
     return { ...base, name, stage: 'kart', character: chosen, kart };
   }
-  return { ...base, name, stage: 'ready', character: chosen, kart: Math.floor(6.99 / 1.5) % KART_BODIES.length };
+  return { ...base, name, stage: 'ready', ready: true, character: chosen, kart: Math.floor(6.99 / 1.5) % KART_BODIES.length };
 }
 
 export interface SelectDemo {
@@ -78,7 +78,7 @@ export function startSelectDemo(hub: SelectionHub, players: number): SelectDemo 
     },
     hold: (slot, stage, character = 0, kart = 0) => {
       const prev = hub.get(slot);
-      const v: SelectionView = { slot, name: prev?.name || NAMES[slot % NAMES.length], stage, character, kart, input: prev?.input ?? 'phone' };
+      const v: SelectionView = { slot, name: prev?.name || NAMES[slot % NAMES.length], stage, character, kart, input: prev?.input ?? 'phone', ready: stage === 'ready', wins: prev?.wins ?? 0 };
       held.set(slot, v);
       hub.set(v);
     },
