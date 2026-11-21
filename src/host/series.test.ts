@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GP_POINTS, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, pointsForPlace, type Placing } from './series';
+import { POINTS_TABLES, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, pointsForPlace, type Placing } from './series';
 
 /** Build a race result from slots listed best first. `bots` are slots that are computers. */
 function race(order: number[], bots: number[] = []): Placing[] {
@@ -8,12 +8,24 @@ function race(order: number[], bots: number[] = []): Placing[] {
 const everyone = () => true;
 
 describe('points table', () => {
-  it('is 10/7/5/3 and 0 outside the table', () => {
-    expect(GP_POINTS).toEqual([10, 7, 5, 3]);
-    expect(pointsForPlace(1)).toBe(10);
-    expect(pointsForPlace(4)).toBe(3);
-    expect(pointsForPlace(5)).toBe(0);
-    expect(pointsForPlace(0)).toBe(0);
+  const table = (n: number) => Array.from({ length: n }, (_, i) => pointsForPlace(i + 1, n));
+  it('has the three official tables', () => {
+    expect(table(12)).toEqual([12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+    expect(table(8)).toEqual([10, 8, 6, 5, 4, 2, 1, 0]);
+    expect(table(4)).toEqual([10, 6, 3, 0]);
+    expect(POINTS_TABLES[4]).toEqual([10, 6, 3, 0]);
+  });
+  it('is 0 outside the field', () => {
+    expect(pointsForPlace(0, 4)).toBe(0);
+    expect(pointsForPlace(5, 4)).toBe(0);
+  });
+  it('gives every field size 1..12 a descending table with last = 0', () => {
+    for (let n = 1; n <= 12; n++) {
+      const t = table(n);
+      expect(t[n - 1]).toBe(0);
+      for (let i = 1; i < n; i++) expect(t[i]).toBeLessThanOrEqual(t[i - 1]);
+      if (n > 1) expect(t[0]).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -75,7 +87,7 @@ describe('Grand Prix', () => {
     expect(s.stage).toBe('over');
     expect(s.racesDone).toBe(4);
     const st = s.standings([0, 1, 2, 3]);
-    expect(st.map((r) => r.points)).toEqual([40, 28, 20, 12]);
+    expect(st.map((r) => r.points)).toEqual([40, 24, 12, 0]);
     expect(st.map((r) => r.slot)).toEqual([0, 1, 2, 3]);
   });
 
@@ -83,8 +95,8 @@ describe('Grand Prix', () => {
     const s = new Series('gp', 4);
     s.recordRace(race([2, 0, 1]));
     expect(s.gainOf(2)).toBe(10);
-    expect(s.gainOf(0)).toBe(7);
-    expect(s.gainOf(1)).toBe(5);
+    expect(s.gainOf(0)).toBe(6);
+    expect(s.gainOf(1)).toBe(0); // last of 3 scores nothing
     expect(s.gainOf(3)).toBe(0);
   });
 
@@ -100,28 +112,27 @@ describe('Grand Prix', () => {
 describe('tie-breaks', () => {
   it('equal points and equal places: the last race decides', () => {
     const s = new Series('gp', 4);
-    s.recordRace(race([0, 1, 2])); // 0:10 1:7 2:5
+    s.recordRace(race([0, 1, 2])); // 3 racers use the 4-table cut short: 10, 6, 0 -> 0:10 1:6 2:0
     s.advance();
-    s.recordRace(race([1, 2, 0])); // 1:17 2:12 0:15
+    s.recordRace(race([1, 2, 0])); // 1:16 2:6 0:10
     s.advance();
-    s.recordRace(race([2, 0, 1])); // 2:22 0:22 1:22
+    s.recordRace(race([2, 0, 1])); // 2:16 0:16 1:16
     const st = s.standings([0, 1, 2]);
-    expect(st.map((r) => r.points)).toEqual([22, 22, 22]);
+    expect(st.map((r) => r.points)).toEqual([16, 16, 16]);
     // everyone has exactly one win, one 2nd and one 3rd, so the last race decides (2 won it, then 0, then 1)
     expect(st.map((r) => r.slot)).toEqual([2, 0, 1]);
   });
 
   it('equal points: more wins beats the last race', () => {
     const s = new Series('gp', 4);
-    s.recordRace(race([0, 1, 2, 3])); // slot 0: 10, slot 1: 7
+    // 8 racers (10, 8, 6, 5, 4, 2, 1, 0): slot 0 wins twice, slot 1 is 2nd twice, then a swing.
+    s.recordRace(race([0, 1, 2, 3, 4, 5, 6, 7])); // 10, 8
     s.advance();
-    s.recordRace(race([0, 1, 2, 3])); // 20, 14
+    s.recordRace(race([0, 1, 2, 3, 4, 5, 6, 7])); // 20, 16
     s.advance();
-    s.recordRace(race([2, 1, 3, 0])); // 0 is 4th (+3), 1 is 2nd (+7): 23, 21
-    s.advance();
-    s.recordRace(race([2, 3, 1, 0])); // 0 is 4th (+3), 1 is 3rd (+5): 26, 26
+    s.recordRace(race([2, 1, 3, 4, 0, 5, 6, 7])); // 0 is 5th (+4), 1 is 2nd (+8): 24, 24
     const st = s.standings([0, 1]);
-    expect(st.map((r) => r.points)).toEqual([26, 26]);
+    expect(st.map((r) => r.points)).toEqual([24, 24]);
     // slot 0 has two wins, slot 1 none: the wins decide, even though slot 1 did better in the last race
     expect(st.map((r) => r.slot)).toEqual([0, 1]);
   });
@@ -153,7 +164,7 @@ describe('Loser picks', () => {
     s.recordRace(race([0, 1]));
     s.pick(1, 0, everyone);
     s.recordRace(race([1, 0]));
-    expect(s.standings([0, 1]).map((r) => r.points)).toEqual([17, 17]);
+    expect(s.standings([0, 1]).map((r) => r.points)).toEqual([10, 10]);
     s.stop();
     expect(s.stage).toBe('over');
     expect(s.pick(0, 1, everyone)).toBe(false);
@@ -190,11 +201,11 @@ describe('a player leaving mid-series', () => {
     s.recordRace(race([0, 1, 2]));
     s.advance();
     s.dropSlot(0);
-    s.recordRace(race([1, 2]));
+    s.recordRace(race([1, 2])); // 2 racers: 10 and 0
     const st = s.standings([1, 2]); // slot 0 is gone
     expect(st.map((r) => [r.slot, r.points])).toEqual([
-      [1, 17],
-      [2, 12],
+      [1, 16],
+      [2, 0],
     ]);
     expect(s.gainOf(0)).toBe(0);
   });
@@ -244,5 +255,19 @@ describe('menu choice (the forced pop-up)', () => {
     // P1 leaves mid-choice: P2 becomes owner and the choice is still pending.
     expect(menuOwner([p(0, false), p(1, true)])).toBe(1);
     expect(c.pending).toBe(true);
+  });
+});
+
+describe('fill-in bots', () => {
+  it('score and rank like anyone else when their slots are passed to standings', () => {
+    const s = new Series('gp', 4);
+    // 8 racers: humans 0-1, fill-in bots in slots 4..9.
+    s.recordRace(race([4, 0, 5, 1, 6, 7, 8, 9], [4, 5, 6, 7, 8, 9]));
+    const rows = s.standings([0, 1, 4, 5, 6, 7, 8, 9]);
+    expect(rows.map((r) => r.slot)).toEqual([4, 0, 5, 1, 6, 7, 8, 9]);
+    expect(rows.map((r) => r.points)).toEqual([10, 8, 6, 5, 4, 2, 1, 0]);
+    s.recordRace(race([0, 4, 1, 5, 6, 7, 8, 9], [4, 5, 6, 7, 8, 9]));
+    expect(s.standings([0, 4]).map((r) => r.points)).toEqual([18, 18]); // only the asked slots are listed
+    expect(s.standings([0, 4]).map((r) => r.rank)).toEqual([1, 2]); // tie on points and on placings: the lower slot ranks first
   });
 });

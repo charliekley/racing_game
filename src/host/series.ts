@@ -26,22 +26,28 @@ export const MODE_NAMES: Record<SeriesMode, string> = {
 };
 
 /**
- * Points per finishing place in a field of up to 4 racers (index 0 = 1st). Change the numbers here and everything follows.
+ * Points per finishing place (index 0 = 1st) for the three normal field sizes.
+ * Every place scores except the last, which always gets 0. Change the numbers here and everything follows.
  */
-export const GP_POINTS: readonly number[] = [10, 7, 5, 3];
-/** Bonus points for the top four places in a bigger field (8 or 12 racers), on top of the "karts you beat" points. */
-const BIG_FIELD_BONUS: readonly number[] = [5, 3, 2, 1];
+export const POINTS_TABLES: Readonly<Record<number, readonly number[]>> = {
+  4: [10, 6, 3, 0],
+  8: [10, 8, 6, 5, 4, 2, 1, 0],
+  12: [12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+};
 
 /**
  * Points for finishing `place` (1-based) in a field of `racers` karts.
- *  - up to 4 racers: the GP_POINTS table above (10, 7, 5, 3).
- *  - more racers: one point for every kart you beat, plus a bonus for the top four. So 12 racers pay
- *    16, 13, 11, 9, 7, 6, 5, 4, 3, 2, 1, 0 and 8 racers pay 12, 9, 7, 5, 3, 2, 1, 0.
+ *  - Last place always scores 0 (also in odd field sizes, e.g. 1 racer = 0 points).
+ *  - Fields of 4, 8 and 12 use POINTS_TABLES directly.
+ *  - Any other size (1..12) uses the table of the nearest bigger size (above 12: the 12 table),
+ *    cut to `racers` places with the last place set to 0. So 6 racers pay 10, 8, 6, 5, 4, 0 and 10 pay 12, 10, 9, 8, 7, 6, 5, 4, 3, 0.
+ *    The numbers still descend, so a better place never scores less.
  */
-export function pointsForPlace(place: number, racers = GP_POINTS.length): number {
-  if (racers <= GP_POINTS.length) return GP_POINTS[place - 1] ?? 0;
+export function pointsForPlace(place: number, racers = 4): number {
   if (place < 1 || place > racers) return 0;
-  return racers - place + (BIG_FIELD_BONUS[place - 1] ?? 0);
+  if (place === racers) return 0;
+  const size = [4, 8, 12].find((n) => n >= racers) ?? 12;
+  return POINTS_TABLES[size][place - 1] ?? 0;
 }
 
 export function nextMode(m: SeriesMode, step = 1): SeriesMode {
