@@ -106,7 +106,14 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
     const past = r.s1 - r.s0 + r.gap + 6; // stay on the gas through the ramp, the gap and the landing
     return d > -past && d < lookAhead;
   });
-  const target = jumpAhead ? Infinity : c.maxSpeed * style.pace * (sharp > (style.cornerCurvature ?? 0.03) || atFork ? (style.cornerSpeed ?? 0.75) : 1);
+  // Corner speed is limited by how hard the kart can turn, not by its top speed (v = turn rate / curvature):
+  // so it scales with the kart's handling (turnRateHigh relative to the stock kart), and a bullet-shaped
+  // low-handling kart must lift more than a nimble one, like a human would. A bot never takes a corner
+  // faster than its straight-line pace.
+  const handling = c.turnRateHigh / KART.turnRateHigh;
+  const cornering = sharp > (style.cornerCurvature ?? 0.03) || atFork;
+  const straight = c.maxSpeed * style.pace;
+  const target = jumpAhead ? Infinity : cornering ? Math.min(straight, KART.maxSpeed * style.pace * (style.cornerSpeed ?? 0.75) * handling) : straight;
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

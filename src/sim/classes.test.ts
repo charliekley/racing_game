@@ -21,25 +21,28 @@ describe('kartConfigFor', () => {
   });
 
   it('more stat points means a better number, within the documented ranges', () => {
-    // Pip (speed 1) vs Bruno (speed 5): -2.5% .. +2.5% around 28 m/s.
-    const slow = kartConfigFor({ character: 0, kart: 0 });
-    const fast = kartConfigFor({ character: 6, kart: 0 });
-    expect(slow.maxSpeed).toBeCloseTo(KART.maxSpeed * 0.975, 6);
-    expect(fast.maxSpeed).toBeCloseTo(KART.maxSpeed * 1.025, 6);
-    expect(slow.accel).toBeGreaterThan(fast.accel);
-    expect(slow.mass).toBeLessThan(fast.mass);
-    expect(slow.mass).toBeCloseTo(0.6, 6);
-    expect(fast.mass).toBeCloseTo(1.4, 6);
-    expect(fast.offroadSpeedFactor).toBeLessThan(KART.offroadSpeedFactor); // Bruno: offroad 2
-    expect(kartConfigFor({ character: 2, kart: 0 }).offroadSpeedFactor).toBeCloseTo(0.85, 6); // Fizz: offroad 5
+    // Pip + Sprinter (speed 1, accel 5, weight 1) vs Rex + Comet (speed 5, accel 2, weight 4):
+    // speed is -2% .. +2% around 28 m/s per 2 points from the middle, accel -15% .. +15%, mass 0.6 .. 1.4.
+    const pip = kartConfigFor({ character: 0, kart: 0 });
+    const rex = kartConfigFor({ character: 7, kart: 2 });
+    expect(loadoutStats({ character: 0, kart: 0 })).toMatchObject({ speed: 1, accel: 5, weight: 1 });
+    expect(pip.maxSpeed).toBeCloseTo(KART.maxSpeed * 0.98, 6);
+    expect(rex.maxSpeed).toBeCloseTo(KART.maxSpeed * 1.02, 6);
+    expect(pip.accel).toBeCloseTo(KART.accel * 1.15, 6);
+    expect(pip.accel).toBeGreaterThan(rex.accel);
+    expect(pip.mass).toBeCloseTo(0.6, 6);
+    expect(rex.mass).toBeCloseTo(1.2, 6);
+    expect(rex.offroadSpeedFactor).toBeLessThan(KART.offroadSpeedFactor); // Rex: offroad 1
+    // Fizz + Mudlark: 5 offroad points = the best grass grip.
+    expect(kartConfigFor({ character: 2, kart: 1 }).offroadSpeedFactor).toBeCloseTo(0.85, 6);
   });
 
   it('every loadout stays inside sane bounds', () => {
     for (let c = 0; c < CHARACTERS.length; c++)
       for (let k = 0; k < KART_BODIES.length; k++) {
         const cfg = kartConfigFor({ character: c, kart: k });
-        expect(cfg.maxSpeed).toBeGreaterThanOrEqual(KART.maxSpeed * 0.975 - 1e-9);
-        expect(cfg.maxSpeed).toBeLessThanOrEqual(KART.maxSpeed * 1.025 + 1e-9);
+        expect(cfg.maxSpeed).toBeGreaterThanOrEqual(KART.maxSpeed * 0.98 - 1e-9);
+        expect(cfg.maxSpeed).toBeLessThanOrEqual(KART.maxSpeed * 1.02 + 1e-9);
         expect(cfg.offroadSpeedFactor).toBeGreaterThanOrEqual(0.62 - 1e-9);
         expect(cfg.offroadSpeedFactor).toBeLessThanOrEqual(0.85 + 1e-9);
         expect(cfg.mass).toBeGreaterThan(0.5);
