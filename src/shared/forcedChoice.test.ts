@@ -48,4 +48,9 @@ describe('chooserSlot (who the others wait for)', () => {
     expect(chooserSlot({ ...menu, stage: 'racing' })).toBeNull();
     expect(chooserSlot(null)).toBeNull();
   });
+  it('Loser picks: the picker\'s pop-up closes once they chose', () => {
+    expect(forcedChoice(loser, 2)).toBe('pick');
+    expect(forcedChoice({ ...loser, picked: true }, 2)).toBeNull();
+    expect(chooserSlot({ ...loser, picked: true })).toBeNull();
+  });
 });

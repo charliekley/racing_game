@@ -15,7 +15,8 @@ export type ForcedKind = 'setup' | 'pick';
 export function forcedChoice(info: SeriesInfo | null, mySlot: number | null): ForcedKind | null {
   if (!info || mySlot === null) return null;
   if (info.stage === 'menu' && info.pending === true && info.owner === mySlot) return 'setup';
-  if (info.stage === 'between' && info.mode === 'loser' && info.picker === mySlot) return 'pick';
+  // Loser picks: the picker's pop-up closes as soon as they chose (then, like everybody, they press READY).
+  if (info.stage === 'between' && info.mode === 'loser' && info.picker === mySlot && !info.picked) return 'pick';
   return null;
 }
 
@@ -23,6 +24,6 @@ export function forcedChoice(info: SeriesInfo | null, mySlot: number | null): Fo
 export function chooserSlot(info: SeriesInfo | null): number | null {
   if (!info) return null;
   if (info.stage === 'menu' && info.pending === true) return info.owner;
-  if (info.stage === 'between' && info.mode === 'loser') return info.picker;
+  if (info.stage === 'between' && info.mode === 'loser' && !info.picked) return info.picker;
   return null;
 }

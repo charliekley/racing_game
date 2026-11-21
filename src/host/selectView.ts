@@ -17,6 +17,7 @@ import { CHARACTERS, KART_BODIES, STAT_KEYS, paletteFor } from '../shared/charac
 import { colorHex } from '../shared/colors';
 import { SelectRenderer } from '../render/kart/selectStage';
 import { CLASS_LABEL, STAT_LABELS, kartName, quadrantLayout, statBars } from './selectLayout';
+import { crownLabel } from '../shared/wins';
 import type { SelectionHub, SelectionView } from './selectionHub';
 
 interface QuadRefs {
@@ -24,6 +25,8 @@ interface QuadRefs {
   stage: HTMLElement;
   numEl: HTMLElement;
   nameEl: HTMLElement;
+  crownEl: HTMLElement;
+  bannerEl: HTMLElement;
   whatEl: HTMLElement;
   subEl: HTMLElement;
   swatches: HTMLElement[];
@@ -31,7 +34,7 @@ interface QuadRefs {
   charTiles: HTMLElement[];
   kartTiles: HTMLElement[];
   /** What was last drawn, so unchanged things are not touched. */
-  shown: { name: string; stage: string; character: number; kart: number; bars: string };
+  shown: { name: string; stage: string; ready: boolean | null; wins: number; character: number; kart: number; bars: string };
   /** Current scale unit (px) and arrangement, see fitQuad. */
   u: number;
   tall: boolean;
@@ -199,7 +202,7 @@ export class SelectView {
     el.style.setProperty('--slot', colorHex(slot));
     el.innerHTML = `
       <div class="q-stage"></div>
-      <div class="q-head"><span class="q-num"></span><span class="q-name"></span><button class="q-kick" title="Remove player" tabindex="-1">&times;</button></div>
+      <div class="q-head"><span class="q-num"></span><span class="q-name"></span><span class="q-crown"></span><button class="q-kick" title="Remove player" tabindex="-1">&times;</button></div>
       <div class="q-banner">READY!</div>
       <div class="q-info">
         <div class="q-title"><b class="q-what"></b><i class="q-sub"></i><span class="q-pal"><u></u><u></u><u></u><u></u></span></div>
@@ -240,13 +243,15 @@ export class SelectView {
       stage: q('.q-stage'),
       numEl: q('.q-num'),
       nameEl: q('.q-name'),
+      crownEl: q('.q-crown'),
+      bannerEl: q('.q-banner'),
       whatEl: q('.q-what'),
       subEl: q('.q-sub'),
       swatches: Array.from(el.querySelectorAll('.q-pal u')) as HTMLElement[],
       bars,
       charTiles,
       kartTiles,
-      shown: { name: '\u0000', stage: '', character: -1, kart: -1, bars: '' },
+      shown: { name: '\u0000', stage: '', ready: null, wins: -1, character: -1, kart: -1, bars: '' },
       u: 0,
       tall: false,
     };
@@ -267,6 +272,18 @@ export class SelectView {
       s.stage = v.stage;
     }
     el.dataset.input = v.input;
+    // Ready state. In the lobby it is the same as stage 'ready'; after a race everybody is still at stage 'ready'
+    // (locked in) and `ready` says who has pressed READY for the next race (a green READY! banner) and who has not (amber NOT READY).
+    if (s.ready !== v.ready) {
+      el.dataset.ready = v.ready ? '1' : '0';
+      q.bannerEl.textContent = v.ready ? 'READY!' : 'NOT READY';
+      s.ready = v.ready;
+    }
+    // Crown with the race-win count (empty until the first win).
+    if (s.wins !== v.wins) {
+      q.crownEl.textContent = crownLabel(v.wins);
+      s.wins = v.wins;
+    }
     el.style.setProperty('--body', pal.body);
     el.style.setProperty('--trim', pal.trim);
     el.style.setProperty('--accent', pal.accent);

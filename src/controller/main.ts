@@ -20,6 +20,7 @@ import {
   parseSeriesInfo,
   parseTrackCards,
   sanitizeName,
+  fillBotLabel,
   type GamePhase,
   type SeriesInfo,
   type TrackCard,
@@ -39,7 +40,9 @@ import {
   vibrate,
 } from './device';
 import { ItemView } from './itemView';
-import { SelectFlow } from './selectFlow';
+import { SelectFlow, type PostMode, type StandingChip } from './selectFlow';
+import { FIRST_FILL_BOT_SLOT } from '../shared/colors';
+import { crownLabel, sanitizeWins } from '../shared/wins';
 import { PhoneMap } from './phoneMap';
 import { SeriesMenu } from './seriesMenu';
 import { forcedChoice } from '../shared/forcedChoice';
@@ -253,8 +256,46 @@ flow.readySlot.append($('series-bar'), $('ready-btn'));
 /** The flow covers the pad between races; during a race the pad (and its HUD) is what you see. */
 function updateFlowVisibility() {
   const between = phase === 'lobby' || phase === 'results';
-  flow.setResults(phase === 'results');
+  updatePostMode();
   flow.setVisible(between);
+}
+
+/**
+ * What the READY screen is for (see PostMode in selectFlow.ts). After a single race, Knockout or a Loser-picks race
+ * the phone offers CHANGE or READY; in a Grand Prix (and on the final podium) the next screen comes by itself, so
+ * the phone only shows the standings.
+ */
+function postMode(): PostMode {
+  if (phase !== 'results') return 'lobby';
+  if (!series) return 'choose';
+  return series.stage === 'between' && series.mode !== 'gp' ? 'choose' : 'wait';
+}
+
+function updatePostMode() {
+  const mode = postMode();
+  const s = series;
+  const title = mode === 'lobby' ? 'READY' : mode === 'choose' ? (ready ? 'READY' : 'READY?') : s?.stage === 'over' ? 'PODIUM' : s?.raceTotal && s.racesDone >= s.raceTotal ? 'FINAL' : 'NEXT RACE';
+  flow.setPost(mode, title);
+  flow.setStandings(mode === 'wait' && s ? standingChips(s) : null);
+}
+
+/** Ranked standings for the wait screen. Slots 4 and up are fill-in bots (no player entry): "CPU n", crowns from the series message. */
+function standingChips(s: SeriesInfo): StandingChip[] {
+  const rows: StandingChip[] = [];
+  for (let i = 0; i + 1 < s.standings.length; i += 2) {
+    const slot = s.standings[i];
+    const bot = slot >= FIRST_FILL_BOT_SLOT;
+    const at = bot && s.wins ? s.wins.findIndex((v, k) => k % 2 === 0 && v === slot) : -1;
+    const player = lobby.find((p) => p.slot === slot);
+    rows.push({
+      rank: i / 2 + 1,
+      name: bot ? fillBotLabel(slot) : (player?.name ?? `P${slot + 1}`),
+      wins: bot ? (at >= 0 ? sanitizeWins(s.wins![at + 1]) : 0) : sanitizeWins(player?.wins),
+      points: s.standings[i + 1],
+      me: slot === mySlot,
+    });
+  }
+  return rows;
 }
 updateFlowVisibility();
 window.addEventListener('resize', () => flow.relayout());
@@ -262,7 +303,8 @@ window.addEventListener('resize', () => flow.relayout());
 /** "P1 · Dana" in the flow's header (the name comes from the lobby list so it follows changes). */
 function updateHeader() {
   if (mySlot === null) return;
-  const text = `P${mySlot + 1} · ${nameOfSlot(mySlot)}`;
+  const crown = crownLabel(sanitizeWins(lobby.find((p) => p.slot === mySlot)?.wins));
+  const text = `P${mySlot + 1} · ${nameOfSlot(mySlot)}${crown ? ` ${crown}` : ''}`;
   flow.setHeader(text);
   $('player-name').textContent = text;
 }
@@ -278,17 +320,13 @@ $('ready-btn').addEventListener('click', () => {
 
 function updateReadyButton() {
   const btn = $('ready-btn');
-  // Between races the button means "go on": next Grand Prix race, race again, or back to the menu after the podium.
-  let label = phase === 'results' ? 'RACE AGAIN' : 'READY';
-  let hidden = phase !== 'results';
-  if (phase === 'results' && series) {
-    if (series.stage === 'over') label = 'MENU';
-    else if (series.mode === 'gp') label = series.racesDone >= (series.raceTotal ?? 0) ? 'FINISH' : 'NEXT RACE';
-    else if (series.mode === 'loser') hidden = true; // the pick starts the next race
-  }
+  // After a race (single, Knockout, Loser picks) the two choices are CHANGE (the flow's own button) and this READY.
+  // Grand Prix between races and the podium have nothing to press: the host goes on by itself.
+  const hidden = postMode() !== 'choose';
   btn.classList.toggle('hidden', hidden);
   btn.classList.toggle('is-ready', ready);
-  btn.textContent = ready ? `${label} ✓` : label;
+  btn.textContent = ready ? 'READY ✓' : 'READY';
+  if (!hidden) updatePostMode(); // (the big word follows the ready flag)
 }
 
 // --- Race modes: mode/track menu, Loser-picks choice, place + points line ----------------------
@@ -344,6 +382,7 @@ function updateSeriesUi() {
   const at = s.standings.findIndex((v, i) => i % 2 === 0 && v === mySlot);
   const myRank = at >= 0 ? at / 2 + 1 : null;
   const standing = myRank ? `${ordinal(myRank)} · ${s.standings[at + 1]} pts` : '';
+  updatePostMode(); // (Grand Prix: the standings list; the READY screen's mode follows the series state)
 
   if (s.stage === 'menu') {
     const trackName = trackCards?.[s.track]?.name;
@@ -356,7 +395,8 @@ function updateSeriesUi() {
   } else if (s.stage === 'between') {
     const race = s.raceTotal ? `Race ${s.racesDone}/${s.raceTotal}` : '';
     if (s.mode === 'loser') {
-      text.textContent = isPicker ? `${standing} · your pick` : `${standing} · ${nameOfSlot(s.picker)} is choosing…`;
+      const who = s.picked ? 'track chosen' : isPicker ? 'your pick' : `${nameOfSlot(s.picker)} is choosing…`;
+      text.textContent = [standing, who].filter(Boolean).join(' · ');
     } else {
       text.textContent = [race, standing].filter(Boolean).join(' · ');
     }

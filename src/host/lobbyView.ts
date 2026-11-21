@@ -8,6 +8,7 @@
  */
 import { CHARACTERS, KART_BODIES, sanitizeLoadout } from '../shared/characters';
 import { KART_COLORS, colorHex } from '../shared/colors';
+import { crownLabel } from '../shared/wins';
 import { BUTTON_NAMES, Buttons } from '../shared/protocol';
 import { MAX_PLAYERS, type PlayerManager } from './playerManager';
 import { KEY_SCHEMES } from './input/localInput';
@@ -84,7 +85,8 @@ export class LobbyView {
       </div>
       <div class="slot-actions"></div>`;
     // Names come from phones: set via textContent (never innerHTML) so they can't inject HTML.
-    el.querySelector('.slot-name')!.textContent = slot.name;
+    const crown = crownLabel(this.players.winsOfSlot(slot.index)); // race wins this session
+    el.querySelector('.slot-name')!.textContent = crown ? `${slot.name} ${crown}` : slot.name;
 
     // Character and kart names are our own data (never from the network as text), but we still use textContent.
     const loadout = sanitizeLoadout(slot.loadout);

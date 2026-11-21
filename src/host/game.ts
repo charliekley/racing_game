@@ -23,6 +23,7 @@ import { TRACKS, type TrackDef } from '../track';
 import { ChaseCamera, newCameraState } from '../render/chaseCamera';
 import { GameFx } from '../render/fx/gameFx';
 import { Flyover, introWanted } from '../render/fx/intro';
+import { crownLabel } from '../shared/wins';
 import { buildResults, type ResultRow, type ResultsExtras } from './resultsView';
 import type { Placing } from './series';
 import { setKartDetail, type KartDetail } from '../render/kartModel';
@@ -100,7 +101,7 @@ export interface GameCallbacks {
    * The race just ended: hands over who finished where (every racer, best first). main.ts feeds it to the
    * Grand Prix / Loser-picks series and may return extra results content (points, standings, button labels).
    */
-  onRaceResults?(placings: Placing[]): ResultsExtras | undefined;
+  onRaceResults?(placings: Placing[], fillColors: ReadonlyMap<number, string>): ResultsExtras | undefined;
   /** Adaptive quality: frames stay too slow even at the lowest render scale, so main.ts should drop one preset. */
   onQualityStepDown?(): void;
 }
@@ -445,7 +446,9 @@ export class Game {
     this.views = slots.map((slot, i) => {
       const p = this.players.slots.slots[slot];
       const color = colorHex(p?.color ?? slot);
-      const hud = new ViewHud(this.hudLayer, p?.name ?? `P${slot + 1}`, color, slot);
+      // A crown with the win count (shared/wins.ts) hangs behind the name, once there is a win to show.
+      const crown = crownLabel(this.players.winsOfSlot(slot));
+      const hud = new ViewHud(this.hudLayer, `${p?.name ?? `P${slot + 1}`}${crown ? ` ${crown}` : ''}`, color, slot);
       hud.place(layout.views[i]);
       // Only show the "P1 Name" tag when the screen is shared.
       hud.root.classList.toggle('solo', slots.length === 1);
@@ -1134,6 +1137,9 @@ export class Game {
 
   private showResults(): void {
     const race = this.world.race!;
+    // Whoever finished 1st gets a crown (every race, every mode, fill-in bots too). Counted BEFORE the table is built, so it shows the new total.
+    const winner = race.standings()[0];
+    if (winner !== undefined) this.players.recordWin(winner);
     const rows = race.standings().map((slot) => {
       const r = race.racers.get(slot)!;
       const p = this.players.slots.slots[slot];
@@ -1149,6 +1155,7 @@ export class Game {
         best: Number.isFinite(best) ? formatTime(best) : '–',
         fastest: false,
         finished: this.knockout ? !r.out : r.finished,
+        wins: this.players.winsOfSlot(slot),
       };
       return { row, best };
     });
@@ -1158,7 +1165,7 @@ export class Game {
     if (Number.isFinite(fastest)) rows.find((r) => r.best === fastest)!.row.fastest = true;
     // Series hook: places are taken from the ranking order (always unique, even for DNFs).
     const placings: Placing[] = race.standings().map((slot, i) => ({ slot, place: i + 1, human: !this.isBot(slot) }));
-    const extras = this.callbacks.onRaceResults?.(placings);
+    const extras = this.callbacks.onRaceResults?.(placings, this.fillColors);
     buildResults(
       this.results,
       rows.map((r) => r.row),
