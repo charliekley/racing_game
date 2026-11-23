@@ -484,33 +484,124 @@ export interface MusicStyle {
   leadWave: OscillatorType;
 }
 
+interface NoteOpts {
+  /** Oscillators layered for this note: waveform, detune (cents) and relative level. */
+  waves: { type: OscillatorType; detune?: number; level?: number; octave?: number }[];
+  f: number;
+  /** Time the key is held (s); the sound then rings out for the release time. */
+  dur: number;
+  /** Peak level. */
+  gain: number;
+  /** Attack (s): a short ramp up avoids a click at the start. */
+  a: number;
+  /** Fraction of the peak held while the key is down (1 = organ-like, 0.3 = plucky). */
+  sustain: number;
+  /** Time constant (s) of the fall from the peak to the sustain level. */
+  decay: number;
+  /** Release time constant (s): the smooth fade after the key is let go. */
+  release: number;
+  /** Low-pass cutoff (Hz); with `sweep` > 1 it starts that many times higher and closes (a "pluck" or "wah"). */
+  cutoff: number;
+  sweep?: number;
+  /** Vibrato [depth Hz, rate Hz]. */
+  vib?: [number, number];
+}
+
+/**
+ * One musical note with a proper envelope. A note is: some oscillators -> low-pass filter -> gain (the envelope).
+ * The envelope is ADSR-like: Attack (ramp up), Decay (fall to the sustain level), Sustain (held), Release (fade out).
+ * `setTargetAtTime` gives exponential glides which sound natural and never jump, so there are no clicks.
+ * Everything is scheduled in advance on the audio clock; the nodes stop themselves and are garbage collected.
+ */
+function note(env: SynthEnv, t: number, o: NoteOpts): void {
+  const { ctx } = env;
+  const g = ctx.createGain();
+  const hold = Math.max(o.dur, o.a + 0.02);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(o.gain, t + o.a);
+  g.gain.setTargetAtTime(o.gain * o.sustain, t + o.a, o.decay);
+  g.gain.setTargetAtTime(0, t + hold, o.release);
+  const end = t + hold + o.release * 6;
+
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.Q.value = 0.7;
+  if (o.sweep && o.sweep > 1) {
+    f.frequency.setValueAtTime(Math.min(12000, o.cutoff * o.sweep), t);
+    f.frequency.setTargetAtTime(o.cutoff, t, 0.09);
+  } else f.frequency.value = o.cutoff;
+  f.connect(g).connect(env.out);
+
+  let vibDepth: GainNode | null = null;
+  if (o.vib) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = o.vib[1];
+    vibDepth = ctx.createGain();
+    // Vibrato fades in after the note starts (like a singer), instead of wobbling from the first instant.
+    vibDepth.gain.setValueAtTime(0, t);
+    vibDepth.gain.linearRampToValueAtTime(o.vib[0], t + Math.min(0.25, hold));
+    lfo.connect(vibDepth);
+    lfo.start(t);
+    lfo.stop(end);
+  }
+  for (const w of o.waves) {
+    const osc = ctx.createOscillator();
+    osc.type = w.type;
+    osc.frequency.value = o.f * Math.pow(2, w.octave ?? 0);
+    if (w.detune) osc.detune.value = w.detune;
+    if (vibDepth) vibDepth.connect(osc.frequency);
+    if (w.level !== undefined && w.level !== 1) {
+      const lg = ctx.createGain();
+      lg.gain.value = w.level;
+      osc.connect(lg).connect(f);
+    } else osc.connect(f);
+    osc.start(t);
+    osc.stop(end);
+  }
+}
+
 /** Play one drum hit or note of the background music. `dur` is in seconds. */
 export function musicNote(env: SynthEnv, t: number, voice: VoiceName, midi: number, dur: number, style: MusicStyle): void {
   const f = midiToFreq(midi);
   switch (voice) {
     case 'kick':
-      tone(env, t, { f0: 150, f1: 42, dur: 0.16, gain: 0.9 });
+      // A sine that drops fast in pitch = the "thump"; the short click on top gives it definition.
+      tone(env, t, { f0: 140, f1: 44, dur: 0.18, gain: 0.7 });
+      noiseBurst(env, t, { dur: 0.012, gain: 0.08, f0: 2500, q: 0.7, a: 0.001 });
       break;
     case 'snare':
-      noiseBurst(env, t, { dur: 0.13, gain: 0.5, f0: 1800, q: 0.8 });
-      tone(env, t, { type: 'triangle', f0: 220, f1: 130, dur: 0.1, gain: 0.35 });
+      noiseBurst(env, t, { dur: 0.14, gain: 0.3, f0: 1900, q: 0.7 });
+      tone(env, t, { type: 'triangle', f0: 210, f1: 130, dur: 0.09, gain: 0.22 });
       break;
     case 'hat':
-      noiseBurst(env, t, { dur: 0.04, gain: 0.18, filter: 'highpass', f0: 7500 });
+      noiseBurst(env, t, { dur: 0.035, gain: 0.1, filter: 'highpass', f0: 7500 });
       break;
     case 'openHat':
-      noiseBurst(env, t, { dur: 0.16, gain: 0.18, filter: 'highpass', f0: 7000 });
+      noiseBurst(env, t, { dur: 0.14, gain: 0.1, filter: 'highpass', f0: 7000 });
       break;
     case 'bass':
-      tone(env, t, { type: 'sawtooth', f0: f, dur: Math.max(0.1, dur * 0.95), gain: 0.5, cutoff: 700, a: 0.01 });
-      tone(env, t, { type: 'square', f0: f / 2, dur: Math.max(0.1, dur * 0.95), gain: 0.35, cutoff: 400, a: 0.01 });
+      // Saw + a sine an octave down, with a short filter "pluck" at the start: round, punchy low end.
+      note(env, t, {
+        waves: [{ type: 'sawtooth' }, { type: 'sine', octave: -1 }],
+        f, dur: Math.max(0.1, dur * 0.85), gain: 0.4, a: 0.008, sustain: 0.7, decay: 0.12, release: 0.05, cutoff: 520, sweep: 3.2,
+      });
       break;
     case 'lead':
-      tone(env, t, { type: style.leadWave, f0: f, dur: Math.max(0.12, dur * 1.05), gain: 0.3, cutoff: 3200, a: 0.012, vib: [f * 0.006, 5.5] });
-      tone(env, t, { type: style.leadWave, f0: f, dur: Math.max(0.12, dur * 1.05), gain: 0.15, cutoff: 3200, a: 0.012, detune: 8 });
+      note(env, t, {
+        waves: [{ type: style.leadWave }, { type: style.leadWave, detune: 9 }],
+        f, dur: Math.max(0.12, dur * 0.95), gain: 0.17, a: 0.012, sustain: 0.75, decay: 0.2, release: 0.08, cutoff: 3000, sweep: 1.8,
+        vib: [f * 0.005, 5.5],
+      });
       break;
     case 'arp':
-      tone(env, t, { type: 'triangle', f0: f, dur: 0.22, gain: 0.14 });
+      note(env, t, { waves: [{ type: 'triangle' }], f, dur: 0.1, gain: 0.1, a: 0.004, sustain: 0.2, decay: 0.06, release: 0.07, cutoff: 3500 });
+      break;
+    case 'pad':
+      // Soft sustained chord tone: two slightly detuned saws, dark filter, slow attack and release.
+      note(env, t, {
+        waves: [{ type: 'sawtooth', detune: -7 }, { type: 'sawtooth', detune: 7 }],
+        f, dur: dur * 0.97, gain: 0.045, a: 0.18, sustain: 1, decay: 1, release: 0.25, cutoff: 1100,
+      });
       break;
   }
 }

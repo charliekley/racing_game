@@ -47,7 +47,7 @@ export interface Song {
   leadWave: OscillatorType;
 }
 
-export type VoiceName = 'bass' | 'lead' | 'arp' | 'kick' | 'snare' | 'hat' | 'openHat';
+export type VoiceName = 'bass' | 'lead' | 'arp' | 'pad' | 'kick' | 'snare' | 'hat' | 'openHat';
 
 export interface NoteEvent {
   /** Absolute step number (can exceed the song length: the song loops). */
@@ -130,6 +130,7 @@ export function notesBetween(song: Song, from: number, to: number): NoteEvent[] 
         if (n.step === ls) out.push({ step, voice, midi: degreeToMidi(root, song.scale, n.degree), dur: n.dur });
       }
     }
+    if (local % 16 === 0) for (const c of chordAt(song, local)) out.push({ ...c, step });
     const dl = song.drums.length * 16;
     const ch = song.drums[Math.floor((local % dl) / 16)][local % 16] ?? '.';
     if (ch === 'k' || ch === 'K') out.push({ step, voice: 'kick', midi: 0, dur: 1 });
@@ -138,6 +139,19 @@ export function notesBetween(song: Song, from: number, to: number): NoteEvent[] 
     if (ch === 'o') out.push({ step, voice: 'openHat', midi: 0, dur: 1 });
   }
   return out;
+}
+
+/**
+ * The pad chord of the bar starting at song step `local`: a triad (degrees d, d+2, d+4 of the scale) built on
+ * the first bass note of that bar, one octave above the bass. Derived from the bass line, so every tune gets
+ * matching harmony without extra data. Returns three one-bar notes (or none if the bar has no bass note).
+ */
+export function chordAt(song: Song, local: number): NoteEvent[] {
+  const len = song.bass.bars.length * 16;
+  const ls = local % len;
+  const first = parseVoice(song.bass).find((n) => n.step >= ls && n.step < ls + 16);
+  if (!first) return [];
+  return [0, 2, 4].map((o) => ({ step: local, voice: 'pad' as const, midi: degreeToMidi(song.bassRoot + 12, song.scale, first.degree + o), dur: 16 }));
 }
 
 /** Seconds per step at a tempo multiplier (1.15 on the final lap). */

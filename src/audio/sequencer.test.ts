@@ -50,6 +50,17 @@ describe('notesBetween', () => {
   });
 });
 
+describe('pad chords', () => {
+  it('every song plays a three-note chord on each bar, built on the bass note', () => {
+    for (const [id, song] of Object.entries(SONGS)) {
+      const pads = notesBetween(song, 0, 16).filter((n) => n.voice === 'pad');
+      expect(pads.length, id).toBe(3);
+      expect(pads.every((n) => n.step === 0 && n.dur === 16), id).toBe(true);
+      expect(pads[0].midi, id).toBe(notesBetween(song, 0, 1).find((n) => n.voice === 'bass')!.midi + 12);
+    }
+  });
+});
+
 describe('timing', () => {
   it('final lap tempo is 15% faster', () => {
     const s = SONGS.dockside;

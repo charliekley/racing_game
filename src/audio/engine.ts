@@ -9,8 +9,8 @@
  * so the AudioContext is created on the first key press / click / gamepad
  * button. Until then (and if Web Audio is missing) every method does nothing.
  */
-import { BOT_GAIN, countdownCue, soundsForEvent, type Cue, type KartAudioState, type MapContext, type SoundId } from './mapping';
-import { KartVoice } from './kartVoice';
+import { botEngineGain, countdownCue, engineParams, planVoices, soundsForEvent, type Cue, type KartAudioState, type MapContext, type SoundId, type VoiceKind } from './mapping';
+import { KartVoice, LiteVoice, PackRumble, type EngineVoice } from './kartVoice';
 import { SampleBank } from './samples';
 import { notesBetween, stepSeconds, swingOffset, type Song } from './sequencer';
 import { SONGS, type MusicId } from './songs';
@@ -20,7 +20,11 @@ import type { WorldEvent } from '../sim/world';
 const MUTE_KEY = 'tiltkart.muted';
 const MUSIC_VOL_KEY = 'tiltkart.musicVol';
 /** Default bus levels. */
-const LEVELS = { engine: 0.5, sfx: 0.9, music: 0.32 };
+const LEVELS = { engine: 0.26, sfx: 0.85, music: 0.62 };
+/** Engine voices are updated this often (s), not every frame: 30 Hz is plenty for smooth pitch glides. */
+const VOICE_UPDATE_PERIOD = 1 / 30;
+/** Bot voice assignment (who is nearest to a human) is re-evaluated this often (s). */
+const VOICE_PLAN_PERIOD = 0.3;
 /** At most this many one-shots at once; quiet ones are dropped when it is full. */
 const MAX_ONE_SHOTS = 28;
 /** Music tempo multiplier on the final lap. */
@@ -51,7 +55,13 @@ export class AudioEngine {
   private analyser!: AnalyserNode;
   private noise!: AudioBuffer;
   private samples: SampleBank | null = null;
-  private voices = new Map<number, KartVoice>();
+  private voices = new Map<number, EngineVoice>();
+  private kinds = new Map<number, VoiceKind>();
+  private pack: PackRumble | null = null;
+  private sinceVoiceUpdate = 1;
+  private sinceVoicePlan = 1;
+  private musicIn!: GainNode;
+  private delay!: DelayNode;
   private rollTimers = new Map<number, number>();
   private activeEnds: number[] = [];
   private muteIcon: HTMLElement | null = null;
@@ -73,7 +83,7 @@ export class AudioEngine {
   private wantedMusic: MusicId | null = null;
 
   /** Counters for debugging/verification (read through `window.__game.audio.stats`). */
-  readonly stats = { oneShots: 0, skipped: 0, musicNotes: 0, kartVoices: 0 };
+  readonly stats = { oneShots: 0, skipped: 0, musicNotes: 0, kartVoices: 0, liteVoices: 0, packKarts: 0, engineNodes: 0 };
 
   constructor() {
     this.updateMuteIcon();
@@ -118,9 +128,9 @@ export class AudioEngine {
 
     // Master chain: gain (mute) -> compressor (a limiter, so 4 karts never clip) -> out.
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14;
+    comp.threshold.value = -12;
     comp.knee.value = 12;
-    comp.ratio.value = 8;
+    comp.ratio.value = 10;
     comp.attack.value = 0.003;
     comp.release.value = 0.2;
     this.master = ctx.createGain();
@@ -139,6 +149,7 @@ export class AudioEngine {
     this.engineBus = bus(LEVELS.engine);
     this.sfxBus = bus(LEVELS.sfx);
     this.musicBus = bus(LEVELS.music * this.musicVolume);
+    this.buildMusicFx(ctx);
 
     // Two seconds of white noise, shared by every noise source.
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -146,6 +157,45 @@ export class AudioEngine {
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
     this.samples = new SampleBank(ctx);
+  }
+
+  /**
+   * Music effects (built once): the song plays into `musicIn`, which feeds
+   *   - the dry signal straight to the music bus,
+   *   - an echo ("delay": a copy repeated a bit later, each repeat quieter and duller), and
+   *   - a reverb (a ConvolverNode: it "convolves" the sound with an impulse response, here a burst of noise
+   *     that fades away, which sounds like a small room).
+   * Only a handful of nodes in total, no matter how many notes play.
+   */
+  private buildMusicFx(ctx: AudioContext): void {
+    this.musicIn = ctx.createGain();
+    this.musicIn.connect(this.musicBus);
+
+    this.delay = ctx.createDelay(1);
+    this.delay.delayTime.value = 0.3;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.32;
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 2400;
+    const delayWet = ctx.createGain();
+    delayWet.gain.value = 0.2;
+    this.musicIn.connect(this.delay);
+    this.delay.connect(tone).connect(feedback).connect(this.delay); // the repeats
+    tone.connect(delayWet).connect(this.musicBus);
+
+    // Impulse response: 1.3 s of noise that decays away.
+    const len = Math.floor(ctx.sampleRate * 1.3);
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    const verb = ctx.createConvolver();
+    verb.buffer = ir;
+    const verbWet = ctx.createGain();
+    verbWet.gain.value = 0.2;
+    this.musicIn.connect(verb).connect(verbWet).connect(this.musicBus);
   }
 
   /** Is the context up and running (after a user gesture)? */
@@ -212,18 +262,13 @@ export class AudioEngine {
 
   // --- Per-frame loops (engines, drift squeal, item roulette) -------------------
 
+  /**
+   * Called every frame with every kart's state. Roulette ticks run every frame; engine voices are
+   * (re)planned a few times per second and their parameters written at ~30 Hz (see kartVoice.ts for why).
+   */
   update(dt: number, karts: KartAudioState[]): void {
     if (!this.ctx || !this.running) return;
-    const seen = new Set<number>();
     for (const k of karts) {
-      seen.add(k.slot);
-      let v = this.voices.get(k.slot);
-      if (!v) {
-        v = new KartVoice(this.ctx, this.engineBus, this.noise);
-        this.voices.set(k.slot, v);
-      }
-      v.update(k, k.human ? 1 : BOT_GAIN + 0.1);
-
       // Roulette: tick faster as it rolls. Only for people, bots are silent about it.
       if (k.rolling && k.human) {
         const left = (this.rollTimers.get(k.slot) ?? 0) - dt;
@@ -233,21 +278,75 @@ export class AudioEngine {
         } else this.rollTimers.set(k.slot, left);
       } else this.rollTimers.delete(k.slot);
     }
+
+    this.sinceVoicePlan += dt;
+    this.sinceVoiceUpdate += dt;
+    if (this.sinceVoicePlan >= VOICE_PLAN_PERIOD || karts.length !== this.kinds.size) {
+      this.sinceVoicePlan = 0;
+      this.applyPlan(planVoices(karts, this.kinds));
+    }
+    if (this.sinceVoiceUpdate < VOICE_UPDATE_PERIOD) return;
+    this.sinceVoiceUpdate = 0;
+
+    let packCount = 0;
+    let packRev = 0;
+    for (const k of karts) {
+      if (this.kinds.get(k.slot) === 'pack') {
+        packCount++;
+        packRev += engineParams(k).gain; // 0.35..0.85: a stand-in for how hard they rev
+        continue;
+      }
+      this.voices.get(k.slot)?.update(k, k.human ? 1 : botEngineGain(k.dist));
+    }
+    this.pack?.update(packCount, packCount ? Math.max(0, Math.min(1, (packRev / packCount - 0.35) / 0.5)) : 0);
+    this.stats.packKarts = packCount;
+  }
+
+  /** Create / dispose voices so each kart has the kind the plan says. */
+  private applyPlan(plan: Map<number, VoiceKind>): void {
+    const ctx = this.ctx!;
+    if (!this.pack) this.pack = new PackRumble(ctx, this.engineBus, this.noise);
     for (const [slot, v] of this.voices) {
-      if (!seen.has(slot)) {
+      const kind = plan.get(slot);
+      if (kind === undefined || kind === 'pack' || kind !== this.kinds.get(slot)) {
         v.dispose();
         this.voices.delete(slot);
       }
     }
-    this.stats.kartVoices = this.voices.size;
+    for (const [slot, kind] of plan) {
+      if (kind === 'pack' || this.voices.has(slot)) continue;
+      this.voices.set(slot, kind === 'full' ? new KartVoice(ctx, this.engineBus, this.noise) : new LiteVoice(ctx, this.engineBus));
+    }
+    this.kinds = plan;
+    this.countVoices();
+  }
+
+  private countVoices(): void {
+    let full = 0;
+    let lite = 0;
+    let nodes = this.pack?.nodeCount ?? 0;
+    for (const [slot, v] of this.voices) {
+      if (this.kinds.get(slot) === 'full') full++;
+      else lite++;
+      nodes += v.nodeCount;
+    }
+    this.stats.kartVoices = full;
+    this.stats.liteVoices = lite;
+    this.stats.engineNodes = nodes;
   }
 
   /** Silence all kart loops (e.g. when leaving the race). */
   stopKarts(): void {
     for (const v of this.voices.values()) v.dispose();
     this.voices.clear();
+    this.kinds.clear();
+    this.pack?.dispose();
+    this.pack = null;
     this.rollTimers.clear();
     this.stats.kartVoices = 0;
+    this.stats.liteVoices = 0;
+    this.stats.packKarts = 0;
+    this.stats.engineNodes = 0;
   }
 
   // --- Music -------------------------------------------------------------------
@@ -265,13 +364,21 @@ export class AudioEngine {
     this.nextStep = 0;
     this.nextStepTime = this.ctx.currentTime + 0.08;
     this.songGain = this.ctx.createGain();
-    this.songGain.connect(this.musicBus);
+    this.songGain.connect(this.musicIn);
+    this.setDelayTime();
     if (!this.scheduler) this.scheduler = setInterval(() => this.schedule(), 40);
   }
 
   /** Speed the music up (final lap) or back to normal. Takes effect from the next step. */
   setFinalLap(on: boolean): void {
     this.tempoMul = on ? FINAL_LAP_TEMPO : 1;
+    this.setDelayTime();
+  }
+
+  /** Echo time = a dotted eighth note (3 sixteenth steps) of the current song and tempo, so repeats fall in rhythm. */
+  private setDelayTime(): void {
+    if (!this.ctx || !this.song) return;
+    this.delay.delayTime.setTargetAtTime(Math.min(0.9, stepSeconds(this.song, this.tempoMul) * 3), this.ctx.currentTime, 0.05);
   }
 
   private fadeOutSong(): void {

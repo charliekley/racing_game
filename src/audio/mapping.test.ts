@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_GAIN, countdownCue, engineParams, panForRect, soundsForEvent, squealParams, SOUND_IDS } from './mapping';
+import { BOT_GAIN, botEngineGain, MAX_BOT_VOICES, planVoices, type VoiceKind, countdownCue, engineParams, panForRect, soundsForEvent, squealParams, SOUND_IDS } from './mapping';
 import { SYNTHS } from './synth';
 
 const ctx = { isHuman: (s: number) => s === 0, totalLaps: 3 };
@@ -133,5 +133,37 @@ describe('continuous sound parameters', () => {
     expect(panForRect({ x: 0, w: 0.5 })).toBeLessThan(0);
     expect(panForRect({ x: 0.5, w: 0.5 })).toBeGreaterThan(0);
     expect(panForRect({ x: 0, w: 1 })).toBeCloseTo(0);
+  });
+});
+
+describe('engine voice planning (12 racers)', () => {
+  const karts = (humans: number, total: number) =>
+    Array.from({ length: total }, (_, i) => ({ slot: i, human: i < humans, dist: i < humans ? 0 : 10 + i * 7 }));
+
+  it('gives humans full voices, the nearest few bots lite voices, the rest the shared pack', () => {
+    const plan = planVoices(karts(1, 12), new Map());
+    const count = (k: VoiceKind) => [...plan.values()].filter((v) => v === k).length;
+    expect(count('full')).toBe(1);
+    expect(count('lite')).toBe(MAX_BOT_VOICES);
+    expect(count('pack')).toBe(12 - 1 - MAX_BOT_VOICES);
+    expect([1, 2, 3].every((s) => plan.get(s) === 'lite')).toBe(true); // the nearest bots
+  });
+  it('four humans in split screen still cap the voices', () => {
+    const plan = planVoices(karts(4, 12), new Map());
+    expect([...plan.values()].filter((v) => v !== 'pack').length).toBe(4 + MAX_BOT_VOICES);
+  });
+  it('keeps a lite voice when another bot is only slightly closer (no flip-flopping)', () => {
+    const ks = karts(1, 6);
+    ks[4].dist = 40; // currently pack
+    ks[3].dist = 42; // currently lite
+    ks[1].dist = 10;
+    ks[2].dist = 11;
+    const plan = planVoices(ks, new Map<number, VoiceKind>([[3, 'lite']]));
+    expect(plan.get(3)).toBe('lite');
+  });
+  it('bot engines are far quieter than a human and fade with distance', () => {
+    expect(botEngineGain(0)).toBeLessThanOrEqual(0.25);
+    expect(botEngineGain(60)).toBeLessThan(botEngineGain(5));
+    expect(botEngineGain(Infinity)).toBe(0);
   });
 });

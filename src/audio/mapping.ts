@@ -46,6 +46,17 @@ export interface MapContext {
 /** Bots are heard, but quieter, so the humans' own karts stay in front. */
 export const BOT_GAIN = 0.35;
 
+/** Loudness of a bot's ENGINE relative to a human's (much quieter than the one-shots: 12 engines add up fast). */
+export const BOT_ENGINE_GAIN = 0.2;
+/** How many bots (the nearest to a human) get their own engine voice; the rest share one pack rumble. */
+export const MAX_BOT_VOICES = 3;
+
+/** Bot engine loudness from its distance (m) to the nearest human kart: full up close, fading with distance. */
+export function botEngineGain(dist: number | undefined): number {
+  if (dist === undefined) return BOT_ENGINE_GAIN;
+  return BOT_ENGINE_GAIN / (1 + Math.max(0, dist) / 20);
+}
+
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 /** Loose view of the events: only the fields the mapper reads (so tests can pass plain objects). */
@@ -217,6 +228,8 @@ export interface KartAudioState {
   rolling: boolean;
   /** -1 (left of screen) .. 1 (right): a gentle stereo position. */
   pan: number;
+  /** Bots: distance (m) to the nearest human kart (decides who gets an engine voice). Missing = unknown. */
+  dist?: number;
 }
 
 export interface EngineParams {
@@ -258,4 +271,30 @@ export function squealParams(drift: number, speed: number): { gain: number; freq
 /** Stereo position for a viewport rectangle in 0..1 screen space (centre of the rect, softened). */
 export function panForRect(rect: { x: number; w: number }, screenW = 1): number {
   return ((rect.x + rect.w / 2) / screenW - 0.5) * 0.5;
+}
+
+// --- Which karts get an engine voice ----------------------------------------
+
+export type VoiceKind = 'full' | 'lite' | 'pack';
+
+/**
+ * Decide each kart's engine voice: humans get a full voice, the `maxLite` bots nearest to a human get a lite
+ * voice, every other bot is part of the shared pack rumble. `current` = last decision (slot -> kind): a bot that
+ * already has a lite voice counts as 30% closer, so voices do not flip back and forth when two bots are level.
+ * Pure function, so it can be unit-tested.
+ */
+export function planVoices(
+  karts: Pick<KartAudioState, 'slot' | 'human' | 'dist'>[],
+  current: ReadonlyMap<number, VoiceKind>,
+  maxLite = MAX_BOT_VOICES,
+): Map<number, VoiceKind> {
+  const plan = new Map<number, VoiceKind>();
+  const bots: { slot: number; score: number }[] = [];
+  for (const k of karts) {
+    if (k.human) plan.set(k.slot, 'full');
+    else bots.push({ slot: k.slot, score: (k.dist ?? 1e6) * (current.get(k.slot) === 'lite' ? 0.7 : 1) });
+  }
+  bots.sort((a, b) => a.score - b.score || a.slot - b.slot);
+  bots.forEach((b, i) => plan.set(b.slot, i < maxLite ? 'lite' : 'pack'));
+  return plan;
 }

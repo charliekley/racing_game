@@ -647,6 +647,9 @@ export class Game {
         st.silent = !!k.flight || k.respawnTime > 0;
         st.rolling = (items.states.get(slot)?.roulette ?? 0) > 0;
         st.pan = isView ? panForRect(this.views[i].rect) : 0;
+        // AUDIO: distance to the nearest person's kart; the audio engine gives only the nearest bots their own engine voice.
+        st.dist = isView ? 0 : Infinity;
+        if (!isView) for (const v of this.views) st.dist = Math.min(st.dist, Math.hypot((this.world.karts.get(v.slot)?.pos.x ?? 0) - k.pos.x, (this.world.karts.get(v.slot)?.pos.z ?? 0) - k.pos.z));
       }
       this.audio.update(dt, states);
     }
