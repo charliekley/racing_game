@@ -492,6 +492,7 @@ function startDriving() {
   // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, storm, rocket, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');
   game.devItem = give === 'random' || (ITEM_IDS as readonly string[]).includes(give ?? '') ? (give as ItemId | 'random') : null;
+  game.seriesRoster = seriesHost.seriesRoster(); // Grand Prix: the same bots (and skill tiers) every race
   game.start(players.slots.players.map((p) => p.index));
   seriesHost.refresh(); // phones learn the series state ('racing')
 }

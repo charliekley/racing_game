@@ -356,6 +356,15 @@ export class SeriesHost {
     this.startNext();
   }
 
+  /**
+   * The fill-in bots of the series so far, to be reused by the next race (Grand Prix / Loser picks only; null before the
+   * first race is done, in single races and Knockout). Keeps every bot's character, name and skill tier for the whole series.
+   */
+  seriesRoster(): ReadonlyMap<number, BotEntry> | null {
+    const s = this.series;
+    return s && s.scoring && s.racesDone > 0 && this.roster.size > 0 ? this.roster : null;
+  }
+
   /** Start the next race of the series (everybody is ready, the clock ran out, or Enter). */
   private startNext(): void {
     const s = this.series;
