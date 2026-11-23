@@ -437,6 +437,67 @@ function scan(samples: TrackSample[], closed: boolean, route: number, x: number,
   return best;
 }
 
+/**
+ * Smooth "how far along the road am I" (u = 0..1 along segment i).
+ *
+ * The road is a chain of straight 2 m segments. Projecting a point onto the NEAREST segment gives a fraction u that
+ * is not continuous where one segment hands over to the next: on the inside of a bend neighbouring segments overlap
+ * (u, and with it the interpolated road height, jumps forward), on the outside there is a wedge-shaped gap (u sticks
+ * at 0 or 1, the height stalls). A kart climbing a 22 % spiral at 26 m/s sees that as a tiny vertical-speed
+ * step at every segment joint (about 13 per second) -> "driving up stairs".
+ *
+ * Fix: cut the road at every sample with a plane perpendicular to the (smoothed) tangent there, exactly like the
+ * mitre joint of a picture frame. Both neighbouring segments share that plane, so the fraction is continuous across
+ * the joint. u = distance past plane A / (distance past plane A + distance before plane B).
+ *
+ * Only the interpolated road HEIGHT / bank / width use this fraction; `s`, `d` and the segment index stay those of the
+ * nearest segment (tight hairpins make the mitre fraction a poor basis for them).
+ *
+ * Starting from the nearest segment `i`, tries i, i+1 and i-1 and returns the one whose slab contains the point.
+ * `n` samples; `closed` = the loop wraps around, otherwise segments are 0..n-2.
+ */
+export function mitreSegment(S: TrackSample[], closed: boolean, i: number, x: number, z: number): { i: number; u: number } | null {
+  const n = S.length;
+  const segs = closed ? n : n - 1;
+  for (const o of [0, 1, -1]) {
+    let k = i + o;
+    if (closed) k = ((k % n) + n) % n;
+    else if (k < 0 || k >= segs) continue;
+    const a = S[k];
+    const b = S[(k + 1) % n];
+    const dA = (x - a.x) * a.tx + (z - a.z) * a.tz; // how far we are past A's cut plane
+    const dB = (b.x - x) * b.tx + (b.z - z) * b.tz; // how far we are before B's cut plane
+    if (dA >= 0 && dB >= 0 && dA + dB > 1e-9) return { i: k, u: dA / (dA + dB) };
+  }
+  return null;
+}
+
+/**
+ * Interpolated road height, width and bank at a point whose nearest segment is `i` (fraction `u`, lateral offset `d`).
+ * On the road itself (and its kerbs) the smooth mitre fraction is used (see mitreSegment). Further out, towards the
+ * inside of hairpins, the mitre fraction can pick a segment a long way along the road, so it fades out to the plain
+ * nearest-segment interpolation over 3 m; there the road only feeds the soft off-road blend.
+ */
+export function smoothRoad(S: TrackSample[], i: number, u: number, x: number, z: number, d: number): { y: number; width: number; bank: number } {
+  const n = S.length;
+  const a = S[i];
+  const b = S[(i + 1) % n];
+  const plain = { y: a.y + (b.y - a.y) * u, width: a.width + (b.width - a.width) * u, bank: a.bank + (b.bank - a.bank) * u };
+  const m = mitreSegment(S, true, i, x, z);
+  if (!m) return plain;
+  const w = Math.max(0, Math.min(1, 1 - (Math.abs(d) - (plain.width / 2 + CURB_WIDTH)) / 3));
+  if (w === 0) return plain;
+  const ma = S[m.i];
+  const mb = S[(m.i + 1) % n];
+  const um = Math.min(1, Math.max(0, m.u));
+  const lerp = (p: number, q: number) => p + (q - p) * w;
+  return {
+    y: lerp(plain.y, ma.y + (mb.y - ma.y) * um),
+    width: lerp(plain.width, ma.width + (mb.width - ma.width) * um),
+    bank: lerp(plain.bank, ma.bank + (mb.bank - ma.bank) * um),
+  };
+}
+
 /** Turn the winning hit into a Projection (interpolated centerline data + the MAPPED distance s). */
 function toProjection(track: Track, hit: Hit, x: number, z: number): Projection {
   const branch = hit.route > 0 ? track.branches[hit.route - 1] : null;
@@ -450,16 +511,12 @@ function toProjection(track: Track, hit: Hit, x: number, z: number): Projection 
   const rz = a.rz + (b.rz - a.rz) * u;
   const rl = Math.hypot(rx, rz) || 1;
   const s = branch ? branch.mapS((hit.i + u) * branch.spacing) : (a.s + track.spacing * u) % track.length;
-  return {
-    i: hit.i,
-    route: hit.route,
-    index: hit.route * ROUTE_STRIDE + hit.i,
-    s,
-    d: ((x - cx) * rx + (z - cz) * rz) / rl,
-    y: a.y + (b.y - a.y) * u,
-    width: a.width + (b.width - a.width) * u,
-    bank: a.bank + (b.bank - a.bank) * u,
-  };
+  const d = ((x - cx) * rx + (z - cz) * rz) / rl;
+  // Main road: smooth height (see smoothRoad). Branches take their height from the terrain, so plain interpolation is fine.
+  const road = branch
+    ? { y: a.y + (b.y - a.y) * u, width: a.width + (b.width - a.width) * u, bank: a.bank + (b.bank - a.bank) * u }
+    : smoothRoad(S, hit.i, u, x, z, d);
+  return { i: hit.i, route: hit.route, index: hit.route * ROUTE_STRIDE + hit.i, s, d, ...road };
 }
 
 /** Circular distance between two main sample indices. */

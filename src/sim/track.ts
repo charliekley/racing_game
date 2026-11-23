@@ -14,7 +14,7 @@ import type { ItemBox } from './items/types';
 import { RoadField, Terrain, TERRAIN_BLEND, TERRAIN_SKIRT, type RoadHit } from './terrain';
 import { CANNON, resolveCannons, type ResolvedCannon } from './cannon';
 import { branchRoute, mainRoute, type RouteLine } from './routes';
-import { buildBranches, projectOnMain, projectWithBranches, sampleAhead, ROUTE_STRIDE, type Branch } from './shortcuts';
+import { buildBranches, projectOnMain, smoothRoad, projectWithBranches, sampleAhead, ROUTE_STRIDE, type Branch } from './shortcuts';
 import { LANDING_LENGTH, landingHeight, shapeHeight, type RampShape } from './jumps';
 
 /** Distance between centerline samples (m). */
@@ -425,16 +425,9 @@ export class Track implements Ground {
     const rx = a.rx + (b.rx - a.rx) * bu;
     const rz = a.rz + (b.rz - a.rz) * bu;
     const rl = Math.hypot(rx, rz) || 1;
-    return {
-      i: bi,
-      route: 0,
-      index: bi,
-      s: (a.s + this.spacing * bu) % this.length,
-      d: ((x - cx) * rx + (z - cz) * rz) / rl,
-      y: a.y + (b.y - a.y) * bu,
-      width: a.width + (b.width - a.width) * bu,
-      bank: a.bank + (b.bank - a.bank) * bu,
-    };
+    const d = ((x - cx) * rx + (z - cz) * rz) / rl;
+    // Height, width and bank use the smooth (mitre-joint) fraction, see smoothRoad.
+    return { i: bi, route: 0, index: bi, s: (a.s + this.spacing * bu) % this.length, d, ...smoothRoad(S, bi, bu, x, z, d) };
   }
 
   /** Extra height from banking at lateral offset d (the low edge stays at the base height). */

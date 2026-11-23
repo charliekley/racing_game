@@ -339,7 +339,13 @@ export function stepKart(k: KartState, input: ControlInput, ground: Ground, dt: 
   if (k.grounded && pressed & Buttons.DRIFT && k.speed > 2) {
     k.grounded = false;
     k.hopping = true;
-    k.vel.y = c.hopSpeed;
+    // The hop is measured RELATIVE TO THE GROUND. While grounded, vel.y is the slope's vertical speed
+    // (slope x speed, e.g. -8.8 m/s on a 34 % descent at 26 m/s). If we simply set vel.y = hopSpeed the kart would
+    // leave the road at +4.2 m/s while the road drops away at -8.8 m/s: in the ground's frame it launches at
+    // 13 m/s and flies 4x as high and 3x as long as on flat ground. Adding the hop on top of the slope's own
+    // vertical speed keeps the kart's path parallel to the road, so the arc above the ground is the same
+    // (hopSpeed up, gravity down) on flat ground, uphill and downhill.
+    k.vel.y = clamp(k.vel.y, -30, 30) + c.hopSpeed;
     events.push({ kind: 'hop' });
   }
 
