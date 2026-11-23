@@ -76,7 +76,7 @@ const trunkColor = (pal: Palette, tint = 1): ColorFn => (p, n) => {
 // Broadleaf (clustered canopy blobs on a tapered, leaning trunk)
 // ---------------------------------------------------------------------------
 
-function broadleaf(v: number, d: Detail, pal: Palette, style: Style): THREE.BufferGeometry {
+function broadleaf(v: number, d: Detail, pal: Palette, _style: Style): THREE.BufferGeometry {
   const rnd = seededRandom(1000 + v * 37);
   const seg = d ? 9 : 5;
   const trunkH = 2.4 + rnd() * 0.7;
@@ -92,7 +92,7 @@ function broadleaf(v: number, d: Detail, pal: Palette, style: Style): THREE.Buff
   const cy = trunkH + 1.0;
   const R = 1.55 + rnd() * 0.25;
   const blobDetail = d ? 3 : 1;
-  const crown = crownColor(pal, lean, cy, 0, R * 1.5, style === 'autumn');
+  const crown = crownColor(pal, lean, cy, 0, R * 1.5, false); // (the 'autumn' style is Autumn Speedway's: no frost on the leaves)
   const swayFn = (p: THREE.Vector3) => THREE.MathUtils.clamp((p.y - 2) * 0.16, 0, 1);
   const add = (x: number, y: number, z: number, r: number, sy: number, seed: number, dd = blobDetail) => {
     const g = blobGeo(dd, seed + v * 11, 0.16, 1.4, noise3);
@@ -174,14 +174,14 @@ function pine(v: number, d: Detail, pal: Palette): THREE.BufferGeometry {
 // Poplar / cypress: a tall slender column of stacked lumps
 // ---------------------------------------------------------------------------
 
-function column(v: number, d: Detail, pal: Palette, style: Style): THREE.BufferGeometry {
+function column(v: number, d: Detail, pal: Palette, _style: Style): THREE.BufferGeometry {
   const rnd = seededRandom(3000 + v * 29);
   const trunk = tubeGeo([new THREE.Vector3(0, -0.4, 0), new THREE.Vector3(0, 1.2, 0), new THREE.Vector3(0, 2.2, 0)], [0.5, 0.3, 0.2], d ? 7 : 5);
   paint(trunk, trunkColor(pal));
   const parts = [trunk];
   const lumps = d ? 6 : 3;
   const H = 6.2 + rnd();
-  const crown = crownColor(pal, 0, 4.0, 0, 3.4, style === 'autumn');
+  const crown = crownColor(pal, 0, 4.0, 0, 3.4, false);
   for (let k = 0; k < lumps; k++) {
     const t = k / (lumps - 1);
     const r = (0.62 + 0.45 * Math.sin(Math.PI * (0.15 + 0.8 * t))) * (0.9 + rnd() * 0.2);

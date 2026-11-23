@@ -85,5 +85,19 @@ export interface RollerDef extends HazardBase {
   radius?: number;
 }
 
-export type HazardDef = GeyserDef | DrawbridgeDef | GustDef | RollerDef;
+/**
+ * Autumn Speedway: a big acorn beetle that marches back and forth across the road (and out over the verges)
+ * at `at`, one crossing every `period / 2` seconds. Bumping into it bounces your kart back hard, but it does
+ * not spin you out. It is always there (no warning phase): you see it coming and time your line.
+ */
+export interface BeetleDef extends HazardBase {
+  kind: 'beetle';
+  at: number;
+  /** How far (m) from the road centre it walks to either side. Default: road half width + 4. */
+  span?: number;
+  /** Body radius (m, default 1.7). */
+  radius?: number;
+}
+
+export type HazardDef = GeyserDef | DrawbridgeDef | GustDef | RollerDef | BeetleDef;
 export type HazardKind = HazardDef['kind'];

@@ -31,7 +31,9 @@ export function bridgePiers(track: Track): BridgePier[] {
   const half = hw + CURB_WIDTH;
   const n = track.samples.length;
   const every = Math.max(1, Math.round(PILLAR_SPACING / track.spacing));
-  for (const b of track.bridges) {
+  track.bridges.forEach((b, bi) => {
+    // A rope bridge (treetop tracks) hangs between two trees: it has no piers at all.
+    if (track.def.bridges?.[bi]?.look === 'rope') return;
     const len = (((b.s1 - b.s0) % track.length) + track.length) % track.length;
     const i0 = Math.floor(b.s0 / track.spacing);
     const count = Math.ceil(len / track.spacing) + 1;
@@ -45,7 +47,7 @@ export function bridgePiers(track: Track): BridgePier[] {
     };
     for (let k = 0; k < count; k += every) at(k, k === 0);
     at(count - 1, true);
-  }
+  });
   return out;
 }
 

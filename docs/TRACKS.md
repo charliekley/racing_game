@@ -236,3 +236,83 @@ export type HazardEvent =
 * Layout rules (`layoutStats.ts`) leave the sky gap out of straights, curved share, turning and tight corners (length still counts it).
 * **Ember Peaks**: the road ends at a pad on the south rim; 173 m of air (flight 4.4 s, apex 16 m) over the crater (deepened to -62 m, lava lake about 35 m below) to the north rim. The rim ridge is gone; cliffs now line the far-rim sweep, geysers moved to the far slope. Hairpin 2 was moved east (shorter climb) so slow classes still finish within the 20 s grace now that everybody uses the cannon. 1.7 km, 75 % curved.
 * **Cloud Garden**: island D ends at a pad; 177 m of sky (flight 4.6 s) to island E. The old second void jump and bridge-3 numbers moved (bridge 3 is now points 78 to 83). Tests: `src/sim/mandatoryCannon.test.ts`.
+
+## Autumn Speedway (5th track, the showcase): what is implemented
+
+An original **treetop course**: wooden branch roads and plank walkways through a forest of giant autumn trees,
+a rope bridge, a spiral round the biggest trunk, a jump between two crowns and one long steep plunge back to
+the forest floor. 3 laps, about 1.95 km, laps take about the same time as the other tracks (bots: hard ~65 s,
+normal ~69 s, easy ~79 s). Lobby index 4 (`?track=4`), 5th race of the Grand Prix.
+
+### Layout (`src/track/tracks/autumnSpeedway.ts`, north = +z)
+
+| # | Section | Height | What happens |
+|---|---|---|---|
+| 1 | Mossy Hollow | 3-5 m | start on the floor, S-bends, an acorn beetle |
+| 2 | Root Ramp | 5 -> 28 m | S-shaped climb onto the first branch (~15 %) |
+| 3 | Branch road | 28-31 m | winding plank road, the ROPE BRIDGE (sags, no rails, three springy rope humps to trick off), a tight hairpin round the Lantern Oak (lanterns), an S-bend west |
+| 4 | The Spiral | 28 -> 92 m | 1.25 turns clockwise round the Great Trunk (radius 38 m), 21-22 % all the way up (25 % at the entry) |
+| 5 | Crown deck + jump | 92 m | boost pad, kicker, 12 m void gap to the neighbouring crown |
+| 6 | The Plunge | 86 -> 10 m | a crest, then one long branch dropping ~76 m at up to ~33 % |
+| 7 | Acorn Hollow | 3-9 m | S-bends on the floor, two acorn beetles, the ROOT RIDGE SHORTCUT |
+
+The spiral and the hairpin are exact circle arcs (`arc()` helper); important points are named (`at('spiral')`).
+Everything above the floor is a `bridge` (natural forest floor underneath; fall off = respawn by the usual rule).
+Walls (wooden guard rails) line the high road except the rope bridge. The spiral's turns pass over each other
+40+ m apart (the >= 7 m rule).
+
+### Slopes
+
+`layoutStats()` now also reports `maxClimb`, `maxDrop` (steepest grade over 10 m, ramps excluded), `meanGrade`
+and `steepShare` (share of the lap steeper than 8 %).
+
+| Track | max climb | max drop | mean grade | share > 8 % |
+|---|---|---|---|---|
+| Ember Peaks | 19.5 % (the short ramp up to the cannon pad) | 8.7 % | 3.4 % | 7 % |
+| Dockside Loop | 5.4 % | 6.0 % | 1.5 % | 0 % |
+| Cloud Garden | 4.2 % | 4.8 % | 1.9 % | 0 % |
+| Switchback Summit | 7.2 % | 8.9 % | 4.4 % | 3 % |
+| **Autumn Speedway** | **~25 %** (spiral) | **~34 %** (plunge) | **~10 %** | **~39 %** |
+
+Why this is fine for the physics: slopes do not change kart speed in this game (no gravity along the road), the
+ground snap (`KART.groundSnap` 0.35 m per tick) keeps a kart on a 34 % drop even at boost speed (37 m/s moves
+0.62 m per tick, so it drops 0.21 m per tick), and the hump at the top of the plunge is the only place that
+launches karts (crest rule). Bots finish every difficulty with no falls; the chase camera keeps its clearance
+(`groundAt`). Steeper than ~40 % would start to throw karts off convex bends at boost speed.
+
+### Set pieces and data added for it (all optional, other tracks unchanged)
+
+* `scenery.treetop` (`TreetopDef`, `types.ts`): `giantTrees` (`GiantTreeDef`: x, z, radius, height, crown,
+  `lanterns`), `forest` (count + seed: extra giants scattered by the planner, clear of every road), `leafPiles`.
+  Giant trunks are SOLID: `planScenery` adds a circle collider (radius, full height) and reserves the ground.
+* `BridgeDef.look: 'rope'`: drawn as a rope bridge (posts, sagging ropes, hangers) and it has NO piers
+  (`sim/bridgePillars.ts` skips it: what you see is what you hit).
+* New hazard kind **`beetle`** (`sim/hazards/beetle.ts`, `render/hazards/beetleView.ts`, test `beetle.test.ts`):
+  an original "acorn beetle" (glossy chestnut body, scaly acorn-cap shell with a stalk, big eyes, curly antennae)
+  marches back and forth across the road, `lat = span * sin(2 pi t / period)` (pure function of the race clock).
+  Touching it bounces the kart back hard (inward velocity reversed + a shove), NO spin-out; Nova drives through;
+  bots read `danger()`. Three beetles, period 9 s, staggered. It has no sound of its own yet (audio mapping
+  falls back to the generic hazard hit).
+* **Root ridge shortcut**: a 6 m wide dirt path along a narrow terrain ridge (a chain of small steep mounds in
+  `terrain.features`, hollows either side) across Acorn Hollow; 0.69 x the road it skips (dirt is 0.72 x speed,
+  so it pays off with a boost, and it is risky: the ground drops 4-11 m within 6 m of the path; fall and you
+  respawn). Bark roots line both edges (`buildShortcutRoots`).
+* Rendering (`src/render/env/treetop.ts`): giant trees (bark lathe with ridges and moss, roots, limbs and lumpy
+  crowns in red/orange/gold, kept out of the road space by `RoadSpace`), branch logs under the plank roads,
+  trunk brackets where a road hugs a trunk, rope bridges, lanterns, leaf piles, root curbs, falling leaves (one
+  instanced draw call animated in the vertex shader by `ENV_TIME`; a third of them on Low), the plank road
+  texture, and the hazy forest backdrop (`forestBackdropGeo`, used by `scenery.ts` instead of mountains).
+  `trackView.ts` / `terrainView.ts` / `rampView.ts` switch to wood only when `scenery.treetop` is set: plank road,
+  wooden edge beams instead of kerbs, plank parapets with log posts instead of jersey barriers, log piers, wooden
+  deck sides, plank-built ramps, no rock walls under a gap in a branch road.
+* Lighting: new mood `'autumn'` (`scene.ts`): low golden sun, warm haze, stronger saturation and bloom.
+* Lobby preview card: `trackShot.ts` frames the spiral round the Great Trunk.
+* Map message: very long bridges are thinned to 80 points (`sim/mapData.ts`), so the phone map stays small.
+* Music: its own tune (`audio/songs.ts`, E dorian, 134 bpm).
+
+### Tests
+
+`autumnSpeedway.test.ts`: length, features, steepest track (steeper than every other track), spiral levels
+>= 7 m apart and clear of the trunk, the ridge shortcut is short and really a ridge, bots of every difficulty
+finish 3 laps with fewer than 3 respawns. Plus the generic ones (layout, track, 12-kart grid, bots, maps,
+scenery plan, class balance).

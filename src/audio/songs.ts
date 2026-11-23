@@ -85,6 +85,29 @@ const summit: Song = {
   drums: ['K..hS..hK.hhS..h', 'K..hS.hhK..hS.oh'],
 };
 
+/** Autumn Speedway (treetops): E dorian, bouncy and warm, with a woody pluck arpeggio. */
+const autumn: Song = {
+  bpm: 134,
+  scale: 'dorian',
+  bassRoot: 40,
+  leadRoot: 64,
+  swing: 0.22,
+  leadWave: 'triangle',
+  bass: {
+    grid: 2,
+    bars: ['0 . 4 0 . 4 0 .', '3 . 7 3 . 7 3 .', '5 . 9 5 . 4 . 2', '4 . 4 . 1 . 2 .'],
+  },
+  lead: {
+    grid: 2,
+    bars: ['4 . 5 7 . 5 4 .', '2 . 4 5 4 - . .', '7 . 8 7 5 . 4 5', '4 - 2 - 1 - . .'],
+  },
+  arp: {
+    grid: 1,
+    bars: ['0 4 7 4 0 4 7 4 3 7 9 7 3 7 9 7', '5 9 11 9 5 9 11 9 4 7 9 7 4 7 9 7'],
+  },
+  drums: ['K..hS.hhK.h.S.ho', 'K..hS.hkK.h.S.oh'],
+};
+
 /** Lobby: C major, relaxed and friendly. */
 const lobby: Song = {
   bpm: 96,
@@ -123,9 +146,9 @@ const results: Song = {
   drums: ['k...h...s...h...'],
 };
 
-export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit';
+export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn';
 
-export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit };
+export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn };
 
 /** Track name (from src/track) -> its tune. Unknown (dev) tracks get a default by index. */
 const BY_TRACK_NAME: Record<string, MusicId> = {
@@ -133,8 +156,9 @@ const BY_TRACK_NAME: Record<string, MusicId> = {
   'Dockside Loop': 'dockside',
   'Cloud Garden': 'cloud',
   'Switchback Summit': 'summit',
+  'Autumn Speedway': 'autumn',
 };
-const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit'];
+const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn'];
 
 export function musicForTrack(name: string, index = 0): MusicId {
   return BY_TRACK_NAME[name] ?? RACE_TUNES[Math.abs(index) % RACE_TUNES.length];

@@ -19,6 +19,8 @@ import { fluidMaterial } from './env/fluids';
 import { merge, paint, scratch, tubeGeo } from './env/geo';
 import { FogCuller } from './env/fogCull';
 import { mergeStaticMeshes } from './env/mergeStatic';
+import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, buildLanterns, isTreetop, plankTexture } from './env/treetop';
+import { planScenery } from '../track/sceneryPlan';
 
 interface Edge {
   d: number;
@@ -152,15 +154,22 @@ export class TrackView {
       for (const run of rs) add(ribbon(run, false, edges, vRepeat), mat, shadows);
     };
 
+    // Treetop tracks (Autumn Speedway) swap asphalt, kerbs and concrete barriers for wood (see env/treetop.ts).
+    const treetop = isTreetop(track);
+    const planks = treetop ? plankTexture() : null;
+
     // Road: the asphalt texture carries the lane markings (edge lines, dashed centre line).
     const asphalt = asphaltMaps();
-    const roadMat = new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
+    const roadMat = planks
+      ? new THREE.MeshStandardMaterial({ map: planks, roughness: 0.82, metalness: 0 })
+      : new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
     alongTrack((p) => [{ d: -hw, h: lift(p, -hw) + 0.02 }, { d: 0, h: lift(p, 0) + 0.02 }, { d: hw, h: lift(p, hw) + 0.02 }], 12, roadMat);
 
     // Rounded raised kerbs with red/white stone bands.
     const kerb = kerbMaps();
     for (const t of [kerb.map, kerb.normalMap, kerb.roughnessMap]) t.repeat.set(1, 1);
-    const kerbMat = new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
+    // (Treetop: a plain dark wooden edge beam instead of the red/white kerb stones.)
+    const kerbMat = treetop ? new THREE.MeshStandardMaterial({ color: '#5a3820', roughness: 0.9 }) : new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
     for (const side of [-1, 1]) {
       alongTrack(
         (p) => {
@@ -244,8 +253,15 @@ export class TrackView {
     // Barriers: smooth jersey walls at the outer edge of the off-road, with posts and a rail on top.
     const barrier = kerbMaps();
     for (const t of [barrier.map, barrier.normalMap, barrier.roughnessMap]) t.repeat.set(1, 1);
-    const barrierMat = new THREE.MeshStandardMaterial({ ...barrier, roughness: 1, side: THREE.DoubleSide });
-    const steel = new THREE.Color('#d6dae0');
+    // (Treetop: a wooden parapet of upright boards, with log posts and a log rail on top.)
+    let barrierMat = new THREE.MeshStandardMaterial({ ...barrier, roughness: 1, side: THREE.DoubleSide });
+    if (treetop) {
+      const boards = plankTexture();
+      boards.rotation = Math.PI / 2; // boards stand upright along the wall
+      boards.repeat.set(0.25, 1);
+      barrierMat = new THREE.MeshStandardMaterial({ map: boards, color: '#d8b48c', roughness: 0.9, side: THREE.DoubleSide });
+    }
+    const steel = new THREE.Color(treetop ? '#6a4428' : '#d6dae0');
     const posts: THREE.BufferGeometry[] = [];
     for (const side of [-1, 1]) {
       const has = (p: TrackSample) => (side < 0 ? p.wallLeft : p.wallRight);
@@ -270,7 +286,7 @@ export class TrackView {
     if (posts.length) {
       const metal = metalMaps();
       void metal;
-      const pm = new THREE.Mesh(merge(posts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.6 }));
+      const pm = new THREE.Mesh(merge(posts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: treetop ? 0.9 : 0.4, metalness: treetop ? 0 : 0.6 }));
       pm.castShadow = true;
       this.group.add(pm);
     }
@@ -332,6 +348,12 @@ export class TrackView {
     this.group.add(buildBranchViews(track, strip));
 
     const scenery = buildScenery(track);
+    if (treetop) {
+      // Giant trees go into the scenery group so the fog culler can skip the ones hidden in the haze.
+      for (const o of buildGiantTrees(track, planScenery(track))) scenery.add(o);
+      for (const o of [...buildBranchLogs(track), ...buildRopeBridges(track), ...buildLeafPiles(track), ...buildShortcutRoots(track), ...buildTrunkBrackets(track, planScenery(track)), ...buildLanterns(planScenery(track))]) this.group.add(o);
+      this.group.add(buildFallingLeaves(track));
+    }
     this.group.add(scenery);
     this.sceneryCull = new FogCuller(scenery);
 
