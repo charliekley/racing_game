@@ -9,8 +9,7 @@ web page. There's no app to install. All names, art and sounds are original.
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
 > each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
-> start, 3 laps on one of six tracks, results and "race again". Computer drivers can
-> fill empty slots. Audio and polish arrive in M7.
+> start, 3 laps on one of six tracks and results. Computer drivers fill the grid up to 4, 8 or 12 karts. Audio and polish arrive in M7.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -22,7 +21,7 @@ web page. There's no app to install. All names, art and sounds are original.
 All audio is generated in code with the Web Audio API (no sound files). It lives in `src/audio/`:
 engine loops per kart, about 35 one-shot effects, a looping tune per track (plus lobby and results),
 and a master limiter so four karts never clip. Browsers only allow sound after you interact, so it
-starts on your first key press, click or gamepad button.
+starts on your first key press or click.
 
 * **M** mutes (remembered on this computer), **[** and **]** lower/raise the music volume.
 * Which sound plays for which game event: `src/audio/mapping.ts`. The sounds themselves: `synth.ts`.
@@ -200,49 +199,30 @@ the orange arrow pads for a boost and take the yellow ramp for some air.
 
 ### Race modes
 
-The first player's phone (P1, or the next player if P1 leaves) gets a **forced pop-up** when it joins and every time the game returns to the menu: pick the mode, then the track (Grand Prix needs none). It has no close button; it goes away when the choice is made, when the host keyboard / TV picks a mode or track instead, or when someone else becomes the menu owner (who then gets it). Other phones say "<name> is choosing...", and phones' READY does not start the race meanwhile (the host keyboard still can). In Loser picks the last-place player gets the same pop-up for the track. Track cards are small pictures of the real 3D course (`src/render/trackShot.ts`, rendered one at a time in the background and cached, about 4-6 KB each); the TV lobby shows the same picture.
+The first player's phone (P1, or the next player if P1 leaves) gets a **forced pop-up** when it joins and every time the game returns to the menu: pick the mode, then the track (Grand Prix needs none). It has no close button; it goes away when the choice is made, when the TV (mouse) picks a mode or track instead, or when someone else becomes the menu owner (who then gets it). Other phones say "<name> is choosing...", and phones' READY does not start the race meanwhile (clicking the TV still can). In Loser picks the last-place player gets the same pop-up for the track. Track cards are small pictures of the real 3D course (`src/render/trackShot.ts`, rendered one at a time in the background and cached, about 4-6 KB each); the TV lobby shows the same picture.
 
-**Finishing a race** (every mode except Knockout): everyone keeps racing until the second-to-last kart crosses the line; the last kart is then placed last automatically (DNF). Safety net: if nobody finishes for 45 s (`STRAGGLER_TIMEOUT_SECONDS` in `src/sim/race.ts`), the karts still racing are placed by distance.
+**Finishing a race**: everyone keeps racing until the second-to-last kart crosses the line; the last kart is then placed last automatically (DNF). Safety net: if nobody finishes for 45 s (`STRAGGLER_TIMEOUT_SECONDS` in `src/sim/race.ts`), the karts still racing are placed by distance.
 
 **Points** (Grand Prix and Loser picks; `POINTS_TABLES` in `src/host/series.ts`): every place scores except last. 4 racers **10 / 6 / 3 / 0**, 8 racers **10 / 8 / 6 / 5 / 4 / 2 / 1 / 0**, 12 racers **12 / 10 / 9 / 8 / 7 / 6 / 5 / 4 / 3 / 2 / 1 / 0**. Bots score too and are in the standings. Ties: more wins, then more 2nd places..., then the last race, then slot number.
 
 **Crowns**: 👑N next to a name = race wins this session (any mode, bots included; `src/shared/wins.ts`). Shown on the TV (results, standings, podium, selection quadrants, race HUD) and on the phones. A new room starts everyone at zero.
 
 **After a race** (`src/host/postRace.ts` describes it; clocks in `src/host/postRaceFlow.ts`): the scoreboard flips in (last place first, points count up).
-* **Single race / Knockout**: the top three stand on a 3D podium and are revealed 3rd, 2nd, 1st with their pick animation. Then the TV shows everyone's selection quadrant (turntable + READY / NOT READY). Each phone offers **READY** or **CHANGE CHARACTER**; the race starts again when everyone is ready.
+* **Single race**: the top three stand on a 3D podium and are revealed 3rd, 2nd, 1st with their pick animation. Then everybody goes **back to the lobby**: P1's phone gets the mode / track pop-up again, everybody keeps their driver and kart but is **not ready**: each phone offers **READY** or **CHANGE CHARACTER**, and the TV shows NOT READY until they tap READY. (Same after a Grand Prix or Loser-picks series ends.)
 * **Grand Prix**: all tracks in order; results + standings, then the next race starts by itself after 10 s (no ready step). After the last race: the final standings next to the 3D podium, then back to the menu.
 * **Loser picks**: after each race the last-place *human* picks the next track on their phone while the others choose READY / CHANGE CHARACTER; the race starts when the track is picked and everyone is ready. P1 taps STOP for the final podium.
-* **Knockout**: one longer race (5 laps on these tracks). When the first kart finishes lap 2, 3, ... the kart in last place is knocked out: the carrier drone lifts it away and its view greys out with its final place. With 8 or 12 racers several karts go out per lap (2 / 3, so the race stays at 5 / 6 laps; `knockoutsPerLap` in `src/sim/knockout.ts`). The last kart standing wins; places follow the reverse knockout order and the results list the lap each kart went out on. No points. Rules are pure logic in `src/sim/knockout.ts` (decided from race state, so the sim stays deterministic). `?mode=knockout` picks it from the address.
+* **Knockout** (not offered any more; the dev address `?mode=knockout` still starts it): one longer race (5 laps on these tracks). When the first kart finishes lap 2, 3, ... the kart in last place is knocked out: the carrier drone lifts it away and its view greys out with its final place. With 8 or 12 racers several karts go out per lap (2 / 3, so the race stays at 5 / 6 laps; `knockoutsPerLap` in `src/sim/knockout.ts`). The last kart standing wins; places follow the reverse knockout order and the results list the lap each kart went out on. No points. Rules are pure logic in `src/sim/knockout.ts` (decided from race state, so the sim stays deterministic). 
+### The lobby on the laptop / TV
 
-Without phones, in the lobby: **Left/Right** = track, **Up/Down** = mode, **Enter** = start. In Loser picks the TV shows the track strip: Left/Right + Enter to pick, **S** to stop. `?drive` and `?track=` work as before (a single race); `?mode=gp` or `?mode=loser` picks a mode from the address.
+Everything is mouse-clickable; players only use their phones.
 
-### Keyboard / gamepad on the host (for testing without phones)
+* The **gear button** (top right, with a summary like "4 racers · Normal bots") opens **Settings**: **Racers** (4 / 8 / 12 karts on the grid; bots fill the rest), **Bot difficulty** (Easy / Normal / Hard), **Graphics** (High / Medium / Low, see Performance below) and **Sound** (on / off). All are remembered on this computer (`?racers=12` and `?quality=low` override for testing).
+* Mode and track can be clicked too (the track arrows, the mode pills).
+* The small **X** on a player's quadrant removes that player: their slot frees up, their phone says "Removed from the game" with a **JOIN AGAIN** button, and it does not reconnect by itself.
+* Bots are only fill-ins for the grid (there is no way to add one as a player). They are named after their character ("Pip", "Rex"), preferring characters nobody picked; with more bots than characters a repeat gets a number ("Pip 2"). The same name shows on the HUD, results, standings, podium and phones. Fill-in bots have no screen and get colours nobody else has.
+* Silent development shortcuts: **G** / **Enter** start now, **Q** / **D** / **N** cycle graphics / bot difficulty / racers, **T** and **Left/Right** pick the track, **Up/Down** the mode, **Esc** goes back to the lobby, **`** toggles the debug readouts, **M** mutes.
 
-| | Player "WASD" (press **1** to add) | Player "Arrows" (press **2** to add) | Gamepad (press **A/Start** to join) |
-|---|---|---|---|
-| Steer | A / D | ← / → | Left stick |
-| Gas | W | ↑ | A or RT |
-| Brake | S | ↓ | B or LT |
-| Drift | Space | Right Shift | RB or X |
-| Item | E | Enter | LB or Y |
-| Trick | R | / | D-pad up |
-| *Pre-race:* browse / confirm / back | A,D / E / R | ←,→ / Enter / / | D-pad left,right / A / B |
-
-Press the same number again to remove a keyboard player. **B** adds a computer
-driver (always ready; remove it with its Remove button). **G** starts the race
-right away without waiting for everyone to be ready. **Q** cycles the graphics
-quality (High / Medium / Low – see Performance below). **D** cycles the computer drivers' difficulty (not while someone drives with WASD: D is their browse-right key) (Easy / Normal / Hard; remembered, shown on the BOTS chip). **N** cycles **RACERS** (4 / 8 / 12 karts on the grid; remembered; `?racers=12` overrides it): everyone who is not a person (or a bot added with B) is filled in with computer drivers, so one player races 3 bots by default. Fill-in bots have no screen, get colours nobody else has, and are called CPU 1, CPU 2... **T** picks the track
-(Ember Peaks / Dockside Loop / Cloud Garden / Switchback Summit / Autumn Speedway / Mushroom Valley; remembered, and `?track=5` in the
-URL overrides it). The **`** key toggles
-the debug readouts on the TV.
-In the lobby, **C** / **V** (or **,** / **.** for the arrows player) pick driver / kart (see Characters and karts).
-
-While racing, **Esc** returns to the lobby. On the results screen: **Enter**
-(or everyone tapping READY on their phones) starts another race.
-
-Shortcuts for testing: **`/host/?drive`** skips the lobby and races immediately
-with WASD; **`/host/?drive=4`** does the same with 3 computer drivers, for
-instant 4-way split-screen (`=2`, `=3` work too).
+Shortcuts for testing (these still use the keyboard: **A/D** steer, **W** gas, **S** brake, **Space** drift, **E** item, **R** trick): **`/host/?drive`** skips the lobby and races immediately; **`/host/?drive=4`** adds 3 computer drivers with their own views, for instant 4-way split-screen (`=2`, `=3` work too); `?track=5`, `?mode=gp` / `?mode=loser`, `?racers=12`, `?selectdemo=4` (fake players walking the pick screens).
 
 ### Advanced driving
 
@@ -254,7 +234,7 @@ instant 4-way split-screen (`=2`, `=3` work too).
 * **Perfect start.** Press gas within 0.3 s of GO for a longer rocket start and a PERFECT START! banner;
   within 0.8 s still gives a normal rocket start, and holding it from the beginning floods the engine.
 * **Hit protection.** After a spin-out you cannot be hit again for about 1.6 s, so nobody gets chain-hit.
-* **Bot difficulty** (**D** in the lobby). *Easy* bots skip drifts, shortcuts and cannons, make mistakes and
+* **Bot difficulty** (Settings on the TV). *Easy* bots skip drifts, shortcuts and cannons, make mistakes and
   use items lazily. *Normal* bots drift long corners, do tricks, use items sensibly and take the shortcuts they
   like. *Hard* bots are fast and clean: well-timed rocket starts, drift everything, use every shortcut. Each bot
   drives its character's class (light bots drift eagerly, heavy bots bully), and bots gently rubber-band against
@@ -270,10 +250,9 @@ Before every race each player goes through four full-screen steps (P1's mode / t
    the highlighted one live. **THIS ONE** confirms.
 3. **Kart**: the same for the 4 kart bodies; the stat bars change with the body. **LET'S GO** confirms.
 4. **Ready**: waiting screen that lists who is still choosing. **BACK** changes your picks until the race starts.
-   The race starts when every human is ready (the host keyboard's **G** still force-starts).
+   The race starts when every human is ready.
 
-After a race everyone keeps their picks and lands on Ready; **CHANGE** goes back to the character step.
-Keyboard / gamepad players skip the name step and use the same steps with their keys (table above).
+After a race everyone keeps their picks but is not ready: the phone shows **READY** and **CHANGE CHARACTER** (back to the character step).
 The host checks every step (`PlayerSlots.select`, `parseSelect` in `src/shared/protocol.ts`) and publishes each player's
 stage and highlight to the `SelectionHub` (`src/host/selectionHub.ts`) that the TV display reads.
 
@@ -306,8 +285,8 @@ The TV draws the whole scene once per player each frame, so 4 players means 4
 renders. To keep 60 fps: shadows are computed once per frame and shared,
 all scenery (trees, rocks, houses, grandstands, mountains…) is merged into a
 handful of meshes (about 5 draw calls for the whole landscape), and materials
-are cheap. If the frame rate (top-right in debug mode) drops below 60, press
-**Q** in the lobby: **Medium** (default) renders at 1 pixel per screen pixel
+are cheap. If the frame rate (top-right in debug mode) drops below 60, open Settings and lower Graphics.
+**Medium** (default) renders at 1 pixel per screen pixel
 with shadows and 70% of the grass/flower detail, **Low** turns shadows and
 clouds off, keeps 35% of the ground detail and renders at 75% resolution,
 **High** uses full Retina/4K resolution, sharper shadows and all detail.
@@ -401,11 +380,10 @@ rocks, houses and the distant mountains (see `biomeFor` in
    *that* player's view; the countdown and GO appear in all of them. The view
    glows orange at the edges while that player is boosting, and the camera
    widens its field of view.
-4. Real lobby flow: open `/host/`, have 2–4 phones join (and/or press 1, 2, B).
-   The hint line counts players; when everyone is ready (bots always are) the
-   race starts – or press G to start right away.
+4. Real lobby flow: open `/host/` and have 2–4 phones join.
+   The hint line counts players; when everyone is ready the race starts.
 5. Check the frame rate: press **`** to show the fps counter top-right. With 4
-   views on your laptop it should stay near 60; if not, Esc → Q → Low and
+   views on your laptop it should stay near 60; if not, Esc → Settings → Graphics → Low and
    compare.
 
 ## 9. Milestone 3 test checklist
@@ -452,10 +430,10 @@ rocks, houses and the distant mountains (see `biomeFor` in
 
 1. `npm run dev`, then open `https://localhost:5173/host/` on the laptop. Check that
    the status says **Online** and a room code + QR code appear.
-2. Press **1**. A "Keys WASD" player appears. Hold W/A/D/Space/E and watch the
-   GAS/DRIFT/ITEM pills and the steering bar react. Press **E** to toggle Ready.
-3. Scan the QR code with your iPhone and follow the steps in section 2. The TV
-   should show your name in the next slot within a couple of seconds.
+2. Scan the QR code with your iPhone and follow the steps in section 2. The TV
+   should show your name in the first slot within a couple of seconds. (Click the X on a
+   quadrant to remove a player; the phone shows JOIN AGAIN.)
+3. (Keyboard players no longer exist; use `/host/?drive` to drive with WASD.)
 4. Tilt the phone: the steering bar on the TV and the little wheel on the phone
    should follow smoothly. Center = level wheel. Full bar ≈ 45°.
 5. Press several buttons at once (GAS + DRIFT + ITEM). All three should light on the TV.
@@ -466,7 +444,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 8. Lock the phone for 5 s. The TV shows *Disconnected*. Unlock it and the phone
    reconnects to the **same slot** by itself. Reloading the page and tapping JOIN
    again also gets the same slot back.
-9. Press READY on every phone and the keyboard players. The green
+9. Press READY on every phone. The green
    "Everyone is ready" banner appears.
 
 ---

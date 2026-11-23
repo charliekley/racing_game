@@ -6,7 +6,9 @@ import './controller.css';
 import { CHARACTERS, KART_BODIES } from '../shared/characters';
 import type { SelectStage } from '../shared/selectStage';
 import { drawKartPicture, drawPortrait } from './portrait';
+import { KickedView } from './kickedView';
 import { SelectFlow } from './selectFlow';
+import { SeriesMenu } from './seriesMenu';
 
 const q = new URLSearchParams(location.search);
 const stage = document.getElementById('stage') as HTMLElement;
@@ -53,6 +55,18 @@ if (q.has('sheet')) {
       }),
     );
   }
+} else if (q.has('kicked')) {
+  // ?kicked: the "Removed from the game" screen.
+  const kicked = new KickedView(() => kicked.hide());
+  stage.appendChild(kicked.root);
+  kicked.show();
+} else if (q.has('menu')) {
+  // ?menu: the mode menu (what P1 sees after joining), without track pictures.
+  const menu = new SeriesMenu({ setMode: () => {}, setTrack: () => {}, pick: () => {}, stop: () => {}, finish: () => {} });
+  stage.appendChild(menu.root);
+  const info = { mode: 'single' as const, track: 0, stage: 'menu' as const, owner: 0, picker: null, racesDone: 0, raceTotal: null, standings: [], pending: true };
+  menu.update(info, null, false);
+  menu.sync('setup');
 } else {
   const flow = new SelectFlow({ select: () => {}, settings: () => {} });
   stage.appendChild(flow.root);
@@ -72,7 +86,7 @@ if (q.has('sheet')) {
       btn.textContent = 'READY';
       flow.readySlot.appendChild(btn);
     } else {
-      const names = ['Charlie', 'CPU 1', 'Eli', 'CPU 2', 'Fay', 'CPU 3', 'CPU 4', 'CPU 5', 'CPU 6', 'CPU 7', 'CPU 8', 'CPU 9'];
+      const names = ['Charlie', 'Pip', 'Eli', 'Rex', 'Fay', 'Mochi', 'Bolt', 'Sable 2', 'Bruno', 'Juno', 'Fizz', 'Rex 2'];
       flow.setStandings(names.map((n, i) => ({ rank: i + 1, name: n, wins: i === 0 ? 2 : i === 1 ? 1 : 0, points: 40 - i * 3, me: i === 0 })));
     }
   }

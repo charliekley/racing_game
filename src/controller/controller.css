@@ -477,3 +477,8 @@ body.playing.need-rotate .rotate { display: flex; }
 .sf[data-post='wait'] .sf-ready-title { color: #ffd23f; }
 /* After a single race / Knockout / Loser picks: READY (big) next to CHANGE. */
 .sf[data-post='choose'] .sf-ready-slot .ready-btn { font-size: clamp(18px, 8cqh, 30px); padding: 10px 44px; }
+
+/* ---------- Removed from the game (kickedView.ts) ---------- */
+.overlay.kicked { z-index: 30; background: rgba(10, 12, 30, 0.98); gap: 18px; }
+.kicked-title { font-size: 26px; font-weight: 800; }
+.kicked-btn { margin-top: 0; padding: 14px 32px; }

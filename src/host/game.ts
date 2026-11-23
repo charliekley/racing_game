@@ -9,10 +9,9 @@
  */
 import * as THREE from 'three';
 import { colorHex } from '../shared/colors';
-import { DEFAULT_RACERS, attackToast, fillBotColors, fillBotName, fillBotSlots, isFillBot, slotColor, type RacerCount } from './raceSettings'; // RACERS
+import { DEFAULT_RACERS, attackToast, buildBotRoster, fillBotColors, fillBotSlots, isFillBot, slotColor, type BotEntry, type RacerCount } from './raceSettings'; // RACERS
 import type { ControlInput, HostToController } from '../shared/protocol';
 import { BotPack, DEFAULT_DIFFICULTY, type Difficulty } from '../sim/bots';
-import { botLoadoutFor } from '../sim/classes';
 import { ITEMS, KART, SIM_DT } from '../sim/config';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
 import { FixedStepLoop } from '../sim/loop';
@@ -116,7 +115,7 @@ export interface GameCallbacks {
    * The race just ended: hands over who finished where (every racer, best first). main.ts feeds it to the
    * Grand Prix / Loser-picks series and may return extra results content (points, standings, button labels).
    */
-  onRaceResults?(placings: Placing[], fillColors: ReadonlyMap<number, string>): ResultsExtras | undefined;
+  onRaceResults?(placings: Placing[], fillColors: ReadonlyMap<number, string>, roster: ReadonlyMap<number, BotEntry>): ResultsExtras | undefined;
   /** Adaptive quality: frames stay too slow even at the lowest render scale, so main.ts should drop one preset. */
   onQualityStepDown?(): void;
 }
@@ -152,6 +151,8 @@ export class Game {
   /** RACERS: the fill-in bots of this race (see raceSettings.ts); their colours are picked at the start of every race. */
   private botKarts: BotKart[] = [];
   private fillColors = new Map<number, string>();
+  /** Name + character of every fill-in bot of this race (see buildBotRoster): one source for HUD tags, results and standings. */
+  private botRoster: ReadonlyMap<number, BotEntry> = new Map();
   private loop: FixedStepLoop;
   private elapsed = 0;
   private resultsShown = false;
@@ -433,8 +434,10 @@ export class Game {
       slots.map((s) => colorHex(this.players.slots.slots[s]?.color ?? s)),
       fill,
     );
+    // The fill-in bots are named after their characters, preferring ones no person picked.
+    this.botRoster = buildBotRoster(fill, slots.map((s) => this.players.slots.slots[s]?.loadout.character ?? -1));
     // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
-    const loadouts = new Map(racing.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? (isFillBot(slot) ? botLoadoutFor(slot) : DEFAULT_LOADOUT)] as const));
+    const loadouts = new Map(racing.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? this.botRoster.get(slot)?.loadout ?? DEFAULT_LOADOUT] as const));
     // Knockout: more laps, and the sim runs the elimination rules (sim/knockout.ts).
     const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, racing.length) : this.track.def.laps;
     this.world.startRace(racing, laps, loadouts, { knockout: this.knockout });
@@ -1155,7 +1158,7 @@ export class Game {
   }
 
   private nameOf(slot: number): string {
-    return (this.players.slots.slots[slot]?.name ?? (isFillBot(slot) ? fillBotName(slot) : `P${slot + 1}`)).toUpperCase();
+    return (this.players.slots.slots[slot]?.name ?? (this.botRoster.get(slot)?.name ?? `P${slot + 1}`)).toUpperCase();
   }
 
   /** "HIT NAME!" for the attacker, only when the victim is a person (not a bot): see attackToast in raceSettings.ts. */
@@ -1200,7 +1203,7 @@ export class Game {
       const row: ResultRow = {
         slot,
         place: r.place ?? 0,
-        name: p?.name ?? (isFillBot(slot) ? fillBotName(slot) : `P${slot + 1}`),
+        name: p?.name ?? (this.botRoster.get(slot)?.name ?? `P${slot + 1}`),
         color: slotColor(slot, p?.color, this.fillColors),
         loadoutText: `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`,
         time: this.knockout ? (r.out ? (r.outLap ? `OUT · LAP ${r.outLap}` : 'LEFT') : 'WINNER') : r.finished ? formatTime(r.finishTime!) : 'DNF',
@@ -1217,7 +1220,7 @@ export class Game {
     if (Number.isFinite(fastest)) rows.find((r) => r.best === fastest)!.row.fastest = true;
     // Series hook: places are taken from the ranking order (always unique, even for DNFs).
     const placings: Placing[] = race.standings().map((slot, i) => ({ slot, place: i + 1, human: !this.isBot(slot) }));
-    const extras = this.callbacks.onRaceResults?.(placings, this.fillColors);
+    const extras = this.callbacks.onRaceResults?.(placings, this.fillColors, this.botRoster);
     buildResults(
       this.results,
       rows.map((r) => r.row),

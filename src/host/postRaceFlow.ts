@@ -2,16 +2,18 @@
  * The clock of the screens after a race: PURE LOGIC (no DOM, no network), so it can be unit tested.
  * seriesHost.ts feeds it the time and a few facts every frame and does what it answers.
  *
- * Three kinds of "after a race" (see postRace.ts for the picture):
+ * Four kinds of "after a race" (see postRace.ts for the picture):
  *   'auto'   Grand Prix, not the last race: results + standings, then the next race starts by itself.
- *   'choose' Single race, Knockout, Loser picks (between races): results, then everybody's selection
- *            quadrant; the next race starts when all are ready (and, in Loser picks, the track is chosen).
+ *   'single' Single race (and the hidden Knockout): results with the podium, then back to the lobby, where
+ *            P1 chooses again and everybody has to ready up.
+ *   'choose' Loser picks (between races): results, then everybody's selection
+ *            quadrant; the next race starts when all are ready and the track is chosen.
  *   'final'  Grand Prix last race: results, then the 3D podium, then back to the lobby.
  *            (Loser picks STOP starts straight at the podium.)
  */
 import { FINAL_PODIUM_HOLD_SECONDS, GP_NEXT_RACE_SECONDS, RESULTS_HOLD_SECONDS, SCOREBOARD_REVEAL_SECONDS } from './postRace';
 
-export type PostKind = 'auto' | 'choose' | 'final';
+export type PostKind = 'auto' | 'single' | 'choose' | 'final';
 /** What the TV shows: the results table, everybody's selection quadrant, or the final podium. */
 export type PostStage = 'results' | 'select' | 'podium';
 /** What the host has to do now. 'showSelect' / 'podium' change the TV screen, 'start' starts the next race, 'lobby' leaves the series. */
@@ -46,7 +48,7 @@ export class PostRaceFlow {
 
   /** Seconds until the next race / the podium starts by itself (kinds 'auto' and 'final', results stage); null otherwise. */
   get countdown(): number | null {
-    if (this.stage !== 'results' || this.kind === 'choose') return null;
+    if (this.stage !== 'results' || this.kind === 'choose' || this.kind === 'single') return null;
     return Math.max(0, GP_NEXT_RACE_SECONDS - this.elapsed);
   }
 
@@ -63,6 +65,11 @@ export class PostRaceFlow {
     }
     if (this.kind === 'auto') return this.elapsed >= GP_NEXT_RACE_SECONDS ? 'start' : 'none';
     if (this.kind === 'final') return this.elapsed >= GP_NEXT_RACE_SECONDS ? this.go('podium') : 'none';
+    if (this.kind === 'single') {
+      // The hold starts when the podium reveal is over, then it is back to the lobby.
+      if (!f.revealDone) this.elapsed = 0;
+      return this.elapsed >= RESULTS_HOLD_SECONDS ? 'lobby' : 'none';
+    }
 
     // 'choose': the hold only starts once the podium reveal is over.
     if (this.stage === 'results' && !f.revealDone) this.elapsed = 0;

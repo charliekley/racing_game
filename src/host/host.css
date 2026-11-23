@@ -172,14 +172,6 @@ body.no-debug .debug, body.no-debug .slot-actions { display: none; }
 }
 .hidden { display: none !important; }
 
-.help {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5em 2em;
-  justify-content: center;
-  color: var(--muted);
-  font-size: 13px;
-}
 kbd {
   background: #2b3370;
   border-radius: 4px;

@@ -63,9 +63,7 @@ export class LobbyView {
         ? 'phone'
         : slot.owner.kind === 'keyboard'
           ? `keyboard (${KEY_SCHEMES[slot.owner.scheme].label})`
-          : slot.owner.kind === 'gamepad'
-            ? `gamepad ${slot.owner.index + 1}`
-            : 'computer';
+          : 'computer';
     const stateText = !slot.connected ? 'Disconnected – waiting to rejoin' : slot.ready ? 'READY!' : 'Not ready';
     const stateClass = !slot.connected ? 'gone' : slot.ready ? 'ready' : 'waiting';
 
@@ -93,13 +91,6 @@ export class LobbyView {
     const loadoutEl = el.querySelector('.slot-loadout') as HTMLElement;
     loadoutEl.textContent = `${CHARACTERS[loadout.character].name} · ${KART_BODIES[loadout.kart].name}`;
     loadoutEl.style.cssText = 'font-size:0.85em;opacity:0.8;margin:2px 0 6px';
-    if (slot.owner.kind === 'keyboard' || slot.owner.kind === 'gamepad') {
-      // Local players choose on the TV: left/right browse, item key / pad A confirms, trick key / pad B goes back.
-      const hint = document.createElement('span');
-      hint.textContent = '  (left/right browse, item key = OK, trick key = back)';
-      hint.style.opacity = '0.6';
-      loadoutEl.appendChild(hint);
-    }
 
     const pillsEl = el.querySelector('.pills') as HTMLElement;
     const pills: Record<string, HTMLElement> = {};

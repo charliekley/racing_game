@@ -1,13 +1,15 @@
 /**
  * The RACERS lobby setting: how many karts are on the grid (4, 8 or 12). Everybody who is not a person
- * (or a bot added with B in the lobby) is filled in with computer drivers. Pure logic, no DOM.
+ * is filled in with computer drivers (bots). Pure logic, no DOM.
  *
- * Slots: people and lobby bots keep slots 0..3 (see playerSlots.ts, MAX_PLAYERS). The fill-in bots use slot
+ * Slots: people keep slots 0..3 (see playerSlots.ts, MAX_PLAYERS). The fill-in bots use slot
  * numbers from 4 up (4..11 when 4 people race; with fewer people the numbers simply continue, e.g. 4..13 for
  * 2 people + 10 bots: a slot number is just an id), so they never clash with a player, and `isFillBot(slot)` tells them apart.
  * Fill-in bots have no screen of their own: they are just karts (and far from every camera they use the cheap model).
  */
+import { CHARACTERS, type Loadout } from '../shared/characters';
 import { FIRST_FILL_BOT_SLOT, botColorsFor, colorHex } from '../shared/colors';
+import { botLoadoutFor } from '../sim/classes';
 
 /** The choices of the RACERS chip, in the order the R key cycles through them. */
 export const RACER_COUNTS = [4, 8, 12] as const;
@@ -45,9 +47,36 @@ export function fillBotSlots(entrants: number, racers: number): number[] {
   return Array.from({ length: count }, (_, i) => FILL_BOT_BASE + i);
 }
 
-/** Name shown for a fill-in bot: CPU 1, CPU 2... (the lobby's own bots are called Bot 1...). */
-export function fillBotName(slot: number): string {
-  return `CPU ${slot - FILL_BOT_BASE + 1}`;
+/** A fill-in bot's name and look for one race. */
+export interface BotEntry {
+  name: string;
+  loadout: Loadout;
+}
+
+/**
+ * Who the fill-in bots are: each bot is a CHARACTER and carries that character's name ("Pip", "Rex").
+ *  - Characters no person picked come first, so bots look different from the people (and from each other).
+ *  - With more bots than characters left, the list starts over; a repeat gets a number ("Pip 2", "Pip 3"),
+ *    the first one keeps the plain name.
+ * The same input always gives the same roster. `botSlots` = fillBotSlots(...), `humanCharacters` = the
+ * characters the people picked (indices into CHARACTERS). The karts keep their usual varied bodies (botLoadoutFor).
+ */
+export function buildBotRoster(botSlots: readonly number[], humanCharacters: readonly number[]): Map<number, BotEntry> {
+  const n = CHARACTERS.length;
+  // A fixed, scrambled order of all characters, so the bots are not always the first ones in the list.
+  const scrambled = Array.from({ length: n }, (_, i) => i).sort((a, b) => ((a * 3 + 1) % n) - ((b * 3 + 1) % n) || a - b);
+  const free = scrambled.filter((c) => !humanCharacters.includes(c));
+  const order = [...free, ...scrambled]; // free characters first, then everybody again for the repeats
+  const used = new Map<number, number>(); // character -> how many bots have it so far
+  const roster = new Map<number, BotEntry>();
+  botSlots.forEach((slot, i) => {
+    const character = order[i % order.length];
+    const count = (used.get(character) ?? 0) + 1;
+    used.set(character, count);
+    const base = CHARACTERS[character].name;
+    roster.set(slot, { name: count === 1 ? base : `${base} ${count}`, loadout: { character, kart: botLoadoutFor(slot).kart } });
+  });
+  return roster;
 }
 
 /** Colour of every fill-in bot in a race, given the colours (hex) of the people / lobby bots racing. */

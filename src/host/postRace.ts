@@ -11,9 +11,8 @@
  *    itself after GP_NEXT_RACE_SECONDS. No ready step, no character change.
  *  - Grand Prix last race / Loser picks STOP: results, then the final standings with the 3D podium,
  *    then back to the lobby (players stay locked in at 'ready').
- *  - Single race and Knockout: results with the 3D podium (top three of THAT race), then the TV shows
- *    everyone's selection quadrant (turntable + ready state) while each phone offers CHANGE CHARACTER / READY.
- *    When everyone is ready, the race starts again.
+ *  - Single race (and the hidden Knockout): results with the 3D podium (top three of THAT race), then back to the
+ *    lobby: P1 chooses mode and track again, everybody keeps their driver but has to tap READY again.
  *  - Loser picks between races: results + standings, then the quadrants (like single) plus the track pick
  *    strip; the next race starts when the picker has chosen AND everyone is ready.
  */
@@ -59,14 +58,14 @@ export interface PodiumApi {
 export const SCOREBOARD_REVEAL_SECONDS = 3;
 /** Grand Prix: the standings stay up this long, then the next race starts on its own. */
 export const GP_NEXT_RACE_SECONDS = 10;
-/** Single race / Knockout / Loser picks: results (and podium) stay up this long before the TV switches to the quadrants. */
+/** Single race: results (and podium) stay up this long before the lobby; Loser picks: before the TV switches to the quadrants. */
 export const RESULTS_HOLD_SECONDS = 9;
 /** End of a series: after the podium reveal has finished, wait this long, then back to the lobby. */
 export const FINAL_PODIUM_HOLD_SECONDS = 8;
 
 /**
  * The win-tally key for a racer (see shared/wins.ts). `owner` is the player slot's owner, or undefined for a
- * fill-in bot (slot >= 4, no player entry): those are keyed by slot, which maps 1:1 to their "CPU n" name.
+ * fill-in bot (slot >= 4, no player entry): those are keyed by slot.
  */
 export function winKey(slot: number, owner?: SlotOwner): string {
   if (!owner) return `cpu:${slot}`;
@@ -75,8 +74,6 @@ export function winKey(slot: number, owner?: SlotOwner): string {
       return `phone:${owner.clientId}`;
     case 'keyboard':
       return `kb:${owner.scheme}`;
-    case 'gamepad':
-      return `pad:${owner.index}`;
     case 'bot':
       return `bot:${owner.id}`;
   }

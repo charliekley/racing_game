@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ALL_KART_HEX, KART_COLORS, botColorsFor } from '../shared/colors';
 import { itemWeights } from '../sim/items/odds';
 import { MAX_PLAYERS } from './playerSlots';
-import { FILL_BOT_BASE, attackToast, DEFAULT_RACERS, fillBotSlots, isFillBot, nextRacers, sanitizeRacers } from './raceSettings';
+import { CHARACTERS } from '../shared/characters';
+import { FILL_BOT_BASE, attackToast, buildBotRoster, DEFAULT_RACERS, fillBotSlots, isFillBot, nextRacers, sanitizeRacers } from './raceSettings';
 import { Series, pointsForPlace } from './series';
 
 describe('RACERS setting', () => {
@@ -100,5 +101,35 @@ describe('item odds in a bigger field', () => {
     // Jumble stays out of the front half of any field
     expect(itemWeights(6, 12).jumble).toBe(0);
     expect(itemWeights(7, 12).jumble).toBeGreaterThan(0);
+  });
+});
+
+describe('bot names (characters)', () => {
+  const names = (slots: number[], humans: number[]) => [...buildBotRoster(slots, humans).values()].map((b) => b.name);
+  it('bots carry character names and prefer characters nobody picked', () => {
+    const roster = buildBotRoster(fillBotSlots(1, 4), [3]); // one human (Juno) + 3 bots
+    expect(roster.size).toBe(3);
+    for (const b of roster.values()) {
+      expect(b.name).toBe(CHARACTERS[b.loadout.character].name);
+      expect(b.loadout.character).not.toBe(3);
+      expect(b.name).not.toMatch(/CPU/);
+    }
+  });
+  it('four people and 4 racers need no bots; names are unique while characters last', () => {
+    expect(buildBotRoster(fillBotSlots(4, 4), [0, 1, 2, 3]).size).toBe(0);
+    const n = names(fillBotSlots(1, 8), [3]); // 7 bots, 7 free characters
+    expect(new Set(n).size).toBe(7);
+  });
+  it('with 11 bots (12 racers, 1 person) every name is still unique: repeats get a number', () => {
+    const n = names(fillBotSlots(1, 12), [3]);
+    expect(n).toHaveLength(11);
+    expect(new Set(n).size).toBe(11);
+    // 7 free characters, then the list starts over: the person's own character is used once (plain), the 3 others repeat ("Name 2").
+    expect(n.filter((x) => / 2$/.test(x))).toHaveLength(3);
+    expect(n.filter((x) => /\d$/.test(x))).toHaveLength(3);
+  });
+  it('is deterministic and keeps the usual kart bodies', () => {
+    expect(names(fillBotSlots(2, 12), [0, 5])).toEqual(names(fillBotSlots(2, 12), [0, 5]));
+    expect(buildBotRoster([4], []).get(4)!.loadout.kart).toBeGreaterThanOrEqual(0);
   });
 });

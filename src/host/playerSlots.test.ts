@@ -56,6 +56,34 @@ describe('PlayerSlots', () => {
     expect(s.slots[1]).toBeNull();
   });
 
+  it('resetToLobby keeps picks but un-readies everybody, locked-in players included', () => {
+    const s = new PlayerSlots();
+    s.join(phone('a'), 'A', 0, { character: 5, kart: 1 }, 'kart');
+    s.join(phone('b'), 'B', 1);
+    s.select(0, { stage: 'ready' }); // locked in -> ready
+    expect(s.slots[0]!.ready).toBe(true);
+    s.lockInAll();
+    s.phase = 'results';
+    s.resetToLobby();
+    for (const p of s.players) expect(p.ready).toBe(false);
+    expect(s.slots[0]!.stage).toBe('ready'); // still locked in: the phone shows CHANGE / READY
+    expect(s.slots[0]!.loadout).toEqual({ character: 5, kart: 1 });
+    expect(s.canStart(false)).toBe(false);
+  });
+
+  it('a locked-in player readies up again in the lobby with the READY button', () => {
+    const s = new PlayerSlots();
+    s.join(phone('a'), 'A', 0, undefined, 'ready');
+    expect(s.setPostReady(0, true)).toBe(true);
+    expect(s.canStart(false)).toBe(true);
+    expect(s.setPostReady(0, false)).toBe(true);
+    expect(s.canStart(false)).toBe(false);
+    s.select(0, { stage: 'character' }); // CHANGE: back to picking, no READY button until locked in again
+    expect(s.setPostReady(0, true)).toBe(false);
+    s.phase = 'race';
+    expect(s.setPostReady(0, true)).toBe(false);
+  });
+
   describe('loadouts', () => {
     it('start as the default and are sanitized when given', () => {
       const s = new PlayerSlots();

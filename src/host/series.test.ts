@@ -30,13 +30,12 @@ describe('points table', () => {
 });
 
 describe('modes', () => {
-  it('cycles through all modes both ways', () => {
+  it('cycles through the offered modes (no Knockout) both ways', () => {
     expect(nextMode('single')).toBe('gp');
     expect(nextMode('gp')).toBe('loser');
-    expect(nextMode('loser')).toBe('knockout');
-    expect(nextMode('knockout')).toBe('single');
-    expect(nextMode('single', -1)).toBe('knockout');
-    expect(Object.keys(MODE_NAMES)).toHaveLength(4);
+    expect(nextMode('loser')).toBe('single');
+    expect(nextMode('single', -1)).toBe('loser');
+    expect(Object.keys(MODE_NAMES)).toHaveLength(4); // (the Knockout name stays for the dev URL)
   });
 });
 

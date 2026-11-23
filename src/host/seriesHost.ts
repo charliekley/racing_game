@@ -19,13 +19,12 @@ import {
 } from '../shared/protocol';
 import { sanitizeLoadout, type Loadout } from '../shared/characters';
 import { colorHex } from '../shared/colors';
-import { botLoadoutFor } from '../sim/classes';
 import type { TrackDef } from '../track';
 import type { PlayerManager } from './playerManager';
 import { createPodium } from './podiumView';
 import { GP_NEXT_RACE_SECONDS, type PodiumApi, type PodiumEntry } from './postRace';
 import { PostRaceFlow, type PostKind } from './postRaceFlow';
-import { fillBotName, isFillBot } from './raceSettings';
+import { isFillBot, type BotEntry } from './raceSettings';
 import type { ResultsExtras } from './resultsView';
 import { DEFAULT_MODE, MenuChoice, MODE_NAMES, Series, menuOwner, nextMode, sanitizeMode, type Placing } from './series';
 import { buildPickStrip, buildPodium } from './seriesView';
@@ -87,6 +86,8 @@ export class SeriesHost {
   private pickedTrack: number | null = null;
   /** Colours of the fill-in bots of the last race (the game picks them), so standings use the same ones. */
   private fillColors: ReadonlyMap<number, string> = new Map();
+  /** Names and looks of the fill-in bots of the last race (the game builds the roster), so the results, standings, podium and phones all say the same. */
+  private roster: ReadonlyMap<number, BotEntry> = new Map();
 
   constructor(private readonly d: SeriesHostDeps) {
     this.mode = SeriesHost.loadMode();
@@ -207,25 +208,26 @@ export class SeriesHost {
    * (points, standings, labels). `fillColors` = colours of the fill-in bots (they have no player entry).
    * What happens next depends on the mode (see postRace.ts and postRaceFlow.ts).
    */
-  onRaceResults(placings: Placing[], fillColors: ReadonlyMap<number, string> = new Map()): ResultsExtras | undefined {
+  onRaceResults(placings: Placing[], fillColors: ReadonlyMap<number, string> = new Map(), roster: ReadonlyMap<number, BotEntry> = new Map()): ResultsExtras | undefined {
     const s = this.series;
     if (!s) return undefined;
     this.fillColors = fillColors;
+    this.roster = roster;
     s.recordRace(placings);
     this.tvPick = s.trackIndex;
     this.pickedTrack = null;
-    const kind: PostKind = s.mode === 'gp' ? (s.stage === 'over' ? 'final' : 'auto') : 'choose';
+    // Grand Prix and a single race are look-only (the next race / the podium / the lobby comes by itself); only Loser picks lets phones choose CHANGE or READY.
+    const kind: PostKind = s.mode === 'gp' ? (s.stage === 'over' ? 'final' : 'auto') : s.scoring ? 'choose' : 'single';
     this.post = new PostRaceFlow(kind);
-    // Grand Prix is look-only (the next race / the podium comes by itself); elsewhere phones choose CHANGE or READY.
     this.d.players.slots.postLock = kind !== 'choose';
     this.revealDone = true;
-    // Single race / Knockout: the top three of THIS race on the 3D podium next to the results table.
-    if (kind === 'choose' && !s.scoring) {
+    // Single race: the top three of THIS race on the 3D podium next to the results table.
+    if (kind === 'single') {
       const top = placings.filter((p) => p.place <= 3).sort((a, b) => a.place - b.place);
       void this.showPodium3d(top.map((p) => this.podiumEntry(p.slot, p.place as 1 | 2 | 3, null)), `${MODE_NAMES[s.mode].toUpperCase()} · ${this.raceTrack.name.toUpperCase()}`);
     }
     this.refresh();
-    if (!s.scoring) return undefined; // single race / Knockout: the plain results screen
+    if (!s.scoring) return undefined; // single race: the plain results screen
     const total = s.raceTotal;
     const last = s.stage === 'over';
     return {
@@ -254,7 +256,10 @@ export class SeriesHost {
     const p = this.d.players.slots.slots[slot];
     const wins = this.d.players.winsOfSlot(slot);
     if (p) return { slot, name: p.name, color: colorHex(p.color), loadout: sanitizeLoadout(p.loadout), wins };
-    if (isFillBot(slot)) return { slot, name: fillBotName(slot), color: this.fillColors.get(slot) ?? colorHex(slot), loadout: botLoadoutFor(slot), wins };
+    if (isFillBot(slot)) {
+      const bot = this.roster.get(slot);
+      return { slot, name: bot?.name ?? `Bot ${slot}`, color: this.fillColors.get(slot) ?? colorHex(slot), loadout: sanitizeLoadout(bot?.loadout), wins };
+    }
     return { slot, name: `P${slot + 1}`, color: colorHex(slot), loadout: sanitizeLoadout(undefined), wins }; // (a player who left)
   }
 
@@ -338,14 +343,15 @@ export class SeriesHost {
   }
 
   /**
-   * "Next" pressed (Enter, the TV button): skip the waiting. Grand Prix: the next race / the podium; single race,
-   * Knockout, Loser picks: race again right now (Loser picks: with the TV's highlighted track if none was chosen).
+   * "Next" pressed (Enter, the TV button): skip the waiting. Grand Prix: the next race / the podium; single race:
+   * back to the lobby; Loser picks: race again right now (with the TV's highlighted track if none was chosen).
    */
   next(): void {
     const s = this.series;
     if (!s) return this.d.startRace();
     if (this.podium) return this.d.toLobby();
     if (s.stage === 'over') return this.showPodium();
+    if (!s.scoring) return this.d.toLobby(); // single race: everybody readies up again in the lobby
     if (s.mode === 'loser' && this.pickedTrack === null && this.picker() !== null) this.pickedTrack = this.tvPick;
     this.startNext();
   }
@@ -471,13 +477,14 @@ export class SeriesHost {
       return { mode: this.mode, track: lobbyIdx, stage: 'menu', owner: this.owner(), picker: null, racesDone: 0, raceTotal: this.mode === 'gp' ? this.d.tracks.length : null, standings: [], pending: this.choice.pending };
     }
     const stage = s.stage === 'racing' ? 'racing' : this.podium ? 'over' : 'between';
-    // Everybody who raced scores, the fill-in bots too (phones show them as "CPU n"); their crowns travel here as well.
+    // Everybody who raced scores, the fill-in bots too (phones show them by their character names); their crowns travel here as well.
     const racers = this.racerSlots();
     const standings = s.scoring ? s.standings(racers).flatMap((r) => [r.slot, r.points]) : [];
     const botWins = racers.filter(isFillBot).flatMap((slot) => {
       const w = this.d.players.winsOfSlot(slot);
       return w > 0 ? [slot, w] : [];
     });
+    const botNames = s.scoring ? racers.filter(isFillBot).map((slot) => ({ slot, name: this.racer(slot).name })) : [];
     const picked = stage === 'between' && s.mode === 'loser' && this.pickedTrack !== null;
     return {
       mode: s.mode,
@@ -489,6 +496,7 @@ export class SeriesHost {
       raceTotal: s.raceTotal,
       standings,
       ...(botWins.length ? { wins: botWins } : {}),
+      ...(botNames.length ? { bots: botNames } : {}),
       ...(picked ? { picked: true } : {}),
     };
   }

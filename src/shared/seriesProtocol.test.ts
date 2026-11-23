@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  fillBotLabel,
+  fallbackBotName,
+  parseBotNames,
   isControllerMessage,
   isHostMessage,
   parseSeriesAct,
   parseSeriesInfo,
   parseSetup,
   parseTrackCards,
+  SERIES_MODES,
   sanitizeMode,
   sanitizeTrackIndex,
 } from './protocol';
@@ -16,8 +18,9 @@ const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 describe('mode / track validation', () => {
   it('accepts only the known modes', () => {
     expect(sanitizeMode('gp')).toBe('gp');
-    expect(sanitizeMode('knockout')).toBe('knockout');
+    expect(sanitizeMode('knockout')).toBeNull(); // not offered any more: stored / sent values fall back to the default
     expect(sanitizeMode('Knockout')).toBeNull();
+    expect(SERIES_MODES).toEqual(['single', 'gp', 'loser']);
     expect(sanitizeMode('loser')).toBe('loser');
     expect(sanitizeMode('GP')).toBeNull();
     expect(sanitizeMode(1)).toBeNull();
@@ -33,7 +36,7 @@ describe('mode / track validation', () => {
 
   it('parseSetup keeps valid fields and drops bad ones', () => {
     expect(parseSetup({ t: 'setup', mode: 'gp', track: 2 }, 4)).toEqual({ mode: 'gp', track: 2 });
-    expect(parseSetup({ t: 'setup', mode: 'knockout', track: 1 }, 4)).toEqual({ mode: 'knockout', track: 1 });
+    expect(parseSetup({ t: 'setup', mode: 'knockout', track: 1 }, 4)).toEqual({ track: 1 }); // a phone cannot start Knockout
     expect(parseSetup({ t: 'setup', mode: 'gp', track: 99 }, 4)).toEqual({ mode: 'gp' });
     expect(parseSetup({ t: 'setup', track: 1 }, 4)).toEqual({ track: 1 });
     expect(parseSetup({ t: 'setup', mode: 'x', track: -1 }, 4)).toBeNull();
@@ -120,8 +123,23 @@ describe('standings with fill-in bots, crowns and the picked flag', () => {
     expect(parseSeriesInfo({ ...good, picked: 'yes' }, 4)).toBeNull();
     expect(parseSeriesInfo(good, 4)?.wins).toBeUndefined();
   });
-  it('names fill-in bots CPU n', () => {
-    expect(fillBotLabel(4)).toBe('CPU 1');
-    expect(fillBotLabel(11)).toBe('CPU 8');
+  it('carries the fill-in bots\' names, cleaned and validated', () => {
+    const ok = parseSeriesInfo({ ...good, bots: [{ slot: 4, name: 'Pip' }, { slot: 5, name: 'Rex 2' }] }, 4);
+    expect(ok?.bots).toEqual([{ slot: 4, name: 'Pip' }, { slot: 5, name: 'Rex 2' }]);
+    expect(parseSeriesInfo(good, 4)?.bots).toBeUndefined();
+    expect(parseSeriesInfo({ ...good, bots: [{ slot: 2, name: 'Pip' }] }, 4)).toBeNull(); // a player's slot is not a bot
+    expect(parseSeriesInfo({ ...good, bots: [{ slot: 4, name: 7 }] }, 4)).toBeNull();
+    expect(parseSeriesInfo({ ...good, bots: 'Pip' }, 4)).toBeNull();
+    expect(parseBotNames([{ slot: 4, name: '  Pip\u0000  ' }])).toEqual([{ slot: 4, name: 'Pip' }]);
+    expect(parseBotNames(Array.from({ length: 13 }, (_, i) => ({ slot: 4 + i, name: 'x' })))).toBeNull();
+    expect(fallbackBotName(4)).toBe('Bot 1');
+  });
+  it('still understands a hidden Knockout series coming from the host (dev URL)', () => {
+    expect(parseSeriesInfo({ ...good, mode: 'knockout' }, 4)?.mode).toBe('knockout');
+    expect(parseSeriesInfo({ ...good, mode: 'bogus' }, 4)).toBeNull();
+  });
+  it('knows the kicked message', () => {
+    expect(isHostMessage({ t: 'kicked' })).toBe(true);
+    expect(isControllerMessage({ t: 'kicked' })).toBe(false); // phones cannot kick anybody
   });
 });

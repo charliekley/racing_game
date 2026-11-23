@@ -17,13 +17,14 @@ import { generateRoomCode, normalizeRoomCode } from '../shared/roomCode';
 import { controllerUrl } from './controllerUrl';
 import { Game } from './game';
 import { ITEM_IDS, type ItemId } from '../sim/items/types';
-import { DEFAULT_DIFFICULTY, nextDifficulty, sanitizeDifficulty, type Difficulty } from '../sim/bots';
+import { DEFAULT_DIFFICULTY, DIFFICULTIES, nextDifficulty, sanitizeDifficulty, type Difficulty } from '../sim/bots';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualitySettings } from '../render/scene';
 import { gpuName, presetByName, presetNameForGpu } from '../render/gpuTier';
 import { KeyboardState } from './input/localInput';
 import { LobbyView } from './lobbyView';
 import { SelectView } from './selectView';
-import { nextRacers, sanitizeRacers, type RacerCount } from './raceSettings';
+import { RACER_COUNTS, nextRacers, sanitizeRacers, type RacerCount } from './raceSettings';
+import { SettingsPanel } from './settingsPanel';
 import { TrackPreview } from './trackPreview';
 import { PlayerManager } from './playerManager';
 import { SelectionHub } from './selectionHub';
@@ -48,16 +49,12 @@ if (import.meta.env.DEV) (window as unknown as { __audio?: AudioEngine }).__audi
 if (import.meta.env.DEV) (window as unknown as { __players?: PlayerManager }).__players = players; // debugging aid (dev server only)
 
 // --- Pre-race selection flow (name -> character -> kart -> ready) ----------------------------------
-// Phones and keyboard / gamepad players choose; PlayerManager publishes every change to this hub, and the
+// Phones choose; PlayerManager publishes every change to this hub, and the
 // TV's selection display subscribes to it (the two sides never import each other). The hub is emptied when
 // the race starts and refilled when we are back in the lobby.
 const selectionHub = new SelectionHub();
 players.hub = selectionHub;
 if (import.meta.env.DEV) (window as unknown as { __selectionHub?: SelectionHub }).__selectionHub = selectionHub; // debugging aid
-/** A keyboard player using the arrow keys owns the arrows / Enter for the flow, so the TV shortcuts for them step aside (T and G still work). */
-const arrowsAreAPlayer = () => players.slots.find({ kind: 'keyboard', scheme: 1 }) !== null;
-/** Is someone driving with WASD? Then D (browse right) and R (back) belong to them, not to the lobby shortcuts. */
-const wasdIsAPlayer = () => players.slots.find({ kind: 'keyboard', scheme: 0 }) !== null;
 
 const netStatus = $('net-status');
 function setStatus(text: string, cls: 'ok' | 'warn' | 'bad' | '') {
@@ -194,8 +191,7 @@ function stepDownQuality() {
   const next = QUALITY_PRESETS[QUALITY_PRESETS.indexOf(quality) + 1];
   if (!next) return;
   quality = next;
-  qualityEl.textContent = quality.name;
-  qualityChip.textContent = quality.name;
+  settingsChanged();
   try {
     sessionStorage.setItem(AUTO_QUALITY_KEY, quality.name); // not the manual key: a manual choice is still respected next time
   } catch {
@@ -204,15 +200,14 @@ function stepDownQuality() {
   game?.setQuality(quality);
 }
 let quality = loadQuality();
-const qualityEl = $('quality');
-const qualityChip = $('chip-quality');
-qualityEl.textContent = quality.name;
-qualityChip.textContent = quality.name;
 function cycleQuality() {
-  quality = QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length];
+  setQuality(QUALITY_PRESETS[(QUALITY_PRESETS.indexOf(quality) + 1) % QUALITY_PRESETS.length]);
+}
+/** Choose a graphics preset (settings panel or the Q key); it is remembered and always wins over adaptive quality. */
+function setQuality(preset: QualitySettings) {
+  quality = preset;
   manualQuality = true;
-  qualityEl.textContent = quality.name;
-  qualityChip.textContent = quality.name;
+  settingsChanged();
   try {
     localStorage.setItem(QUALITY_KEY, quality.name);
   } catch {
@@ -231,11 +226,12 @@ function loadDifficulty(): Difficulty {
   }
 }
 let botDifficulty = loadDifficulty();
-const botsChip = $('chip-bots');
-botsChip.textContent = botDifficulty.toUpperCase();
 function cycleDifficulty() {
-  botDifficulty = nextDifficulty(botDifficulty);
-  botsChip.textContent = botDifficulty.toUpperCase();
+  setDifficulty(nextDifficulty(botDifficulty));
+}
+function setDifficulty(d: Difficulty) {
+  botDifficulty = d;
+  settingsChanged();
   try {
     localStorage.setItem(BOTS_KEY, botDifficulty);
   } catch {
@@ -243,8 +239,8 @@ function cycleDifficulty() {
   }
 }
 
-// --- RACERS: 4 / 8 / 12 karts on the grid (R in the lobby; remembered on this computer) -------
-// People keep slots 0..3; computer drivers fill the rest (see raceSettings.ts).
+// --- RACERS: 4 / 8 / 12 karts on the grid (N in the lobby; remembered on this computer) -------
+// People keep slots 0..3; computer drivers (bots) fill the rest (see raceSettings.ts).
 const RACERS_KEY = 'tiltkart.racers';
 function loadRacers(): RacerCount {
   try {
@@ -254,11 +250,12 @@ function loadRacers(): RacerCount {
   }
 }
 let racers = loadRacers();
-const racersChip = $('chip-racers');
-racersChip.textContent = String(racers);
 function cycleRacers() {
-  racers = nextRacers(racers);
-  racersChip.textContent = String(racers);
+  setRacers(nextRacers(racers));
+}
+function setRacers(n: RacerCount) {
+  racers = n;
+  settingsChanged();
   try {
     localStorage.setItem(RACERS_KEY, String(racers));
   } catch {
@@ -288,14 +285,11 @@ function loadTrack(): TrackDef {
   }
 }
 let track = loadTrack();
-const trackEl = $('track');
-trackEl.textContent = track.name;
 const trackPreview = new TrackPreview($<HTMLCanvasElement>('track-map'), $('track-name'), $('track-meta'), $<HTMLImageElement>('track-shot'));
 trackPreview.show(track);
 /** Make `def` the lobby's selected track (keyboard, TV buttons, or P1's phone all end up here). */
 function selectTrack(def: TrackDef) {
   track = def;
-  trackEl.textContent = track.name;
   trackPreview.show(track);
   updateModeUi();
   try {
@@ -345,22 +339,64 @@ function updateModeUi() {
   SERIES_MODES.forEach((mode, i) => modeBtns[i].classList.toggle('on', mode === m));
   $('mode-note').textContent = seriesHost.choosing
     ? `${seriesHost.ownerName()} is choosing on their phone…`
-    : m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : m === 'knockout' ? 'Last kart is out after every lap' : 'Last place picks the next track';
+    : m === 'single' ? 'One race, then back here' : m === 'gp' ? `All ${TRACKS.length} tracks, points for every place` : 'Last place picks the next track';
   document.querySelector('.track-panel')!.classList.toggle('gp', m === 'gp');
   if (m === 'gp') $('track-meta').textContent = `Grand Prix: all ${TRACKS.length} tracks in order`;
   else trackPreview.show(track);
 }
 
-// --- Mute indicator ----------------------------------------------------------
-// The audio engine owns mute (M key, works in the lobby and during a race, saved
-// in localStorage). It announces changes with a `tiltkart:mute` event; the lobby
-// chip just mirrors it.
-function showMute() {
-  $('chip-mute').textContent = audio.muted ? 'OFF' : 'ON';
-  $('chip-mute-wrap').classList.toggle('off', audio.muted);
+// --- Settings panel (the gear button) ----------------------------------------------
+// One row per setting. The settings themselves live above (quality, botDifficulty, racers) and in the audio
+// engine (mute: M key, saved in localStorage; it announces changes with a `tiltkart:mute` event).
+const settingsPanel = new SettingsPanel([
+  {
+    label: 'Racers',
+    note: 'Karts on the grid, bots fill the rest',
+    options: RACER_COUNTS.map((n) => ({ id: String(n), label: String(n) })),
+    get: () => String(racers),
+    set: (id) => setRacers(sanitizeRacers(id)),
+  },
+  {
+    label: 'Bot difficulty',
+    note: 'How well the computer drivers race',
+    options: DIFFICULTIES.map((d) => ({ id: d, label: d[0].toUpperCase() + d.slice(1) })),
+    get: () => botDifficulty,
+    set: (id) => setDifficulty(sanitizeDifficulty(id)),
+  },
+  {
+    label: 'Graphics',
+    note: 'Lower it if the game stutters',
+    options: QUALITY_PRESETS.map((q) => ({ id: q.name, label: q.name })),
+    get: () => quality.name,
+    set: (id) => {
+      const preset = presetByName(id);
+      if (preset) setQuality(preset);
+    },
+  },
+  {
+    label: 'Sound',
+    note: 'Music and engine noise',
+    options: [
+      { id: 'on', label: 'On' },
+      { id: 'off', label: 'Off' },
+    ],
+    get: () => (audio.muted ? 'off' : 'on'),
+    set: (id) => {
+      if (audio.muted !== (id === 'off')) audio.toggleMute();
+    },
+  },
+]);
+/** The small read-only line on the settings button: "4 racers · Normal bots". */
+function settingsChanged() {
+  $('settings-summary').textContent = `${racers} racers · ${botDifficulty[0].toUpperCase()}${botDifficulty.slice(1)} bots`;
+  settingsPanel.refresh();
 }
-window.addEventListener('tiltkart:mute', showMute);
-showMute();
+$('settings-open').addEventListener('click', (e) => {
+  settingsPanel.open();
+  (e.currentTarget as HTMLElement).blur();
+});
+window.addEventListener('tiltkart:mute', () => settingsPanel.refresh());
+settingsChanged();
 
 // --- Lobby <-> driving ------------------------------------------------------
 const banner = $('banner');
@@ -406,7 +442,9 @@ const seriesHost: SeriesHost = new SeriesHost({
   showSelect: (on) => showPostSelect(on),
 });
 // Dev: ?mode=gp or ?mode=loser picks the mode from the address (handy with ?drive=4).
-const URL_MODE = sanitizeMode(new URLSearchParams(location.search).get('mode'));
+// (Knockout is not offered any more, but the dev URL ?mode=knockout still starts it.)
+const URL_MODE_PARAM = new URLSearchParams(location.search).get('mode');
+const URL_MODE = import.meta.env.DEV && URL_MODE_PARAM === 'knockout' ? ('knockout' as const) : sanitizeMode(URL_MODE_PARAM);
 if (URL_MODE) seriesHost.mode = URL_MODE;
 updateModeUi();
 // Render the 3D course pictures for the track cards in the background (one per ~250 ms, after the page has settled).
@@ -438,7 +476,7 @@ function startDriving() {
       // Results screen buttons (same as the Enter / Esc keys).
       onRaceAgain: () => raceAgain(),
       onChangeTrack: () => backToLobby(),
-      onRaceResults: (placings, fillColors) => seriesHost.onRaceResults(placings, fillColors),
+      onRaceResults: (placings, fillColors, roster) => seriesHost.onRaceResults(placings, fillColors, roster),
       onQualityStepDown: () => stepDownQuality(),
     },
     quality,
@@ -495,7 +533,7 @@ function updateStartBanner() {
   banner.textContent = all ? 'Everyone is ready! Starting…' : '';
   const n = players.slots.players.length;
   $('lobby-hint').textContent =
-    n === 0 ? 'Waiting for players…' : `${n} player${n > 1 ? 's' : ''} · everyone picks a driver and kart, then READY (or press G to start now)`;
+    n === 0 ? 'Waiting for players…' : `${n} player${n > 1 ? 's' : ''} · everyone picks a driver and kart, then READY`;
   if (all && !startTimer) startTimer = setTimeout(startDriving, 1500);
   if (!all && startTimer) {
     clearTimeout(startTimer);
@@ -505,19 +543,22 @@ function updateStartBanner() {
 lobbyView.render();
 
 window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && settingsPanel.isOpen) {
+    settingsPanel.close(); // Esc closes the settings panel first (it must not also leave a race)
+    return;
+  }
   if (e.code === 'Escape') backToLobby();
   if (e.code === 'Enter' && driving && players.slots.phase === 'results') raceAgain();
-  // Lobby shortcuts (ignored while typing in a text box).
-  if (!driving && !(e.target instanceof HTMLInputElement)) {
+  // Silent lobby shortcuts for development (nothing on screen mentions them; ignored while typing or with the settings open).
+  if (!driving && !settingsPanel.isOpen && !(e.target instanceof HTMLInputElement)) {
     if (e.code === 'KeyG' && players.slots.players.length > 0) startDriving();
     if (e.code === 'KeyQ') cycleQuality();
-    if (e.code === 'KeyD' && !wasdIsAPlayer()) cycleDifficulty(); // D is the WASD player's 'browse right'
-    if (e.code === 'KeyN') cycleRacers(); // N, not R: R is the WASD player's trick / back key
+    if (e.code === 'KeyD') cycleDifficulty();
+    if (e.code === 'KeyN') cycleRacers();
     if (e.code === 'KeyT') cycleTrack();
-    // Menu without phones: arrows choose track (left/right) and mode (up/down), Enter starts.
-    if (e.code === 'ArrowLeft' && !arrowsAreAPlayer()) cycleTrack(-1);
-    if (e.code === 'ArrowRight' && !arrowsAreAPlayer()) cycleTrack(1);
-    if (e.code === 'Enter' && !arrowsAreAPlayer() && players.slots.players.length > 0 && !(e.target instanceof HTMLButtonElement)) startDriving();
+    if (e.code === 'ArrowLeft') cycleTrack(-1);
+    if (e.code === 'ArrowRight') cycleTrack(1);
+    if (e.code === 'Enter' && players.slots.players.length > 0 && !(e.target instanceof HTMLButtonElement)) startDriving();
     if (seriesHost.key(e.code, true)) e.preventDefault();
     if (e.code.startsWith('Arrow')) e.preventDefault(); // don't scroll the page
   } else if (driving && seriesHost.key(e.code, false)) {
@@ -526,7 +567,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Dev shortcut: /host/?drive adds a WASD keyboard player and jumps straight into
-// a race; /host/?drive=4 also adds 3 bots (instant 4-way split-screen).
+// a race; /host/?drive=4 also adds 3 computer drivers with their own views (instant 4-way split-screen).
 const driveParam = new URLSearchParams(location.search).get('drive');
 if (driveParam === null) selectView.show(); // (the drive shortcut goes straight into a race, no selection screen needed)
 if (driveParam !== null) {
@@ -534,7 +575,7 @@ if (driveParam !== null) {
   players.slots.join({ kind: 'keyboard', scheme: 0 }, 'Keys WASD', 2);
   players.addKeyboardInput(0);
   const total = Math.max(1, Math.min(4, Number(driveParam) || 1));
-  for (let i = 1; i < total; i++) players.addBot();
+  for (let i = 1; i < total; i++) players.addDevBot();
   startDriving();
 }
 

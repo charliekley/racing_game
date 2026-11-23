@@ -78,7 +78,7 @@ export function buildPodium(container: HTMLElement, rows: PodiumRow[], title: st
   actions.style.setProperty('--delay', `${(timing.end * 0.7).toFixed(2)}s`);
   const b = document.createElement('button');
   b.className = 'res-btn primary';
-  b.innerHTML = 'BACK TO MENU <kbd>Enter</kbd>';
+  b.textContent = 'BACK TO MENU';
   b.addEventListener('click', onDone);
   actions.appendChild(b);
   box.appendChild(actions);
@@ -123,11 +123,6 @@ export function buildPickStrip(container: HTMLElement, st: PickState, onChoose: 
     row.appendChild(tile);
   });
   box.appendChild(row);
-
-  const hint = document.createElement('div');
-  hint.className = 'pick-hint';
-  hint.innerHTML = '<kbd>&larr;</kbd><kbd>&rarr;</kbd> choose &nbsp; <kbd>Enter</kbd> go &nbsp; <kbd>S</kbd> stop &amp; podium';
-  box.appendChild(hint);
 
   container.replaceChildren(box);
 }

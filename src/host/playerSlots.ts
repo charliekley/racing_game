@@ -2,9 +2,8 @@
  * The four player slots, and the rules for filling them. Pure logic (no DOM,
  * no network) so it can be unit tested.
  *
- * A slot remembers *who* owns it (a phone's persistent clientId, or a local
- * keyboard/gamepad), so when a phone drops and reconnects it gets the same slot
- * back - even mid-race.
+ * A slot remembers *who* owns it (a phone's persistent clientId), so when a phone
+ * drops and reconnects it gets the same slot back - even mid-race.
  */
 import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
 import { KART_COLORS, clampColorIndex } from '../shared/colors';
@@ -16,9 +15,9 @@ export const MAX_PLAYERS = 4;
 
 export type SlotOwner =
   | { kind: 'phone'; clientId: string }
+  /** DEV ONLY (the ?drive shortcut): a WASD / arrow-keys driver. Nobody can join like this in the normal lobby. */
   | { kind: 'keyboard'; scheme: number }
-  | { kind: 'gamepad'; index: number }
-  /** Computer driver (autopilot), handy for testing split-screen alone. */
+  /** DEV ONLY (?drive=4): a computer driver with its own split-screen view. Normal bots are fill-ins without a slot (see raceSettings.ts). */
   | { kind: 'bot'; id: number };
 
 export interface PlayerSlot {
@@ -48,8 +47,6 @@ function sameOwner(a: SlotOwner, b: SlotOwner): boolean {
       return a.clientId === (b as typeof a).clientId;
     case 'keyboard':
       return a.scheme === (b as typeof a).scheme;
-    case 'gamepad':
-      return a.index === (b as typeof a).index;
     case 'bot':
       return a.id === (b as typeof a).id;
   }
@@ -60,8 +57,8 @@ export class PlayerSlots {
   phase: GamePhase = 'lobby';
   /**
    * The results screen is "look only": Grand Prix between races and the final podium. Phones then cannot change
-   * their pick or press READY (the host moves on by itself, see postRaceFlow.ts). Single race / Knockout / Loser
-   * picks leave this false: there the results screen is where everybody chooses CHANGE or READY.
+   * their pick or press READY (the host moves on by itself, see postRaceFlow.ts). Only Loser picks leaves this
+   * false: there the results screen is where everybody chooses CHANGE or READY.
    */
   postLock = false;
 
@@ -130,10 +127,14 @@ export class PlayerSlots {
     return this.phase === 'lobby' || (this.phase === 'results' && !this.postLock);
   }
 
-  /** A phone's READY button on the results screen: only for someone locked in at 'ready', and only while the results are not locked. */
+  /**
+   * A phone's READY button: only for someone locked in at 'ready'. Works in the lobby (everybody has to ready up again
+   * after every race, see resetToLobby) and on the results screen (unless the results are look-only).
+   */
   setPostReady(index: number, ready: boolean): boolean {
     const s = this.slots[index];
-    if (!s || this.phase !== 'results' || this.postLock || s.stage !== 'ready') return false;
+    if (!s || s.stage !== 'ready') return false;
+    if (!(this.phase === 'lobby' || (this.phase === 'results' && !this.postLock))) return false;
     s.ready = ready;
     return true;
   }
@@ -214,12 +215,16 @@ export class PlayerSlots {
     this.postLock = false;
   }
 
-  /** Back to lobby: clear ready flags and drop players who never came back. */
+  /**
+   * Back to the lobby (after a race or a whole series): everybody KEEPS their character and kart (and stage), but
+   * NOBODY is ready: each has to tap READY again, so every race starts with an explicit "yes". Players who never
+   * came back are dropped.
+   */
   resetToLobby(): void {
     this.phase = 'lobby';
     this.postLock = false;
     for (const p of this.players) {
-      p.ready = p.stage === 'ready'; // picks are kept: whoever was locked in stays locked in
+      p.ready = false;
       if (!p.connected) this.remove(p.index);
     }
   }

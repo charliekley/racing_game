@@ -6,7 +6,7 @@
  ┌─────────────── Phone (controller page) ───────────────┐          ┌──────────────── Laptop → TV (host page) ─────────────────┐
  │ devicemotion ─► SteeringProcessor ─┐                  │          │                                                          │
  │ touch (Pointer Events) ─► TouchButtons ─┼─► 60 Hz input ──────────► PlayerManager.inputFor(slot) ─► Simulation (60 Hz fixed) │
- │ flick ─► TrickDetector ────────────┘  (unreliable)    │  WebRTC  │      ▲ keyboard / gamepad                 │              │
+ │ flick ─► TrickDetector ────────────┘  (unreliable)    │  WebRTC  │      ▲ dev keyboard                     │              │
  │                                                       │  P2P on  │                                           ▼              │
  │ HUD (item, position, lap) ◄── events (reliable) ◄─────────LAN────── status / haptics / lobby      Renderer (Three.js,      │
  └───────────────────────────────────────────────────────┘          │                                 interpolated, 1-4 views) │
@@ -64,7 +64,7 @@ racing_game/
    │  ├─ main.ts               ✅ host entry: lobby ⇄ race ⇄ results flow
    │  ├─ playerSlots.ts        ✅ 4 slots, rejoin, ready logic, name->character->kart->ready state machine (pure, tested)
    │  ├─ playerManager.ts      ✅ phones + local devices → latest input per slot
-   │  ├─ input/localInput.ts   ✅ keyboard + gamepad fallback
+   │  ├─ input/localInput.ts   ✅ keyboard driver (dev ?drive shortcut only)
    │  ├─ lobbyView.ts          ✅ lobby cards + input debug readout
    │  ├─ game.ts               ✅ one race: World + split-screen rendering + loop,
    │  │                           results, phone status + haptics, bot inputs

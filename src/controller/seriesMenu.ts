@@ -26,7 +26,6 @@ const MODES: { mode: SeriesMode; label: string; sub: string }[] = [
   { mode: 'single', label: 'SINGLE RACE', sub: 'one track' },
   { mode: 'gp', label: 'GRAND PRIX', sub: 'all tracks, points' },
   { mode: 'loser', label: 'LOSER PICKS', sub: 'last place chooses' },
-  { mode: 'knockout', label: 'KNOCKOUT', sub: 'last kart out each lap' },
 ];
 
 export type MenuKind = 'setup' | 'pick';

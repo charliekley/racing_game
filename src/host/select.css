@@ -65,7 +65,8 @@
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 1.6);
-  pointer-events: none;
+  pointer-events: none; /* clicks go through the head to the 3D view... */
+  z-index: 3; /* ...except on the X: the info panel (z-index 2) lies over the right half and used to swallow its clicks */
 }
 .q-num {
   background: var(--slot, #666);
@@ -93,19 +94,19 @@
 @keyframes dots { 50% { opacity: 0.15; } }
 .q-kick {
   pointer-events: auto;
-  width: calc(var(--u) * 5);
-  height: calc(var(--u) * 5);
+  width: max(22px, calc(var(--u) * 7));
+  height: max(22px, calc(var(--u) * 7));
   border-radius: 50%;
   border: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font: 700 calc(var(--u) * 3.6) system-ui, sans-serif;
+  font: 700 max(16px, calc(var(--u) * 5)) system-ui, sans-serif;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
+  opacity: 0.55; /* always visible: a joiner who does not want to play must be removable */
+  transition: opacity 0.15s, background 0.15s;
 }
-.quad:hover .q-kick { opacity: 0.8; }
+.q-kick:hover { opacity: 1; background: #d33b4f; }
 
 /* --- crown with the race-win count, right behind the name --- */
 .q-crown {

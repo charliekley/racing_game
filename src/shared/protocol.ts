@@ -104,11 +104,20 @@ export interface LobbyPlayerInfo {
 // --- Race modes (see src/host/series.ts) ---------------------------------------
 
 export type SeriesMode = 'single' | 'gp' | 'loser' | 'knockout';
-export const SERIES_MODES: readonly SeriesMode[] = ['single', 'gp', 'loser', 'knockout'];
+/**
+ * The modes players can choose (TV chips, the phone's mode menu, saved settings). Knockout is not offered any more:
+ * its rules still exist in src/sim/knockout.ts and the dev URL ?mode=knockout can start it (see main.ts).
+ */
+export const SERIES_MODES: readonly SeriesMode[] = ['single', 'gp', 'loser'];
 
-/** Phone input is untrusted: only the words in SERIES_MODES are modes. */
+/** Phone input is untrusted: only the words in SERIES_MODES are modes (so an old saved 'knockout' falls back to the default). */
 export function sanitizeMode(x: unknown): SeriesMode | null {
   return typeof x === 'string' && (SERIES_MODES as readonly string[]).includes(x) ? (x as SeriesMode) : null;
+}
+
+/** Every mode the host may *report* to a phone: the offered ones plus the hidden dev-only Knockout. */
+function isKnownMode(x: unknown): x is SeriesMode {
+  return x === 'knockout' || sanitizeMode(x) !== null;
 }
 
 /** A valid index into a list of `count` tracks, or null (rejects NaN, fractions, strings, out of range). */
@@ -134,12 +143,17 @@ export interface SeriesInfo {
   /** Grand Prix length, or null. */
   raceTotal: number | null;
   /**
-   * Ranked standings, flat [slot, points, slot, points, ...]; empty in single races and Knockout. Besides the 4 player
+   * Ranked standings, flat [slot, points, slot, points, ...]; empty in single races. Besides the 4 player
    * slots it lists the fill-in bots (slot 4 and up, see FIRST_FILL_BOT_SLOT), so up to 12 racers = 24 numbers.
    */
   standings: number[];
   /** Race wins (crowns, shared/wins.ts) of the fill-in bots only, flat [slot, wins, ...] (players' wins travel in the lobby list). Optional. */
   wins?: number[];
+  /**
+   * Names of the fill-in bots in the standings (they are named after their character, e.g. "Pip", "Rex 2").
+   * Only slots from FIRST_FILL_BOT_SLOT up; optional (phones fall back to "Bot n"). Run through parseSeriesInfo.
+   */
+  bots?: BotName[];
   /** Loser picks, stage 'between': the picker has chosen (`track` is now the next race's track); the race starts when everyone is ready. Optional. */
   picked?: boolean;
   /**
@@ -194,16 +208,36 @@ export function parseSlotPairs(x: unknown): number[] | null {
   return out;
 }
 
-/** Name of a fill-in bot (slot 4 and up) as the phones show it: "CPU 1", "CPU 2"... (the host uses the same text, see raceSettings.ts). */
-export function fillBotLabel(slot: number): string {
-  return `CPU ${slot - FIRST_FILL_BOT_SLOT + 1}`;
+/** One fill-in bot's name for the phones' standings. */
+export interface BotName {
+  slot: number;
+  name: string;
+}
+
+/** Fallback name when the host did not send one (older host): "Bot 1", "Bot 2"... */
+export function fallbackBotName(slot: number): string {
+  return `Bot ${slot - FIRST_FILL_BOT_SLOT + 1}`;
+}
+
+/** Validate a list of bot names from the host: at most 12 entries, slots from FIRST_FILL_BOT_SLOT to 31, names cleaned like player names. Null if malformed. */
+export function parseBotNames(x: unknown): BotName[] | null {
+  if (!Array.isArray(x) || x.length > MAX_RACERS_ON_WIRE) return null;
+  const out: BotName[] = [];
+  for (const e of x) {
+    if (typeof e !== 'object' || e === null) return null;
+    const { slot, name } = e as Record<string, unknown>;
+    if (typeof slot !== 'number' || !Number.isInteger(slot) || slot < FIRST_FILL_BOT_SLOT || slot > 31) return null;
+    if (typeof name !== 'string' || name.length > 40) return null;
+    out.push({ slot, name: sanitizeName(name) });
+  }
+  return out;
 }
 
 /** Validate a SeriesInfo from the host (the phone shows it, so keep it strict). Returns a clean copy or null. */
 export function parseSeriesInfo(m: unknown, trackCount: number): SeriesInfo | null {
   if (typeof m !== 'object' || m === null) return null;
   const o = m as Record<string, unknown>;
-  const mode = sanitizeMode(o.mode);
+  const mode = isKnownMode(o.mode) ? o.mode : null;
   const track = sanitizeTrackIndex(o.track, trackCount);
   if (!mode || track === null) return null;
   if (typeof o.stage !== 'string' || !(SERIES_STAGES as readonly string[]).includes(o.stage)) return null;
@@ -219,12 +253,18 @@ export function parseSeriesInfo(m: unknown, trackCount: number): SeriesInfo | nu
     if (!w) return null;
     wins = w;
   }
+  let bots: BotName[] | undefined;
+  if (o.bots !== undefined) {
+    const b = parseBotNames(o.bots);
+    if (!b) return null;
+    bots = b;
+  }
   if (o.picked !== undefined && typeof o.picked !== 'boolean') return null;
   const racesDone = typeof o.racesDone === 'number' && Number.isInteger(o.racesDone) ? o.racesDone : null;
   const raceTotal = o.raceTotal === null ? null : typeof o.raceTotal === 'number' && Number.isInteger(o.raceTotal) ? o.raceTotal : undefined;
   if (racesDone === null || raceTotal === undefined) return null;
   if (o.pending !== undefined && typeof o.pending !== 'boolean') return null;
-  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: flat, ...(wins && wins.length ? { wins } : {}), ...(o.picked ? { picked: true } : {}), ...(o.pending ? { pending: true } : {}) };
+  return { mode, track, stage: o.stage as SeriesStage, owner, picker, racesDone, raceTotal, standings: flat, ...(wins && wins.length ? { wins } : {}), ...(bots && bots.length ? { bots } : {}), ...(o.picked ? { picked: true } : {}), ...(o.pending ? { pending: true } : {}) };
 }
 
 export type ControllerToHost =
@@ -252,6 +292,8 @@ export type HostToController =
   /** The host's answer to a `select`: the player's real stage, name and picks (the phone follows the stage; run it through parseSelectEcho). */
   | { t: 'select'; stage: SelectStage; name: string; loadout: Loadout }
   | { t: 'reject'; reason: 'full' | 'in-progress' | 'version' }
+  /** The host removed this player (the X on the TV). The phone shows "Removed from the game" and must NOT reconnect by itself. */
+  | { t: 'kicked' }
   | { t: 'lobby'; players: LobbyPlayerInfo[] }
   | { t: 'phase'; phase: GamePhase }
   | {
@@ -281,7 +323,7 @@ export type HostToController =
   | { t: 'pong'; id: number; sentAt: number };
 
 const CONTROLLER_TYPES = new Set(['hello', 'profile', 'ready', 'select', 'setup', 'pick', 'series', 'ping', 'pong']);
-const HOST_TYPES = new Set(['welcome', 'select', 'reject', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'series', 'tracks', 'drift', 'ping', 'pong']);
+const HOST_TYPES = new Set(['welcome', 'select', 'reject', 'kicked', 'lobby', 'phase', 'status', 'haptic', 'track', 'map', 'series', 'tracks', 'drift', 'ping', 'pong']);
 
 /** Validate a phone's `setup` message. Bad fields are dropped; returns null if nothing valid is left. */
 export function parseSetup(m: unknown, trackCount: number): { mode?: SeriesMode; track?: number; done?: true } | null {

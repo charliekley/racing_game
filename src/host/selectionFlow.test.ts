@@ -99,7 +99,7 @@ describe('selection state machine', () => {
     expect(r.ok && r.slot.stage).toBe('name');
   });
 
-  it('after a race everyone keeps their picks and lands on READY; the way back to the lobby keeps them locked in', () => {
+  it('after a race everyone keeps their picks and lands on READY; the way back to the lobby keeps them locked in but NOT ready', () => {
     const s = two();
     lockIn(s, 0);
     s.phase = 'results';
@@ -111,7 +111,7 @@ describe('selection state machine', () => {
     s.select(0, { stage: 'ready' }); // reaching READY counts as "race again"
     expect(s.slots[0]!.ready).toBe(true);
     s.resetToLobby();
-    expect(s.slots.every((p) => p === null || p.ready === (p.stage === 'ready'))).toBe(true);
+    expect(s.slots.every((p) => p === null || p.ready === false)).toBe(true); // everybody readies up again
     expect(s.slots[1]!.stage).toBe('ready'); // locked in by lockInAll
   });
 });

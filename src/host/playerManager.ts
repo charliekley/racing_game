@@ -2,7 +2,7 @@
  * Owns everything about "who is playing and what are they pressing":
  *  - the PlayerSlots (lobby state),
  *  - phone connections (handshake, input packets, pings, heartbeats, rejoin),
- *  - local keyboard/gamepad players.
+ *  - (dev only) the keyboard driver of the ?drive shortcut.
  *
  * The game simulation (later milestones) only calls `inputFor(slot)` once per
  * tick and always gets the *latest* input, whatever device it came from.
@@ -25,20 +25,7 @@ import { WinTally } from '../shared/wins';
 import { winKey } from './postRace';
 import { MAX_PLAYERS, PlayerSlots, type PlayerSlot } from './playerSlots';
 import type { SelectionHub } from './selectionHub';
-import {
-  KEY_JOIN,
-  KEY_SCHEMES,
-  KeyboardPlayerInput,
-  KeyboardState,
-  connectedGamepads,
-  gamepadWantsJoin,
-  keySelectActions,
-  localSelectStep,
-  padSelectActions,
-  padSelectBits,
-  readGamepad,
-  type SelectAction,
-} from './input/localInput';
+import { KEY_SCHEMES, KeyboardPlayerInput, KeyboardState } from './input/localInput';
 
 /** A phone that hasn't sent anything for this long is considered gone. */
 const HEARTBEAT_TIMEOUT_MS = 3000;
@@ -84,9 +71,6 @@ export class PlayerManager {
   private sessionBySlot = new Map<number, PhoneSession>();
   private localInputs = new Map<number, ControlInput>();
   private keyboards: (KeyboardPlayerInput | null)[] = KEY_SCHEMES.map(() => null);
-  private padJoinHeld = new Set<number>();
-  /** Flow buttons held last frame per gamepad slot (see PAD_* in localInput.ts), for edge detection. */
-  private padHeld = new Map<number, number>();
 
   constructor(
     transport: HostTransport,
@@ -179,7 +163,7 @@ export class PlayerManager {
         stage: p.stage,
         character: p.loadout.character,
         kart: p.loadout.kart,
-        // Phones choose on their own screen; keyboards, gamepads (and bots, which are always ready) on the TV.
+        // Phones choose on their own screen; the dev keyboard driver / dev bots (always ready) are 'local'.
         input: p.owner.kind === 'phone' ? ('phone' as const) : ('local' as const),
         ready: p.ready,
         wins: this.winsOfSlot(p.index),
@@ -200,18 +184,6 @@ export class PlayerManager {
   private sendSelectEcho(slotIndex: number): void {
     const p = this.slots.slots[slotIndex];
     if (p) this.sendTo(slotIndex, { t: 'select', stage: p.stage, name: p.name, loadout: { ...p.loadout } });
-  }
-
-  /** One local player's key / button press in the flow (see localSelectStep for the rules). */
-  private localSelect(slotIndex: number, action: SelectAction): void {
-    const slot = this.slots.slots[slotIndex];
-    if (!slot) return;
-    const step = localSelectStep(action, slot.stage, slot.loadout, this.slots.phase);
-    if (!step) return;
-    if (step.kind === 'toggleReady') {
-      if (!this.slots.setPostReady(slotIndex, !slot.ready)) return;
-    } else if (!this.slots.select(slotIndex, step.req)) return;
-    this.lobbyChanged();
   }
 
   setPhase(phase: GamePhase): void {
@@ -237,13 +209,19 @@ export class PlayerManager {
   /** A player was removed from their slot (kicked / left). */
   readonly onRemoved = new Signal<number>();
 
+  /**
+   * Remove a player (the X on the TV): the slot is freed, and a phone is told with `kicked` (it shows "Removed from
+   * the game" and only comes back when its owner taps JOIN AGAIN) and then disconnected. The link is closed after a
+   * short pause so the message gets through first; the session no longer has a slot, so nothing it sends counts.
+   */
   kick(slotIndex: number): void {
     const s = this.sessionBySlot.get(slotIndex);
     this.sessionBySlot.delete(slotIndex);
     if (s) {
       s.slotIndex = null;
-      s.link.sendEvent({ t: 'reject', reason: 'full' });
-      s.link.close();
+      s.clientId = null; // not a known player any more (the housekeeping timeout for strangers closes it too)
+      s.link.sendEvent({ t: 'kicked' });
+      setTimeout(() => s.link.close(), 500);
     }
     const slot = this.slots.slots[slotIndex];
     if (slot?.owner.kind === 'keyboard') this.keyboards[slot.owner.scheme] = null;
@@ -257,8 +235,8 @@ export class PlayerManager {
     return this.slots.slots[slotIndex]?.owner.kind === 'bot';
   }
 
-  /** Add a computer driver (lobby only). Bots are always ready. */
-  addBot(): boolean {
+  /** DEV ONLY (?drive=4): add a computer driver with its own split-screen view. Not reachable from the normal lobby; always ready. */
+  addDevBot(): boolean {
     if (this.slots.phase !== 'lobby') return false;
     let id = 1;
     while (this.slots.find({ kind: 'bot', id })) id++;
@@ -281,74 +259,15 @@ export class PlayerManager {
   }
 
   // -------------------------------------------------------------------------
-  // Local players (keyboard / gamepad). Call once per rendered frame.
+  // Dev keyboard driver (?drive). Call once per rendered frame.
   // -------------------------------------------------------------------------
 
   updateLocal(dtSec: number): void {
-    const pressed = this.keys.consumePressed();
-    const inLobby = this.slots.phase === 'lobby';
-
-    // Join / leave with keys 1 and 2.
-    KEY_JOIN.forEach((code, scheme) => {
-      if (!pressed.has(code) || !inLobby) return;
-      const existing = this.slots.find({ kind: 'keyboard', scheme });
-      if (existing) {
-        this.kick(existing.index);
-      } else {
-        const r = this.slots.join({ kind: 'keyboard', scheme }, `Keys ${KEY_SCHEMES[scheme].label}`, scheme + 2, undefined, 'character');
-        if (r.ok) {
-          this.keyboards[scheme] = new KeyboardPlayerInput(this.keys, KEY_SCHEMES[scheme]);
-          this.lobbyChanged();
-        }
-      }
-    });
-
-    // Keyboard players go through character -> kart -> ready with their keys (browse, confirm, back).
+    this.keys.consumePressed(); // (keeps the key-press queue from growing)
     for (const slot of this.slots.players) {
       if (slot.owner.kind !== 'keyboard') continue;
-      for (const action of keySelectActions(pressed, slot.owner.scheme)) this.localSelect(slot.index, action);
-    }
-
-    // B adds a bot.
-    if (pressed.has('KeyB') && inLobby) this.addBot();
-
-    // Gamepads: press Start/A to join.
-    for (const pad of connectedGamepads()) {
-      const wants = gamepadWantsJoin(pad);
-      if (wants && !this.padJoinHeld.has(pad.index) && inLobby && !this.slots.find({ kind: 'gamepad', index: pad.index })) {
-        const r = this.slots.join({ kind: 'gamepad', index: pad.index }, `Pad ${pad.index + 1}`, pad.index + 4, undefined, 'character');
-        if (r.ok) {
-          this.padHeld.set(r.slot.index, padSelectBits(pad)); // the join press (A) must not also count as "confirm"
-          this.lobbyChanged();
-        }
-      }
-      if (wants) this.padJoinHeld.add(pad.index);
-      else this.padJoinHeld.delete(pad.index);
-    }
-
-    // Read inputs for every local player.
-    const pads = new Map(connectedGamepads().map((p) => [p.index, p]));
-    for (const slot of this.slots.players) {
-      let input: ControlInput | null = null;
-      if (slot.owner.kind === 'keyboard') {
-        input = this.keyboards[slot.owner.scheme]?.update(dtSec) ?? null;
-      } else if (slot.owner.kind === 'gamepad') {
-        const pad = pads.get(slot.owner.index);
-        const wasConnected = slot.connected;
-        slot.connected = !!pad;
-        if (wasConnected !== slot.connected) this.lobbyChanged();
-        input = pad ? readGamepad(pad) : null;
-        // D-pad left / right browse, A confirms, B goes back (edge-triggered).
-        if (pad) {
-          const bits = padSelectBits(pad);
-          const was = this.padHeld.get(slot.index) ?? 0;
-          for (const action of padSelectActions(bits, was)) this.localSelect(slot.index, action);
-          this.padHeld.set(slot.index, bits);
-        }
-      }
-      if (!input) continue;
-      this.localInputs.set(slot.index, input);
-
+      const input = this.keyboards[slot.owner.scheme]?.update(dtSec);
+      if (input) this.localInputs.set(slot.index, input);
     }
   }
 

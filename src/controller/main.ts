@@ -20,7 +20,7 @@ import {
   parseSeriesInfo,
   parseTrackCards,
   sanitizeName,
-  fillBotLabel,
+  fallbackBotName,
   type GamePhase,
   type SeriesInfo,
   type TrackCard,
@@ -45,6 +45,7 @@ import { FIRST_FILL_BOT_SLOT } from '../shared/colors';
 import { crownLabel, sanitizeWins } from '../shared/wins';
 import { PhoneMap } from './phoneMap';
 import { SeriesMenu } from './seriesMenu';
+import { KickedView } from './kickedView';
 import { forcedChoice } from '../shared/forcedChoice';
 import { MotionInput } from './motionInput';
 import { loadPrefs, savePrefs } from './settings';
@@ -233,6 +234,14 @@ $('lock-ok').addEventListener('click', () => {
   $('lock-overlay').classList.add('hidden');
 });
 
+// "Removed from the game" screen (the host pressed the X): JOIN AGAIN reconnects to the same room.
+const kickedView = new KickedView(() => {
+  motion.start();
+  wantConnection = true;
+  void connectLoop();
+});
+$('stage').appendChild(kickedView.root);
+
 function startPlaying() {
   if (!lockTipDone) $('lock-overlay').classList.remove('hidden');
   motion.start();
@@ -261,25 +270,28 @@ function updateFlowVisibility() {
 }
 
 /**
- * What the READY screen is for (see PostMode in selectFlow.ts). After a single race, Knockout or a Loser-picks race
- * the phone offers CHANGE or READY; in a Grand Prix (and on the final podium) the next screen comes by itself, so
- * the phone only shows the standings.
+ * What the READY screen is for (see PostMode in selectFlow.ts). In the lobby, a player who is locked in at READY
+ * gets the two choices CHANGE or READY (after every race everybody starts un-ready and must tap READY again).
+ * After a Loser-picks race it is the same; after a single race, in a Grand Prix and on the final podium the next
+ * screen comes by itself, so the phone only shows the standings (or nothing).
  */
 function postMode(): PostMode {
+  if (phase === 'lobby') return flow.currentStage === 'ready' ? 'choose' : 'lobby';
   if (phase !== 'results') return 'lobby';
-  if (!series) return 'choose';
-  return series.stage === 'between' && series.mode !== 'gp' ? 'choose' : 'wait';
+  if (!series) return 'wait';
+  return series.stage === 'between' && series.mode === 'loser' ? 'choose' : 'wait';
 }
 
 function updatePostMode() {
   const mode = postMode();
   const s = series;
-  const title = mode === 'lobby' ? 'READY' : mode === 'choose' ? (ready ? 'READY' : 'READY?') : s?.stage === 'over' ? 'PODIUM' : s?.raceTotal && s.racesDone >= s.raceTotal ? 'FINAL' : 'NEXT RACE';
+  const title =
+    mode === 'lobby' ? 'READY' : mode === 'choose' ? (ready ? 'READY' : 'READY?') : s?.stage === 'over' ? 'PODIUM' : s?.mode === 'single' ? 'RESULTS' : s?.raceTotal && s.racesDone >= s.raceTotal ? 'FINAL' : 'NEXT RACE';
   flow.setPost(mode, title);
   flow.setStandings(mode === 'wait' && s ? standingChips(s) : null);
 }
 
-/** Ranked standings for the wait screen. Slots 4 and up are fill-in bots (no player entry): "CPU n", crowns from the series message. */
+/** Ranked standings for the wait screen. Slots 4 and up are fill-in bots (no player entry): their names and crowns come from the series message. */
 function standingChips(s: SeriesInfo): StandingChip[] {
   const rows: StandingChip[] = [];
   for (let i = 0; i + 1 < s.standings.length; i += 2) {
@@ -289,7 +301,7 @@ function standingChips(s: SeriesInfo): StandingChip[] {
     const player = lobby.find((p) => p.slot === slot);
     rows.push({
       rank: i / 2 + 1,
-      name: bot ? fillBotLabel(slot) : (player?.name ?? `P${slot + 1}`),
+      name: bot ? (s.bots?.find((b) => b.slot === slot)?.name ?? fallbackBotName(slot)) : (player?.name ?? `P${slot + 1}`),
       wins: bot ? (at >= 0 ? sanitizeWins(s.wins![at + 1]) : 0) : sanitizeWins(player?.wins),
       points: s.standings[i + 1],
       me: slot === mySlot,
@@ -320,8 +332,8 @@ $('ready-btn').addEventListener('click', () => {
 
 function updateReadyButton() {
   const btn = $('ready-btn');
-  // After a race (single, Knockout, Loser picks) the two choices are CHANGE (the flow's own button) and this READY.
-  // Grand Prix between races and the podium have nothing to press: the host goes on by itself.
+  // In the lobby (locked in at READY) and after a Loser-picks race the two choices are CHANGE (the flow's own button) and this READY.
+  // Grand Prix, a single race's results and the podium have nothing to press: the host goes on by itself.
   const hidden = postMode() !== 'choose';
   btn.classList.toggle('hidden', hidden);
   btn.classList.toggle('is-ready', ready);
@@ -339,7 +351,7 @@ const seriesMenu = new SeriesMenu({
 });
 $('stage').appendChild(seriesMenu.root);
 
-const MODE_SHORT = { single: 'Single race', gp: 'Grand Prix', loser: 'Loser picks', knockout: 'Knockout' } as const;
+const MODE_SHORT = { single: 'Single race', gp: 'Grand Prix', loser: 'Loser picks', knockout: 'Knockout' } as const; // (Knockout is only reachable from the dev URL)
 
 function nameOfSlot(slot: number | null): string {
   return lobby.find((p) => p.slot === slot)?.name ?? 'Someone';
@@ -499,6 +511,23 @@ function handleHostMessage(msg: HostToController) {
       showConn(null);
       vibrate([30, 40, 30]);
       break;
+    case 'kicked':
+      // The host removed us. Stay offline until JOIN AGAIN is tapped (no reconnect loop), and forget the old game.
+      wantConnection = false;
+      welcomed = false;
+      mySlot = null;
+      series = null;
+      lobby = [];
+      trackCards = null;
+      link?.close();
+      link = null;
+      seriesMenu.sync(null);
+      seriesMenu.close();
+      flow.setVisible(false);
+      $('settings-panel').classList.add('hidden');
+      showConn(null);
+      kickedView.show();
+      break;
     case 'reject':
       wantConnection = false;
       link?.close();
@@ -506,7 +535,7 @@ function handleHostMessage(msg: HostToController) {
       showConn(null);
       $('join-error').textContent =
         msg.reason === 'full'
-          ? 'That game is full (4 players) or you were removed.'
+          ? 'That game is full (4 players).'
           : msg.reason === 'in-progress'
             ? 'A race is in progress. Join when it ends.'
             : 'Version mismatch: reload both the TV page and this page.';
@@ -531,6 +560,8 @@ function handleHostMessage(msg: HostToController) {
       if (!e) break;
       const was = flow.currentStage;
       flow.applyHost(e.stage, e.name, e.loadout);
+      updateFlowVisibility(); // (in the lobby, being locked in at READY switches the screen to CHANGE / READY)
+      updateReadyButton();
       if (e.stage !== was && e.stage !== 'name') {
         // Remember the name and picks for next time (like the other settings).
         prefs.name = e.name;

@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WinTally } from '../shared/wins';
-import { fillBotLabel } from '../shared/protocol';
 import { winKey } from './postRace';
-import { fillBotName } from './raceSettings';
 
 describe('win keys for the room tally', () => {
   it('stay the same for the same phone and differ between players, bots and fill-in bots', () => {
@@ -21,8 +19,5 @@ describe('win keys for the room tally', () => {
     t.record(winKey(4));
     t.clear();
     expect(t.get(winKey(4))).toBe(0);
-  });
-  it('the phone and the host call fill-in bots by the same name', () => {
-    for (const slot of [4, 5, 11, 13]) expect(fillBotLabel(slot)).toBe(fillBotName(slot));
   });
 });

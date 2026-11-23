@@ -47,11 +47,6 @@ html, body {
 }
 @keyframes checker-slide { to { background-position: clamp(12px, 2.4vh, 28px) 0; } }
 .subtitle { margin: 0.2em 0 0; }
-.chips { position: absolute; right: 0; top: 0; display: flex; gap: 8px; }
-.chip { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 99px; padding: 4px 12px; font-size: 13px; color: var(--text); }
-.chip-k { color: var(--muted); letter-spacing: 0.15em; font-size: 11px; font-weight: 700; }
-.chip b { color: var(--good); }
-.chip.off b { color: var(--bad); }
 
 /* Join panel: framed QR and a tiled room code. */
 .join-panel { background: linear-gradient(180deg, #1d2350, #141838); border: 2px solid rgba(255, 255, 255, 0.1); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4); }
@@ -137,7 +132,6 @@ html, body {
 .top-row .mode-label { white-space: nowrap; }
 .top-row .mode-pills { flex-wrap: nowrap; }
 .top-row .mode-pill { padding: 0.3vh 0.7vw; white-space: nowrap; font-size: clamp(11px, 1.7vh, 16px); }
-.top-row .mode-label kbd { display: none; }
 #track-map, #track-shot { height: clamp(40px, 8vh, 90px); }
 .track-meta { display: none; }
 .track-name { font-size: clamp(16px, 3.2vh, 34px); }
@@ -145,4 +139,79 @@ html, body {
 /* The old player cards stay in the page for the debug readout but are not shown. */
 .slots { display: none; }
 .lobby-hint { font-size: clamp(11px, 1.7vh, 16px); }
-.help { font-size: clamp(10px, 1.4vh, 13px); gap: 0.4em 1.2em; }
+
+/* =====================================================================
+   Settings button (top right of the lobby) and the settings panel.
+   ===================================================================== */
+.settings-open {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 99px;
+  padding: 0.35em 1em 0.35em 0.8em;
+  color: var(--text);
+  font: 600 clamp(12px, 1.8vh, 16px) system-ui, sans-serif;
+  cursor: pointer;
+}
+.settings-open:hover { background: rgba(255, 255, 255, 0.18); }
+.settings-open .gear { font-size: 1.4em; line-height: 1; }
+.settings-open .summary { color: var(--muted); font-weight: 500; }
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 10, 28, 0.72);
+}
+.settings-overlay.hidden { display: none; }
+.settings-box {
+  width: min(640px, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: linear-gradient(180deg, #232a60, #161a40);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  padding: clamp(14px, 3vh, 30px) clamp(16px, 3vw, 34px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 2vh, 18px);
+}
+.settings-box h2 { margin: 0; letter-spacing: 0.3em; color: var(--muted); font-size: clamp(14px, 2.2vh, 20px); }
+.settings-rows { display: flex; flex-direction: column; gap: clamp(8px, 1.6vh, 14px); }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.settings-text { display: flex; flex-direction: column; min-width: 0; }
+.settings-text b { font-size: clamp(16px, 2.6vh, 24px); color: #fff; }
+.settings-text small { color: var(--muted); font-size: clamp(11px, 1.7vh, 15px); }
+.settings-choices { display: flex; gap: 8px; flex: none; }
+.settings-choices button {
+  min-width: 4.2em;
+  padding: 0.5em 1em;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: 700 clamp(13px, 2vh, 18px) system-ui, sans-serif;
+  cursor: pointer;
+}
+.settings-choices button:hover { background: rgba(255, 255, 255, 0.18); }
+.settings-choices button.on { background: #ffd23f; color: #2a1a00; border-color: #fff3b0; }
+.settings-close {
+  align-self: flex-end;
+  padding: 0.55em 1.8em;
+  border-radius: 12px;
+  border: 2px solid #b9ffd5;
+  background: linear-gradient(180deg, #3ddc84, #1fa862);
+  color: #04301a;
+  font: 800 clamp(13px, 2vh, 18px) system-ui, sans-serif;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}

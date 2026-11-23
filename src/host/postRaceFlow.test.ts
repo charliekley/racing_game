@@ -28,7 +28,7 @@ describe('PostRaceFlow: Grand Prix between races', () => {
   });
 });
 
-describe('PostRaceFlow: single race / Knockout / Loser picks (choose)', () => {
+describe('PostRaceFlow: Loser picks (choose)', () => {
   it('shows the quadrants after the hold when nobody does anything', () => {
     const f = new PostRaceFlow('choose');
     expect(run(f)).toEqual(['showSelect', RESULTS_HOLD_SECONDS]);
@@ -62,6 +62,20 @@ describe('PostRaceFlow: single race / Knockout / Loser picks (choose)', () => {
     const f = new PostRaceFlow('choose');
     run(f);
     expect(run(f, { allReady: false, someoneChanging: true }, 30)[0]).toBe('none');
+  });
+});
+
+describe('PostRaceFlow: single race', () => {
+  it('goes back to the lobby after the hold, whatever the phones do (no race again by itself)', () => {
+    const f = new PostRaceFlow('single');
+    expect(f.countdown).toBeNull();
+    expect(run(f, { allReady: true })).toEqual(['lobby', RESULTS_HOLD_SECONDS]);
+  });
+  it('the hold only starts once the podium reveal is over', () => {
+    const f = new PostRaceFlow('single');
+    const [a, t] = run(f, (s) => ({ revealDone: s >= 6 }));
+    expect(a).toBe('lobby');
+    expect(t).toBe(6 + RESULTS_HOLD_SECONDS - 0.5);
   });
 });
 

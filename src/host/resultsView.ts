@@ -37,7 +37,7 @@ export interface ResultRow {
   wins?: number;
 }
 
-/** Extra information for Grand Prix / Loser-picks results (see seriesHost.ts). Absent for a single race. */
+/** Extra information for Grand Prix / Loser-picks results (see seriesHost.ts). Absent for a single race (one LOBBY button). */
 export interface ResultsExtras {
   /** Small title above "Results", e.g. "GRAND PRIX 2/4". */
   heading: string;
@@ -162,26 +162,28 @@ export function buildResults(
   const actionsEl = document.createElement('div');
   actionsEl.className = 'res-actions';
   actionsEl.style.setProperty('--delay', `${(timing.end * 0.7).toFixed(2)}s`);
-  const mk = (label: string, key: string, primary: boolean, fn: () => void) => {
+  const mk = (label: string, primary: boolean, fn: () => void) => {
     const b = document.createElement('button');
     b.className = `res-btn${primary ? ' primary' : ''}`;
-    b.innerHTML = `${label} <kbd>${key}</kbd>`;
+    b.textContent = label;
     b.addEventListener('click', fn);
     return b;
   };
   if (!extras) {
-    actionsEl.append(mk('RACE AGAIN', 'Enter', true, actions.raceAgain), mk('CHANGE TRACK', 'Esc', false, actions.changeTrack));
+    // A single race: one button back to the lobby (it also happens by itself a few seconds after the podium).
+    actionsEl.append(mk('LOBBY', true, actions.changeTrack));
   } else {
-    if (extras.primary) actionsEl.append(mk(extras.primary, 'Enter', true, actions.raceAgain));
-    actionsEl.append(mk(extras.secondary, 'Esc', false, actions.changeTrack));
+    if (extras.primary) actionsEl.append(mk(extras.primary, true, actions.raceAgain));
+    actionsEl.append(mk(extras.secondary, false, actions.changeTrack));
   }
   box.appendChild(actionsEl);
 
-  const help = document.createElement('p');
-  help.className = 'res-help';
-  if (extras) help.textContent = extras.note;
-  else help.innerHTML = 'Tap <b>READY</b> on every phone';
-  box.appendChild(help);
+  if (extras) {
+    const help = document.createElement('p');
+    help.className = 'res-help';
+    help.textContent = extras.note;
+    box.appendChild(help);
+  }
 
   // Grand Prix: a slim bar and a number counting down to the next race (the flow side starts the race itself).
   if (extras?.autoNextSeconds && extras.autoNextSeconds > 0) {
