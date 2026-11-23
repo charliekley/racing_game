@@ -108,6 +108,29 @@ const autumn: Song = {
   drums: ['K..hS.hhK.h.S.ho', 'K..hS.hkK.h.S.oh'],
 };
 
+/** Mushroom Valley (misty mountain gorges): D major pentatonic, bouncy and springy, with a bubbling arpeggio (the trampolines). */
+const mushroom: Song = {
+  bpm: 118,
+  scale: 'pentatonic',
+  bassRoot: 38,
+  leadRoot: 62,
+  swing: 0.28,
+  leadWave: 'square',
+  bass: {
+    grid: 2,
+    bars: ['0 . 0 3 0 . 0 3', '2 . 2 4 2 . 2 4', '3 . 3 5 3 . 3 5', '2 . 4 . 3 . 1 .'],
+  },
+  lead: {
+    grid: 2,
+    bars: ['5 . 7 5 4 . 2 .', '4 . 5 4 2 . 0 .', '7 . 9 7 5 . 4 .', '5 - 4 2 0 - . .'],
+  },
+  arp: {
+    grid: 1,
+    bars: ['0 2 4 2 0 2 4 2 0 2 4 2 0 2 4 2', '2 4 7 4 2 4 7 4 2 4 7 4 2 4 7 4'],
+  },
+  drums: ['K..hS..hK.h.S.ho', 'K..hS..hK.hkS.h.'],
+};
+
 /** Lobby: C major, relaxed and friendly. */
 const lobby: Song = {
   bpm: 96,
@@ -146,9 +169,9 @@ const results: Song = {
   drums: ['k...h...s...h...'],
 };
 
-export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn';
+export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn' | 'mushroom';
 
-export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn };
+export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn, mushroom };
 
 /** Track name (from src/track) -> its tune. Unknown (dev) tracks get a default by index. */
 const BY_TRACK_NAME: Record<string, MusicId> = {
@@ -157,8 +180,9 @@ const BY_TRACK_NAME: Record<string, MusicId> = {
   'Cloud Garden': 'cloud',
   'Switchback Summit': 'summit',
   'Autumn Speedway': 'autumn',
+  'Mushroom Valley': 'mushroom',
 };
-const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn'];
+const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn', 'mushroom'];
 
 export function musicForTrack(name: string, index = 0): MusicId {
   return BY_TRACK_NAME[name] ?? RACE_TUNES[Math.abs(index) % RACE_TUNES.length];

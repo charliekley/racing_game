@@ -4,10 +4,11 @@ import { docksideLoop } from './tracks/docksideLoop';
 import { cloudGarden } from './tracks/cloudGarden';
 import { switchbackSummit } from './tracks/switchbackSummit';
 import { autumnSpeedway } from './tracks/autumnSpeedway';
+import { mushroomValley } from './tracks/mushroomValley';
 import type { TrackDef } from './types';
 
-// The Grand Prix runs them in this order too, so Autumn Speedway (the showcase) is the 5th and final race.
-export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit, autumnSpeedway];
+// The Grand Prix runs them in this order too, so Autumn Speedway is the 5th race and Mushroom Valley the 6th and last.
+export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit, autumnSpeedway, mushroomValley];
 export type { TrackDef };
 
 // Dev-only test tracks (never in the lobby picker). Open one with

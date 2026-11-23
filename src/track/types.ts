@@ -84,6 +84,45 @@ export interface TreetopDef {
   leafPiles?: { at: number; offset: number; size?: number }[];
 }
 
+/**
+ * A giant mushroom cap standing in a gorge or chasm (Mushroom Valley). The cap is a flat-topped disc of ground
+ * (a circle with a `radius` and its top at some height):
+ *  - 'green' caps are ordinary solid road (platforms and bridges you drive across);
+ *  - 'orange' caps are TRAMPOLINES: touch the top and the kart is thrown up and forward along an arc that lands
+ *    exactly on `to` (see src/sim/bouncers.ts for the rules and constants).
+ * Caps are only the ground; the stalk and the cap's looks are drawn from the same data (src/render/env/mushroom.ts).
+ *
+ * Where a cap stands: either ON THE MAIN ROAD (`at` in control-point units, `offset` = metres to the right of the
+ * centerline, `dy` = metres of the top above the road) so it follows the road wherever the road bends, or at a
+ * world point `x, z, y` (for the second route through the cave, which is not on the main road).
+ */
+export interface CapDef {
+  kind: 'green' | 'orange';
+  radius: number;
+  at?: number;
+  /** Metres further along the road from `at` (default 0). */
+  ds?: number;
+  offset?: number;
+  dy?: number;
+  x?: number;
+  z?: number;
+  y?: number;
+  /** Orange only: where the bounce lands: the index of another cap in `caps`, a point on the main road, or a world point (y = the ground there). */
+  to?: number | { at: number; ds?: number; offset?: number } | { x: number; z: number };
+  /** Orange only: time in the air (s). Default: from the distance, so the horizontal speed is about BOUNCE.speed. */
+  air?: number;
+}
+
+/** Mushroom Valley look: gorge mist, the cave shell and its glowing mushrooms. Looks only (the caps are `TrackDef.caps`). */
+export interface MushroomDef {
+  /** Gorges: stretches of the main road (control-point units) where a mist layer fills the chasm below. */
+  gorges: { from: number; to: number }[];
+  /** The cave: main-road stretch (control-point units) under the rock shell, its half width (m) and roof height above the road (m). */
+  cave: { from: number; to: number; halfWidth: number; roof: number };
+  /** Bioluminescent little mushrooms scattered round the cave and the gorge walls (default 90). */
+  glow?: number;
+}
+
 /** A launch cannon: drive into its mouth and you are fired along an arc to the target. */
 export interface CannonDef {
   /** Where the mouth is on the track (control-point units) and sideways (-1 = left edge … 1 = right edge). */
@@ -116,6 +155,12 @@ export interface ShortcutDef {
   points: ([number, number] | [number, number, number])[];
   /** Branch road width (m, default 0.7 × main width). */
   width?: number;
+  /**
+   * true = the third number of each control point ([x, z, height]) is a height the path is HELD at (Mushroom Valley's
+   * orange route, high above a pit). Points without a height are left on the ground. Default false: heights are
+   * ignored and the path follows the terrain.
+   */
+  hold?: boolean;
   /** Ignored: every shortcut is a dirt path (slows you like off-road). */
   surface?: 'road' | 'dirt';
   /**
@@ -189,6 +234,8 @@ export interface TrackDef {
     buildings: number;
     /** Hand-placed solid blocks (container stacks, warehouses...). Optional. */
     blocks?: BlockDef[];
+    /** Mushroom Valley: gorge mist, a glowing cave and the giant caps' looks (see MushroomDef). */
+    mushroom?: MushroomDef;
     /** Treetop course: giant trees, plank roads and falling leaves (see TreetopDef). */
     treetop?: TreetopDef;
     /**
@@ -209,6 +256,10 @@ export interface TrackDef {
   cliffs?: CliffDef[];
   bridges?: BridgeDef[];
   cannons?: CannonDef[];
+  /** Giant mushroom caps in gorges and chasms: green = solid platforms, orange = trampolines (see CapDef). */
+  caps?: CapDef[];
+  /** Chasms in the MAIN road: no ground from `at` for `length` metres (like a ramp's void gap, but without the ramp). */
+  chasms?: { at: number; length: number }[];
   shortcuts?: ShortcutDef[];
   /** Timed dangers and moving parts (geysers, drawbridges...). Their state depends only on the race clock; see src/sim/hazards/. */
   hazards?: HazardDef[];

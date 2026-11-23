@@ -283,6 +283,11 @@ export class Track implements Ground {
       this.ramps.push({ s0, s1: s0 + r.length, height: r.height, shape: r.shape ?? 'kicker', gap, landHeight: landing ? landingHeight(r.height) : 0 });
       if (r.gap) this.gaps.push({ s0: s0 + r.length, s1: s0 + r.length + r.gap, kind: r.gapKind ?? 'water' });
     }
+    // Chasms (Mushroom Valley gorges): a plain void gap in the main road. Mushroom caps (sim/bouncers.ts) are the only ground in it.
+    for (const c of def.chasms ?? []) {
+      const s0 = this.sAt(c.at);
+      this.gaps.push({ s0, s1: s0 + c.length, kind: 'void' });
+    }
     // A drawbridge's opening is water (no road) in the static track; the hazard puts the leaves back (groundAt).
     for (const h of def.hazards ?? []) {
       if (h.kind !== 'drawbridge') continue;

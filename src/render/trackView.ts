@@ -20,6 +20,7 @@ import { merge, paint, scratch, tubeGeo } from './env/geo';
 import { FogCuller } from './env/fogCull';
 import { mergeStaticMeshes } from './env/mergeStatic';
 import { LeafBurstView, leafPileSites, type BurstKart } from './env/leafBurst';
+import { MushroomView, isMushroom } from './env/mushroom';
 import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, buildLanterns, isTreetop, plankTexture } from './env/treetop';
 import { planScenery } from '../track/sceneryPlan';
 
@@ -367,7 +368,16 @@ export class TrackView {
     // PERF: the road ribbons (one per stretch between gaps, per kerb side...) share a few materials; merge the
     // big ones so each material costs one draw call per view instead of several (see env/mergeStatic.ts).
     mergeStaticMeshes(this.group);
+
+    // Mushroom Valley: giant caps, gorge mist and the glowing cave (added after the merge: they animate).
+    if (isMushroom(track)) {
+      this.mushrooms = new MushroomView(track);
+      this.group.add(this.mushrooms.group);
+    }
   }
+
+  /** Mushroom Valley: the caps, mist and cave (null on other tracks). */
+  private mushrooms: MushroomView | null = null;
 
   /** Treetop tracks: the leaves that fly up when a kart drives through a leaf pile (null elsewhere). */
   private leafBursts: LeafBurstView | null = null;
@@ -375,11 +385,13 @@ export class TrackView {
   /** Per-frame update that needs the karts (leaf piles scatter under them). `dt` in seconds. No-op on other tracks. */
   updateKarts(dt: number, karts: Iterable<BurstKart>): void {
     this.leafBursts?.update(dt, karts);
+    this.mushrooms?.updateKarts(karts);
   }
 
   /** Animate (boost arrows and glow, water, lava, flags and foliage through the shared clock). */
   update(time: number): void {
     ENV_TIME.value = time;
+    this.mushrooms?.update(time);
     this.boostTex.offset.y = -time * 2.2;
     const k = 2.4 + 0.9 * Math.sin(time * 6);
     this.boostMat.color.setRGB(k, k, k);

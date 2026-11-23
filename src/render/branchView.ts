@@ -81,6 +81,7 @@ function dirtGeometry(track: Track, b: Branch): THREE.BufferGeometry {
       // Soft edge: solid inside 55 % of the body, fading to nothing at the outside of the soft band.
       let alpha = 1 - smooth01((Math.abs(l) - body * 0.55) / (extent - body * 0.55));
       alpha *= lengthAlpha;
+      if (b.pinned[k]) alpha = 0; // held high over a chasm (Mushroom Valley): no dirt up there
       // Over the main road's tarmac and kerb (same level): hidden, so the main road looks exactly as it would without the path.
       const m = track.projectOnMain(x, z);
       if (Math.abs(m.y - y) < 3) {

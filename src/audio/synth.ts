@@ -313,6 +313,15 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     tone(e, t, { type: 'square', f0: 600, f1: 200, dur: 0.1, gain: 0.15 * g, cutoff: 2500 });
     return 0.2;
   },
+  // Mushroom trampoline: a springy "boing": a low sine that leaps up, a squeaky overtone and a wobbling tail.
+  bounce: (e, t, g) => {
+    tone(e, t, { type: 'sine', f0: 140, f1: 640, dur: 0.26, gain: 0.55 * g });
+    tone(e, t + 0.02, { type: 'triangle', f0: 320, f1: 1280, dur: 0.18, gain: 0.16 * g });
+    tone(e, t + 0.14, { type: 'sine', f0: 560, f1: 310, dur: 0.32, gain: 0.2 * g });
+    tone(e, t + 0.3, { type: 'sine', f0: 430, f1: 260, dur: 0.25, gain: 0.1 * g });
+    noiseBurst(e, t, { dur: 0.08, gain: 0.14 * g, filter: 'highpass', f0: 3000 });
+    return 0.5;
+  },
   cannonFire: (e, t, g) => {
     noiseBurst(e, t, { dur: 0.7, gain: 0.7 * g, filter: 'lowpass', f0: 1800, f1: 90, q: 0.7 });
     tone(e, t, { type: 'sine', f0: 130, f1: 28, dur: 0.6, gain: 0.8 * g });

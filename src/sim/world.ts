@@ -7,6 +7,7 @@ import type { ControlInput } from '../shared/protocol';
 import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
 import { ITEMS, KART, SIM_DT, START, type KartConfig } from './config';
 import { kartConfigFor } from './classes';
+import { Bouncers, type BounceEvent } from './bouncers';
 import { stepCannons, type CannonEvent } from './cannon';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import { Colliders } from './colliders';
@@ -36,6 +37,7 @@ export type WorldEvent =
   | { kind: 'respawn'; slot: number }
   | ItemEvent
   | CannonEvent
+  | BounceEvent
   | BotMoodEvent
   | HazardEvent
   | StyleEvent
@@ -65,6 +67,8 @@ export class World {
   colliders: Colliders | null = null;
   /** Track hazards such as lava geysers (null when the track has none). Pure functions of the race clock. */
   hazards: HazardSystem | null = null;
+  /** Mushroom caps (Mushroom Valley): solid platforms and trampolines; null when the track has none. */
+  bouncers: Bouncers | null = null;
   /** Slipstream charges (null until a race starts). */
   slip: SlipstreamSystem | null = null;
   /** Remembers tricks / mini-turbos / slingshots for the style combo. */
@@ -132,6 +136,7 @@ export class World {
     slots.forEach((slot, i) => this.addKart(slot, this.track!.gridSpot(i)));
     this.race = new Race({ length: this.track.length, checkpoints: this.track.checkpoints }, laps, slots, options);
     this.hazards = this.track.def.hazards?.length ? new HazardSystem(this.track) : null;
+    this.bouncers = this.track.def.caps?.length ? new Bouncers(this.track) : null;
     this.slip = new SlipstreamSystem();
     this.items = new ItemSystem(this.track, seededRng(this.seed), slots);
     this.items.configOf = (slot) => this.configOf(slot);
@@ -147,7 +152,9 @@ export class World {
     for (const slot of this.karts.keys()) inputs.set(slot, getInput(slot));
     const frozen = this.race?.phase === 'countdown';
     // Hazards may replace the ground under karts (a raised drawbridge); otherwise this is just `this.ground`.
-    const ground = this.hazards ? this.hazards.wrapGround(this.ground) : this.ground;
+    let ground = this.hazards ? this.hazards.wrapGround(this.ground) : this.ground;
+    // Mushroom caps are ground too (and orange ones bounce karts: see sim/bouncers.ts).
+    if (this.bouncers) ground = this.bouncers.wrapGround(ground);
 
     for (const [slot, kart] of this.karts) {
       this.prevKarts.set(slot, cloneKart(kart));
@@ -191,6 +198,8 @@ export class World {
         }
       }
     }
+    // Orange caps: a kart touching one is thrown along its arc; karts in the air after a bounce are guided to the landing.
+    if (this.bouncers && !frozen) events.push(...this.bouncers.step(this.karts, SIM_DT, (slot) => this.configOf(slot)));
     // Hazards act after kart physics, on the race clock (identical for every viewer and bot).
     if (this.hazards && this.race && !frozen) events.push(...this.hazards.step(this.race.time, this.karts, (slot) => this.configOf(slot)));
     // Launch cannons: capture, fly and land karts; a landing credits the skipped checkpoints.
