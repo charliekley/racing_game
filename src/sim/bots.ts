@@ -135,6 +135,64 @@ export const SKILLS: Record<Difficulty, Skill> = {
   },
 };
 
+/** Position (0..2) of a difficulty on the easy-normal-hard scale, shifted by a tier rating (0..1, see BOTS.tier). */
+export function tierLevel(difficulty: Difficulty, rating: number): number {
+  const centre = DIFFICULTIES.indexOf(difficulty);
+  return clamp(centre + (clamp(rating, 0, 1) - 0.5) * 2 * BOTS.tier.spread, 0, DIFFICULTIES.length - 1);
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** Interpolate a "mean seconds between events" value where 0 means never: blend the RATES, so 'never' stays rare. */
+const lerpEvery = (a: number, b: number, t: number) => {
+  const rate = lerp(a > 0 ? 1 / a : 0, b > 0 ? 1 / b : 0, t);
+  return rate < 1 / 200 ? 0 : 1 / rate;
+};
+/** Same for the drift threshold (0 = never drifts, smaller = drifts more): blend the eagerness 1/curvature. */
+const lerpDrift = (a: number, b: number, t: number) => {
+  const eager = lerp(a > 0 ? 1 / a : 0, b > 0 ? 1 / b : 0, t);
+  return eager < 5 ? 0 : 1 / eager;
+};
+
+/**
+ * The skill of a bot with tier `rating` (0..1) on `difficulty`: the easy / normal / hard tables blended at
+ * `tierLevel`. Numbers are interpolated (never-values like "no mistakes" through their rates); yes/no abilities
+ * switch at the halfway point. With rating 0.5 you get the plain table of the difficulty back.
+ */
+export function skillAt(difficulty: Difficulty, rating: number): Skill {
+  const level = tierLevel(difficulty, rating);
+  const lo = Math.min(DIFFICULTIES.length - 2, Math.floor(level));
+  const t = level - lo;
+  const a = SKILLS[DIFFICULTIES[lo]];
+  const b = SKILLS[DIFFICULTIES[lo + 1]];
+  const near = t < 0.5 ? a : b;
+  const l = (key: keyof Skill) => lerp(a[key] as number, b[key] as number, t);
+  return {
+    pace: l('pace'),
+    driftCurvature: lerpDrift(a.driftCurvature, b.driftCurvature, t),
+    trickChance: l('trickChance'),
+    rocketEarly: l('rocketEarly'),
+    rocketLate: l('rocketLate'),
+    stallChance: l('stallChance'),
+    mistakeEvery: lerpEvery(a.mistakeEvery, b.mistakeEvery, t),
+    mistakeLength: l('mistakeLength'),
+    itemDelay: l('itemDelay'),
+    holdShields: near.holdShields,
+    dodge: l('dodge'),
+    skillful: near.skillful,
+    steerGain: l('steerGain'),
+    cornerBonus: l('cornerBonus'),
+    jumble: {
+      reaction: lerp(a.jumble.reaction, b.jumble.reaction, t),
+      overshoot: lerp(a.jumble.overshoot, b.jumble.overshoot, t),
+      wobble: lerp(a.jumble.wobble, b.jumble.wobble, t),
+      caution: lerp(a.jumble.caution, b.jumble.caution, t),
+    },
+    rivalry: l('rivalry'),
+    boldness: l('boldness'),
+    recovery: l('recovery'),
+  };
+}
+
 interface Personality {
   /** How much the bot likes to drift (multiplies the corner threshold: lower threshold = drifts more). */
   driftEager: number;
@@ -214,6 +272,8 @@ type Mistake = { kind: 'wobble' | 'lift'; dir: number; until: number };
 
 export class Bot {
   private readonly skill: Skill;
+  /** The nearest plain difficulty to this bot's skill (decides the yes/no behaviours). */
+  private readonly label: Difficulty;
   private readonly personality: Personality;
   private readonly style: BotStyle;
   private readonly rnd: () => number;
@@ -281,8 +341,13 @@ export class Bot {
     readonly slot: number,
     readonly difficulty: Difficulty,
     weightClass: WeightClass = 'medium',
+    /** Tier rating 0..1 from the series roster (see BOTS.tier); undefined = the plain difficulty table (tests, lobby bots). */
+    readonly rating?: number,
   ) {
-    this.skill = SKILLS[difficulty];
+    this.skill = rating === undefined ? SKILLS[difficulty] : skillAt(difficulty, rating);
+    // The nearest of easy / normal / hard decides the yes/no behaviours (shortcuts, sloppy landings).
+    const label = rating === undefined ? difficulty : DIFFICULTIES[Math.round(tierLevel(difficulty, rating))];
+    this.label = label;
     this.personality = PERSONALITY[weightClass];
     const base = botStyleFor(slot);
     this.style = {
@@ -292,7 +357,7 @@ export class Bot {
       steerGain: this.skill.steerGain,
       // Easy bots never leave the main road; the others take what their slot likes (hard bots like shortcuts more).
       useCannons: this.skill.skillful,
-      shortcutBias: !this.skill.skillful ? 0 : difficulty === 'hard' ? Math.max(base.shortcutBias ?? 0, 0.6) : base.shortcutBias,
+      shortcutBias: !this.skill.skillful ? 0 : label === 'hard' ? Math.max(base.shortcutBias ?? 0, 0.6) : base.shortcutBias,
     };
     this.rnd = seeded(slot * 7919 + DIFFICULTIES.indexOf(difficulty) * 104729 + 17);
     // Rocket start: when (race clock, negative = before GO) to press the gas.
@@ -326,7 +391,10 @@ export class Bot {
     const recovering = this.clock < this.recoverUntil;
 
     // --- Rubber band: smooth towards the wanted multiplier ----------------------------------
-    const wantRubber = humanAhead === null ? 1 : rubberBand(humanAhead);
+    let wantRubber = humanAhead === null ? 1 : rubberBand(humanAhead);
+    // Tiers: the back of the field gets only a share of the catch-up boost, or the rubber band would drag the weak
+    // bots up to the humans and the tiers would melt together (see BOTS.tier). Easing off when far ahead is unchanged.
+    if (wantRubber > 1 && this.rating !== undefined) wantRubber = 1 + (wantRubber - 1) * lerp(BOTS.tier.backBoost, 1, this.rating);
     this.rubber += (wantRubber - this.rubber) * 0.02;
 
     // --- Dodging: shift the racing line away from karts / slicks just ahead -------------------
@@ -365,7 +433,7 @@ export class Bot {
     let buttons = base.buttons;
     // In the air after an orange-cap bounce nothing guides the kart: fly it onto the landing like a careful player would
     // (easy bots aim a little to one side, so their landings are sloppier).
-    const air = world.bouncers?.pilot(this.slot, k, this.difficulty === 'easy' ? (this.slot % 2 ? 1.5 : -1.5) : 0);
+    const air = world.bouncers?.pilot(this.slot, k, this.label === 'easy' ? (this.slot % 2 ? 1.5 : -1.5) : 0);
     if (air) {
       steer = air.steer;
       buttons = (buttons & ~(Buttons.GAS | Buttons.BRAKE)) | (air.gas ? Buttons.GAS : 0) | (air.brake ? Buttons.BRAKE : 0);
@@ -803,6 +871,8 @@ export class BotPack {
     public difficulty: Difficulty = DEFAULT_DIFFICULTY,
     /** True for slots a person drives (the rubber band follows the best of them). */
     private readonly isHuman: (slot: number) => boolean = () => false,
+    /** Tier rating (0..1) of the fill-in bots, by slot (the series roster). Slots without one drive the plain difficulty. */
+    private readonly ratings: ReadonlyMap<number, number> = new Map(),
   ) {}
 
   /** The controls of computer slot `slot` for this tick. */
@@ -810,7 +880,7 @@ export class BotPack {
     let bot = this.bots.get(slot);
     if (!bot) {
       const loadout = world.loadouts.get(slot) ?? DEFAULT_LOADOUT;
-      bot = new Bot(slot, this.difficulty, CHARACTERS[loadout.character]?.weightClass ?? 'medium');
+      bot = new Bot(slot, this.difficulty, CHARACTERS[loadout.character]?.weightClass ?? 'medium', this.ratings.get(slot));
       this.bots.set(slot, bot);
     }
     return bot.drive(world, this.humanAhead(world, slot), this.isHuman);

@@ -35,20 +35,35 @@ export interface RailAim {
 export function railAim(track: Track, x: number, z: number, hint: number, lookMeters: number, lane = 0, wantRoute = 0): RailAim {
   const p = track.project(x, z, hint);
   let route = p.route;
-  let at = p.i;
+  // Position along the road in (fractional) samples. `project` only returns the NEAREST sample, so on its own the
+  // aim point would hop 2 m every time the nearest sample changes: at 50 m/s that is every 2-3 ticks, the heading
+  // updates in a stair-step (yaw rate 0, 0, -2.2, 0, ...) and the camera that looks along it shudders. So we add
+  // the kart's own along-the-road offset from that sample (a dot product with the tangent) and interpolate.
+  let u: number;
+  const here = track.sampleOf(p.route, p.i);
+  const along = ((x - here.x) * here.tx + (z - here.z) * here.tz) / (p.route > 0 ? track.branches[p.route - 1].spacing : track.spacing);
+  u = p.i + Math.max(-1, Math.min(1, along));
   if (wantRoute > 0 && route === 0) {
     const b = track.branches[wantRoute - 1];
     if (b) {
       const dist = track.deltaS(p.s, b.s0); // metres to the junction (negative = just past it)
       if (dist > -20 && dist < 80) {
         route = b.route;
-        at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
+        u = -dist / track.spacing; // negative = still on the main road before the fork
       }
     }
   }
   const spacing = route > 0 ? track.branches[route - 1].spacing : track.spacing;
-  const ahead = track.sampleAhead(route, at, Math.max(2, Math.round(lookMeters / spacing)));
-  return { x: ahead.x + ahead.rx * lane, z: ahead.z + ahead.rz * lane, s: p.s, route: p.route, d: p.d, width: p.width, index: p.index };
+  u += Math.max(2, lookMeters / spacing);
+  const lo = Math.floor(u);
+  const fr = u - lo;
+  const a = track.sampleAhead(route, lo, 0);
+  const c = track.sampleAhead(route, lo, 1);
+  const ax = a.x + (c.x - a.x) * fr;
+  const az = a.z + (c.z - a.z) * fr;
+  const rx = a.rx + (c.rx - a.rx) * fr;
+  const rz = a.rz + (c.rz - a.rz) * fr;
+  return { x: ax + rx * lane, z: az + rz * lane, s: p.s, route: p.route, d: p.d, width: p.width, index: p.index };
 }
 
 /** Smallest signed angle from `from` to `to` (rad, -PI..PI). */

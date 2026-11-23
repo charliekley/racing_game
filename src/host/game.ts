@@ -153,6 +153,12 @@ export class Game {
   private fillColors = new Map<number, string>();
   /** Name + character of every fill-in bot of this race (see buildBotRoster): one source for HUD tags, results and standings. */
   private botRoster: ReadonlyMap<number, BotEntry> = new Map();
+  /**
+   * Set by the host while a Grand Prix / Loser-picks series is running: the roster of the series' earlier race. When it
+   * still covers every fill-in slot of this race it is reused as is, so the same bots (names, characters, skill tiers)
+   * race every track and the good ones stay good. Null = build a fresh roster (single race, first race of a series).
+   */
+  seriesRoster: ReadonlyMap<number, BotEntry> | null = null;
   private loop: FixedStepLoop;
   private elapsed = 0;
   private resultsShown = false;
@@ -435,13 +441,15 @@ export class Game {
       fill,
     );
     // The fill-in bots are named after their characters, preferring ones no person picked.
-    this.botRoster = buildBotRoster(fill, slots.map((s) => this.players.slots.slots[s]?.loadout.character ?? -1));
+    const reuse = this.seriesRoster && fill.every((slot) => this.seriesRoster!.has(slot));
+    this.botRoster = reuse ? this.seriesRoster! : buildBotRoster(fill, slots.map((s) => this.players.slots.slots[s]?.loadout.character ?? -1));
     // Classes: each slot's character + kart body decides its physics (sim/classes.ts) and its look.
     const loadouts = new Map(racing.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? this.botRoster.get(slot)?.loadout ?? DEFAULT_LOADOUT] as const));
     // Knockout: more laps, and the sim runs the elimination rules (sim/knockout.ts).
     const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, racing.length) : this.track.def.laps;
     this.world.startRace(racing, laps, loadouts, { knockout: this.knockout });
-    this.bots = new BotPack(this.botDifficulty, (slot) => !this.isBot(slot));
+    // Each fill-in bot drives at its roster tier (strong ... weak around the chosen difficulty).
+    this.bots = new BotPack(this.botDifficulty, (slot) => !this.isBot(slot), new Map([...this.botRoster].map(([slot, e]) => [slot, e.rating])));
     this.photoFinish = false;
     this.photo.skip();
     this.photoPlayed = false;

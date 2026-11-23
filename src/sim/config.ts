@@ -291,6 +291,15 @@ export const BOTS = {
   pace: { easy: 0.8, normal: 0.9, hard: 1.0 },
   /** Rubber band: bots further than `deadZone` m ahead of the best human slow down by up to `maxEase`, those further behind speed up by up to `maxBoost` (fractions of pace). */
   rubber: { deadZone: 30, fullAt: 180, maxEase: 0.06, maxBoost: 0.04 },
+  /**
+   * Persistent skill tiers (a roster of fill-in bots, see bots.ts `skillAt`). Every bot carries a fixed rating 0..1
+   * (0 = weakest, 1 = strongest). The skill used is the chosen difficulty shifted by up to `spread` difficulty levels
+   * either way (easy = level 0, normal = 1, hard = 2, clamped), so on Normal the best bot is close to Hard and the
+   * weakest close to Easy.
+   * `backBoost`: the weakest bot gets only this share of the "catch up with the human" rubber-band boost (the best
+   * bot gets all of it); otherwise the boost would drag the back tier up towards the humans and flatten the tiers.
+   */
+  tier: { spread: 0.9, backBoost: 0.25 },
 } as const;
 
 /** Camera feel (render-only, doesn't affect the sim). */

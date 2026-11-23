@@ -51,6 +51,11 @@ export function fillBotSlots(entrants: number, racers: number): number[] {
 export interface BotEntry {
   name: string;
   loadout: Loadout;
+  /**
+   * Skill tier 0..1 (0 = weakest, 1 = strongest), fixed for the whole series: the same bot is good or bad in every
+   * race of a Grand Prix (see BOTS.tier / skillAt in sim/bots.ts for what it changes).
+   */
+  rating: number;
 }
 
 /**
@@ -58,6 +63,8 @@ export interface BotEntry {
  *  - Characters no person picked come first, so bots look different from the people (and from each other).
  *  - With more bots than characters left, the list starts over; a repeat gets a number ("Pip 2", "Pip 3"),
  *    the first one keeps the plain name.
+ * The ratings are spread evenly from the strongest (first bot) to the weakest (last) so a field always has a front
+ * and a back. Build the roster ONCE per Grand Prix / Loser-picks series and reuse it for every race.
  * The same input always gives the same roster. `botSlots` = fillBotSlots(...), `humanCharacters` = the
  * characters the people picked (indices into CHARACTERS). The karts keep their usual varied bodies (botLoadoutFor).
  */
@@ -74,7 +81,7 @@ export function buildBotRoster(botSlots: readonly number[], humanCharacters: rea
     const count = (used.get(character) ?? 0) + 1;
     used.set(character, count);
     const base = CHARACTERS[character].name;
-    roster.set(slot, { name: count === 1 ? base : `${base} ${count}`, loadout: { character, kart: botLoadoutFor(slot).kart } });
+    roster.set(slot, { name: count === 1 ? base : `${base} ${count}`, loadout: { character, kart: botLoadoutFor(slot).kart }, rating: botSlots.length < 2 ? 0.5 : 1 - i / (botSlots.length - 1) });
   });
   return roster;
 }
