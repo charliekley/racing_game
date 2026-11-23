@@ -19,7 +19,7 @@ import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
 import { effectiveConfig } from './items/shrink';
 import type { BotMoodEvent } from './bots';
-import { Race, type RaceEvent } from './race';
+import { Race, type RaceEvent, type RaceOptions } from './race';
 import { ComboTracker, SlipstreamSystem, applyComboBonus, type StyleEvent } from './style';
 import type { Track } from './track';
 import { planScenery } from '../track/sceneryPlan';
@@ -124,7 +124,7 @@ export class World {
    * `loadouts` (optional) says which character + kart body each slot drives; slots missing
    * from it get the default loadout, which behaves exactly like the original single kart.
    */
-  startRace(slots: number[], laps: number, loadouts?: ReadonlyMap<number, Loadout>, options: { knockout?: boolean } = {}): void {
+  startRace(slots: number[], laps: number, loadouts?: ReadonlyMap<number, Loadout>, options: RaceOptions = {}): void {
     if (!this.track) throw new Error('startRace needs a track');
     this.loadouts.clear();
     this.configs.clear();

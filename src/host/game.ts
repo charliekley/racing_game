@@ -447,7 +447,8 @@ export class Game {
     const loadouts = new Map(racing.map((slot) => [slot, this.players.slots.slots[slot]?.loadout ?? this.botRoster.get(slot)?.loadout ?? DEFAULT_LOADOUT] as const));
     // Knockout: more laps, and the sim runs the elimination rules (sim/knockout.ts).
     const laps = this.knockout ? knockoutLaps(this.track.def.laps, this.track.length, racing.length) : this.track.def.laps;
-    this.world.startRace(racing, laps, loadouts, { knockout: this.knockout });
+    // `humans`: the race ends as soon as every person has finished (the bots get estimated times; nobody waits for them).
+    this.world.startRace(racing, laps, loadouts, { knockout: this.knockout, humans: racing.filter((s) => !this.isBot(s)) });
     // Each fill-in bot drives at its roster tier (strong ... weak around the chosen difficulty).
     this.bots = new BotPack(this.botDifficulty, (slot) => !this.isBot(slot), new Map([...this.botRoster].map(([slot, e]) => [slot, e.rating])));
     this.photoFinish = false;

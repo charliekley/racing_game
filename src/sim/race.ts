@@ -87,6 +87,16 @@ export interface TrackInfo {
   checkpoints: number[];
 }
 
+export interface RaceOptions {
+  /** Knockout rules (the last kart is out after every lap). */
+  knockout?: boolean;
+  /**
+   * Slots driven by people. When given, the race ends as soon as every one of them has finished: nobody waits for
+   * the bots. Bots still racing get an estimated finish time (see `finishBotsByEstimate`).
+   */
+  humans?: readonly number[];
+}
+
 export class Race {
   /** Race clock in seconds; negative during the countdown, 0 = GO. */
   time = -COUNTDOWN_SECONDS;
@@ -98,6 +108,8 @@ export class Race {
   private lastFinishAt: number | null = null;
   /** Knockout rules (null in a normal race). */
   readonly knockout: Knockout | null;
+  /** Slots driven by people (empty = no "all humans finished" rule, e.g. bot-only tests). */
+  private readonly humans: Set<number>;
   /** Events produced between ticks (a player leaving); delivered with the next tick's events. */
   private queued: RaceEvent[] = [];
   /** Laps finished by `grantProgress` between ticks (cannon landings), for the knockout check. */
@@ -107,9 +119,10 @@ export class Race {
     readonly track: TrackInfo,
     readonly totalLaps: number,
     slots: number[],
-    options: { knockout?: boolean } = {},
+    options: RaceOptions = {},
   ) {
     this.knockout = options.knockout ? new Knockout(slots) : null;
+    this.humans = new Set(options.humans ?? []);
     for (const slot of slots) {
       this.racers.set(slot, {
         slot,
@@ -333,7 +346,11 @@ export class Race {
         const lastOneLeft = finishedCount >= 1 && this.racers.size - finishedCount <= 1;
         // Or the straggler timeout since the latest finish (everyone left is a DNF by distance).
         const timedOut = this.lastFinishAt !== null && this.time - this.lastFinishAt > STRAGGLER_TIMEOUT_SECONDS;
-        graceOver = lastOneLeft || timedOut;
+        // Or every human has finished: end now, the bots get estimated times instead of everyone waiting for them.
+        const humansDone =
+          this.humans.size > 0 && [...this.humans].every((h) => { const r = this.racers.get(h); return !r || r.finished || r.out; });
+        if (humansDone && !lastOneLeft && !allDone) this.finishBotsByEstimate();
+        graceOver = lastOneLeft || timedOut || humansDone;
       }
       if (allDone || graceOver) {
         this.phase = 'done';
@@ -354,6 +371,28 @@ export class Race {
       }
     }
     return events;
+  }
+
+  /**
+   * Every human has finished: the karts still racing (bots) are finished by ESTIMATE instead of being waited for.
+   * Estimated time = now + distance left / that kart's own average speed so far (distance raced / race time).
+   * Pure kinematics: assume it keeps its average pace. Since every estimate is later than "now", the bots always
+   * land behind the people who really finished, and among themselves they are ordered by their estimated times.
+   */
+  private finishBotsByEstimate(): void {
+    const total = this.totalLaps * this.track.length;
+    const left = [...this.racers.values()].filter((r) => !r.finished && !r.out);
+    const est = left.map((r) => {
+      const avg = this.time > 0 && r.progress > 0 ? r.progress / this.time : 1; // m/s (1 m/s if it never moved)
+      return { r, t: this.time + Math.max(0, total - r.progress) / Math.max(1, avg) };
+    });
+    est.sort((a, b) => a.t - b.t);
+    for (const { r, t } of est) {
+      r.finished = true;
+      r.finishTime = t;
+      this.finishOrder.push(r.slot);
+      r.place = this.finishOrder.length;
+    }
   }
 
   /**

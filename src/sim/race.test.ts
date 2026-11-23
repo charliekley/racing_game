@@ -290,3 +290,43 @@ describe('finish rule (knockout)', () => {
     expect(r.phase).toBe('done');
   });
 });
+
+describe('the race ends when every human has finished', () => {
+  /** A race where slot 0 is the only person and slots 1..3 are bots. */
+  function humanRace(): Race {
+    const slots = [0, 1, 2, 3];
+    const r = new Race(track, 1, slots, { humans: [0] });
+    r.tick(COUNTDOWN_SECONDS + DT, new Map(slots.map((s) => [s, L - 5])), none);
+    return r;
+  }
+
+  it('ends as soon as the human finishes; the bots still racing get estimated times behind the human', () => {
+    const r = humanRace();
+    // The bots crawl along at different paces while the human laps.
+    const bots = new Map<number, number>([[1, 0], [2, 0], [3, 0]]);
+    for (let s = 0; s <= L + 20 && r.phase === 'racing'; s += 10) {
+      bots.set(1, (s * 0.8) % L);
+      bots.set(2, (s * 0.6) % L);
+      bots.set(3, (s * 0.4) % L);
+      r.tick(DT, new Map([...bots, [0, s % L]]), none);
+    }
+    expect(r.phase).toBe('done');
+    const human = r.racers.get(0)!;
+    expect(human.place).toBe(1);
+    // Every bot is "finished" with an estimated time after the human's, in order of how far along it was.
+    const order = r.standings();
+    expect(order).toEqual([0, 1, 2, 3]);
+    for (const slot of [1, 2, 3]) {
+      const b = r.racers.get(slot)!;
+      expect(b.finished).toBe(true);
+      expect(b.finishTime!).toBeGreaterThan(human.finishTime!);
+    }
+    expect(r.racers.get(1)!.finishTime!).toBeLessThan(r.racers.get(3)!.finishTime!);
+  });
+
+  it('without a humans list (bot-only races) the old rule applies: it keeps going', () => {
+    const r = racing([0, 1, 2, 3], 1);
+    driveAlong(r, 0, 0, L + 20);
+    expect(r.phase).toBe('racing');
+  });
+});
