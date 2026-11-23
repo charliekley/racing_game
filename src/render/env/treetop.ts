@@ -121,7 +121,7 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   const foot = t.y;
   const top = t.y + t.height;
   const r = t.radius;
-  const seg = detail ? 22 : 12;
+  const seg = detail ? 18 : 10;
 
   // Trunk: a surface of revolution. Wide root flare at the foot, then almost straight (never wider than the
   // collider radius above the flare), tapering into the crown. Bark ridges come from the angle modifier.
@@ -185,21 +185,22 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   const color = leafColor(t.x, crownY, t.z, t.crown, palette, t.seed % 53);
   const blobDetail = detail ? 2 : 1;
   const sway = (p: THREE.Vector3) => THREE.MathUtils.clamp((p.y - crownY + t.crown) / t.crown, 0, 1) * 2.5;
-  const blob = (x: number, y: number, z: number, rad: number, sy: number) => {
+  const blob = (x: number, y: number, z: number, rad: number, sy: number, dd = blobDetail) => {
     // Shrink a leaf cluster that would hang into a road, or leave it out.
     while (rad > t.crown * 0.12 && road.hits(x, z, rad * 1.1, y - rad * sy * 1.1, y + rad * sy * 1.1)) rad *= 0.75;
     if (road.hits(x, z, rad * 1.1, y - rad * sy * 1.1, y + rad * sy * 1.1)) return;
-    const g = blobGeo(blobDetail, Math.floor(rnd() * 1000), 0.22, 1.6, noise3);
+    const g = blobGeo(dd, Math.floor(rnd() * 1000), 0.22, 1.6, noise3);
     g.applyMatrix4(matrix(x, y, z, rad, rad * sy, rad, rnd() * 6.28));
     parts.push(paint(g, color, sway));
   };
   blob(t.x, crownY + t.crown * 0.15, t.z, t.crown * 0.62, 0.62);
   for (const e of limbEnds) blob(e.x, e.y + t.crown * 0.08, e.z, t.crown * (0.36 + rnd() * 0.12), 0.7);
+  // (The smaller puffs round the edge are always the cheap model: they are small on screen.)
   const puffs = detail ? 6 : 3;
   for (let k = 0; k < puffs; k++) {
     const a = rnd() * Math.PI * 2;
     const d = t.crown * (0.5 + rnd() * 0.45);
-    blob(t.x + Math.cos(a) * d, crownY + (rnd() - 0.3) * t.crown * 0.5, t.z + Math.sin(a) * d, t.crown * (0.22 + rnd() * 0.14), 0.75);
+    blob(t.x + Math.cos(a) * d, crownY + (rnd() - 0.3) * t.crown * 0.5, t.z + Math.sin(a) * d, t.crown * (0.22 + rnd() * 0.14), 0.75, 1);
   }
   return merge(parts);
 }
@@ -235,6 +236,37 @@ export function buildGiantTrees(track: Track, plan: SceneryPlan): THREE.Object3D
     out.push(mesh);
   }
   return out;
+}
+
+/**
+ * Lanterns (trees with `lanterns`): a ring of warm paper lanterns hanging on short cords from pegs round the
+ * trunk. The lantern bodies use a self-lit material with a colour above 1, so the bloom makes them glow.
+ * Returns [the pegs and cords (lit wood), the glowing lanterns].
+ */
+export function buildLanterns(plan: SceneryPlan): THREE.Object3D[] {
+  const wood: THREE.BufferGeometry[] = [];
+  const glow: THREE.BufferGeometry[] = [];
+  const cord: ColorFn = () => _c.set('#3a2618');
+  for (const t of plan.giantTrees) {
+    if (t.lanterns === undefined) continue;
+    const n = 12;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + 0.2;
+      const y = t.y + t.lanterns + (k % 2) * 2.2;
+      const out = t.radius * 0.95 + 2.2;
+      const peg0 = new THREE.Vector3(t.x + Math.cos(a) * t.radius * 0.9, y + 1.2, t.z + Math.sin(a) * t.radius * 0.9);
+      const peg1 = new THREE.Vector3(t.x + Math.cos(a) * out, y + 1.4, t.z + Math.sin(a) * out);
+      wood.push(paint(tubeGeo([peg0, peg1], [0.12, 0.09], 5), cord));
+      wood.push(paint(tubeGeo([peg1, new THREE.Vector3(peg1.x, y + 0.5, peg1.z)], [0.03, 0.03], 3), cord));
+      const warm = k % 3 === 0 ? new THREE.Color(3.2, 1.4, 0.45) : new THREE.Color(3.0, 1.9, 0.6);
+      const g = blobGeo(1, k, 0.05, 1, noise3).applyMatrix4(matrix(peg1.x, y, peg1.z, 0.45, 0.6, 0.45));
+      glow.push(paint(g, () => warm));
+    }
+  }
+  if (glow.length === 0) return [];
+  const pegs = new THREE.Mesh(merge(wood), propMaterial(0.9));
+  const lamps = new THREE.Mesh(merge(glow), new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
+  return [pegs, lamps];
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +518,10 @@ export function buildFallingLeaves(track: Track, count = 2600): THREE.Mesh {
   mat.customProgramCacheKey = () => 'treetop-leaves';
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false; // the leaves are spread over the whole course; the GPU clips them cheaply
+  // Low quality (no shadows) draws only a third of the leaves. onBeforeRender runs just before the draw call.
+  mesh.onBeforeRender = (renderer) => {
+    g.instanceCount = renderer.shadowMap.enabled ? count : Math.floor(count / 3);
+  };
   return mesh;
 }
 
@@ -504,7 +540,8 @@ export function buildLeafPiles(track: Track): THREE.Object3D[] {
     const p = track.pointAt(s, (pile.offset * track.def.width) / 2);
     const ground = track.sample(p.x, p.z, p.index)?.height ?? p.y;
     const size = pile.size ?? 2.2;
-    const palette = CROWNS[Math.floor(rnd() * 4)];
+    // Fallen leaves: browner and duller than the leaves still on the trees, with the odd bright patch.
+    const palette: [THREE.Color, THREE.Color] = [new THREE.Color('#6a3414'), new THREE.Color(['#d8822a', '#e0a03a', '#c8602a'][Math.floor(rnd() * 3)])];
     for (let k = 0; k < 4; k++) {
       const g = blobGeo(2, Math.floor(rnd() * 1000), 0.3, 2.2, noise3);
       const r = size * (k === 0 ? 1 : 0.5 + rnd() * 0.3);

@@ -101,6 +101,8 @@ export interface GiantTreeItem extends Placement {
   radius: number;
   height: number;
   crown: number;
+  /** Height (m above the floor) of a ring of lanterns round the trunk, or undefined for none. */
+  lanterns?: number;
 }
 
 export interface SceneryPlan {
@@ -369,7 +371,7 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
     solidOf(collider);
     site.reserve(g.x, g.z, g.radius * 1.8 + 2);
     const crown = g.crown ?? (1.4 * g.height) / 3;
-    plan.giantTrees.push({ x: g.x, z: g.z, y, scale: 1, rotationY: 0, seed: seed(), solid: true, collider, radius: g.radius, height: g.height, crown });
+    plan.giantTrees.push({ x: g.x, z: g.z, y, scale: 1, rotationY: 0, seed: seed(), solid: true, collider, radius: g.radius, height: g.height, crown, lanterns: g.lanterns });
   }
 
   planForestGiants(site, plan, h, def, solidOf);

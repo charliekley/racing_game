@@ -67,6 +67,8 @@ export interface GiantTreeDef {
   height: number;
   /** Crown radius (m, default 1.4 x height / 3). */
   crown?: number;
+  /** Glowing lanterns hung round the trunk at this height above the floor (m). Looks only. */
+  lanterns?: number;
 }
 
 /**

@@ -9,7 +9,7 @@ web page. There's no app to install. All names, art and sounds are original.
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
 > each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
-> start, 3 laps on one of four tracks, results and "race again". Computer drivers can
+> start, 3 laps on one of five tracks, results and "race again". Computer drivers can
 > fill empty slots. Audio and polish arrive in M7.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
@@ -232,7 +232,7 @@ Press the same number again to remove a keyboard player. **B** adds a computer
 driver (always ready; remove it with its Remove button). **G** starts the race
 right away without waiting for everyone to be ready. **Q** cycles the graphics
 quality (High / Medium / Low – see Performance below). **D** cycles the computer drivers' difficulty (not while someone drives with WASD: D is their browse-right key) (Easy / Normal / Hard; remembered, shown on the BOTS chip). **N** cycles **RACERS** (4 / 8 / 12 karts on the grid; remembered; `?racers=12` overrides it): everyone who is not a person (or a bot added with B) is filled in with computer drivers, so one player races 3 bots by default. Fill-in bots have no screen, get colours nobody else has, and are called CPU 1, CPU 2... **T** picks the track
-(Ember Peaks / Dockside Loop / Cloud Garden / Switchback Summit; remembered, and `?track=2` in the
+(Ember Peaks / Dockside Loop / Cloud Garden / Switchback Summit / Autumn Speedway; remembered, and `?track=4` in the
 URL overrides it). The **`** key toggles
 the debug readouts on the TV.
 In the lobby, **C** / **V** (or **,** / **.** for the arrows player) pick driver / kart (see Characters and karts).
@@ -339,7 +339,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
   tables (leader and last place) that every position interpolates between. Save the file and the dev server reloads.
 * **Race rules:** countdown length, rocket-start window, finish grace period in
   [`src/sim/race.ts`](src/sim/race.ts).
-* **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Ember Peaks, Dockside Loop, Cloud Garden, Switchback Summit;
+* **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Ember Peaks, Dockside Loop, Cloud Garden, Switchback Summit, Autumn Speedway;
   files starting with `_` are dev-only test tracks, see [`docs/TRACKS.md`](docs/TRACKS.md)).
   A track is a list of control points plus walls, ramps and boost pads placed
   "between point 10 and 11" style. To add one, copy that file, change the

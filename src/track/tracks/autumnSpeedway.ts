@@ -194,7 +194,7 @@ export const autumnSpeedway: TrackDef = {
       // passing it (autumnSpeedway.test.ts checks the clearance). Heights are to the middle of the crown.
       giantTrees: [
         { x: G.x, z: G.z, radius: 21, height: 150, crown: 62 }, // the Great Trunk (the spiral)
-        { x: L.x, z: L.z, radius: 11, height: 84 }, // the Lantern Oak (the hairpin)
+        { x: L.x, z: L.z, radius: 11, height: 84, lanterns: 36 }, // the Lantern Oak (the hairpin), lanterns above the road
         { x: 90, z: 388, radius: 11, height: 120, crown: 46 }, // the landing crown of the jump
         { x: 286, z: 86, radius: 9, height: 70 }, // beside the root ramp
         { x: 312, z: 178, radius: 10, height: 76 }, // where the branch road leaves the root
