@@ -118,7 +118,7 @@ export interface MushroomDef {
   /** Gorges: stretches of the main road (control-point units) where a mist layer fills the chasm below. */
   gorges: { from: number; to: number }[];
   /** The cave: main-road stretch (control-point units) under the rock shell, its half width (m) and roof height above the road (m). */
-  cave: { from: number; to: number; halfWidth: number; roof: number };
+  cave: { from: number; to: number; halfWidth: number; roof: number; /** Metres the vault's centre line lies to the right of the main road (default -0.26 x halfWidth: to the left). */ offset?: number };
   /** Bioluminescent little mushrooms scattered round the cave and the gorge walls (default 90). */
   glow?: number;
 }

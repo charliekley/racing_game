@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { CURB_WIDTH, GRID_SIZE, Track, type TrackSample } from '../sim/track';
-import { asphaltMaps, boostTexture, checkerTexture, concreteMaps, grassMaps, kerbMaps, roadTexture, snowMaps, metalMaps } from './textures';
+import { asphaltMaps, boostTexture, checkerTexture, concreteMaps, grassMaps, kerbMaps, rockMaps, roadTexture, snowMaps, metalMaps } from './textures';
 import { ENV_TIME, buildGantry, buildScenery } from './scenery';
 import { buildRamps } from './rampView';
 import { FLOOR_Y, TerrainView } from './terrainView';
@@ -20,7 +20,7 @@ import { merge, paint, scratch, tubeGeo } from './env/geo';
 import { FogCuller } from './env/fogCull';
 import { mergeStaticMeshes } from './env/mergeStatic';
 import { LeafBurstView, leafPileSites, type BurstKart } from './env/leafBurst';
-import { MushroomView, isMushroom } from './env/mushroom';
+import { MushroomView, isMushroom, trailTexture } from './env/mushroom';
 import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, buildLanterns, isTreetop, plankTexture } from './env/treetop';
 import { planScenery } from '../track/sceneryPlan';
 
@@ -110,6 +110,17 @@ const KERB_PROFILE: [number, number][] = [
   [1.05, 0.08],
   [1.2, 0.0],
 ];
+/** Mushroom Valley's low rough stone wall (the rope fence stands on top of it). */
+const STONE_WALL_PROFILE: [number, number][] = [
+  [0.42, 0],
+  [0.4, 0.12],
+  [0.28, 0.4],
+  [0.2, 0.55],
+  [-0.2, 0.55],
+  [-0.28, 0.4],
+  [-0.4, 0.12],
+  [-0.42, 0],
+];
 const BARRIER_PROFILE: [number, number][] = [
   [0.34, 0],
   [0.32, 0.1],
@@ -159,19 +170,28 @@ export class TrackView {
     // Treetop tracks (Autumn Speedway) swap asphalt, kerbs and concrete barriers for wood (see env/treetop.ts).
     const treetop = isTreetop(track);
     const planks = treetop ? plankTexture() : null;
+    // Mushroom Valley: a packed-earth mountain trail with stone edges and rope fences instead of asphalt and red/white kerbs.
+    const mushroom = isMushroom(track);
 
     // Road: the asphalt texture carries the lane markings (edge lines, dashed centre line).
     const asphalt = asphaltMaps();
     const roadMat = planks
       ? new THREE.MeshStandardMaterial({ map: planks, roughness: 0.82, metalness: 0 })
-      : new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
+      : mushroom
+        ? new THREE.MeshStandardMaterial({ map: trailTexture(), roughness: 0.96, metalness: 0 })
+        : new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
     alongTrack((p) => [{ d: -hw, h: lift(p, -hw) + 0.02 }, { d: 0, h: lift(p, 0) + 0.02 }, { d: hw, h: lift(p, hw) + 0.02 }], 12, roadMat);
 
     // Rounded raised kerbs with red/white stone bands.
     const kerb = kerbMaps();
     for (const t of [kerb.map, kerb.normalMap, kerb.roughnessMap]) t.repeat.set(1, 1);
     // (Treetop: a plain dark wooden edge beam instead of the red/white kerb stones.)
-    const kerbMat = treetop ? new THREE.MeshStandardMaterial({ color: '#5a3820', roughness: 0.9 }) : new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
+    const stone = mushroom ? rockMaps() : null; // (Mushroom Valley: a rough stone edge)
+    const kerbMat = treetop
+      ? new THREE.MeshStandardMaterial({ color: '#5a3820', roughness: 0.9 })
+      : stone
+        ? new THREE.MeshStandardMaterial({ ...stone, roughness: 1, color: '#b9afa0' })
+        : new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
     for (const side of [-1, 1]) {
       alongTrack(
         (p) => {
@@ -193,14 +213,26 @@ export class TrackView {
     const outer = hw + def.offroadWidth;
     const stripH = (p: TrackSample, d: number) => Track.groundLevel(p.y, p.bank, hw, d, def.offroadWidth) - p.y + 0.01;
     const outerD = (p: TrackSample, side: number) => Math.min(outer, track.cliffEdgeAt(p.s, side));
-    alongTrack((p) => {
-      const o = outerD(p, -1);
-      return [{ d: -o, h: stripH(p, -o) }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }];
-    }, 8, offMat, groundRuns);
-    alongTrack((p) => {
-      const o = outerD(p, 1);
-      return [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: o, h: stripH(p, o) }];
-    }, 8, offMat, groundRuns);
+    // (Mushroom Valley: under the cave's roof the verge is dark rock, not sunlit grass.)
+    const caveRange = mushroom ? { s0: track.sAt(def.scenery.mushroom!.cave.from) - 22, s1: track.sAt(def.scenery.mushroom!.cave.to) + 22 } : null;
+    const inCaveS = (p: TrackSample) => !!caveRange && track.deltaS(caveRange.s0, p.s) >= 0 && track.deltaS(p.s, caveRange.s1) >= 0;
+    const verge: [THREE.Material, TrackSample[][] | null][] = [[offMat, groundRuns]];
+    if (mushroom) {
+      const rock = rockMaps();
+      const caveMat = new THREE.MeshStandardMaterial({ ...rock, roughness: 1, color: '#5d5764' });
+      verge[0] = [offMat, runs(track.samples, (p) => !track.inGap(p.s) && !inCaveS(p))];
+      verge.push([caveMat, runs(track.samples, (p) => !track.inGap(p.s) && inCaveS(p))]);
+    }
+    for (const [mat, rs] of verge) {
+      alongTrack((p) => {
+        const o = outerD(p, -1);
+        return [{ d: -o, h: stripH(p, -o) }, { d: -hw - CURB_WIDTH, h: lift(p, -hw) + 0.01 }];
+      }, 8, mat, rs);
+      alongTrack((p) => {
+        const o = outerD(p, 1);
+        return [{ d: hw + CURB_WIDTH, h: lift(p, hw) + 0.01 }, { d: o, h: stripH(p, o) }];
+      }, 8, mat, rs);
+    }
 
     // Water pits in the gaps after jumps (quay walls come from TerrainView; see terrainView.ts).
     const sky = new THREE.Color(def.theme.sky);
@@ -263,7 +295,13 @@ export class TrackView {
       boards.repeat.set(0.25, 1);
       barrierMat = new THREE.MeshStandardMaterial({ map: boards, color: '#d8b48c', roughness: 0.9, side: THREE.DoubleSide });
     }
-    const steel = new THREE.Color(treetop ? '#6a4428' : '#d6dae0');
+    if (mushroom) {
+      // Mushroom Valley: a low rough stone wall (the same stone as the edges) topped by wooden posts and ropes.
+      const stoneWall = rockMaps();
+      for (const t of [stoneWall.map, stoneWall.normalMap, stoneWall.roughnessMap]) t.repeat.set(1, 1);
+      barrierMat = new THREE.MeshStandardMaterial({ ...stoneWall, roughness: 1, color: '#bdb3a4', side: THREE.DoubleSide });
+    }
+    const steel = new THREE.Color(treetop ? '#6a4428' : mushroom ? '#7b5a38' : '#d6dae0');
     const posts: THREE.BufferGeometry[] = [];
     for (const side of [-1, 1]) {
       const has = (p: TrackSample) => (side < 0 ? p.wallLeft : p.wallRight);
@@ -271,24 +309,28 @@ export class TrackView {
         // A wall on a cliff side stands at the cliff edge (like the collision wall does).
         // On a bridge the parapet stands at the deck edge (like the collision wall: Track.wallsAt).
         const wallD = (p: TrackSample) => side * Math.min(track.onBridge(p.s) ? hw + CURB_WIDTH : outer, track.cliffEdgeAt(p.s, side));
-        const m = add(ribbon(run, false, (p) => BARRIER_PROFILE.map(([dIn, h]) => ({ d: wallD(p) - side * dIn, h })), 6), barrierMat);
+        const profile = mushroom ? STONE_WALL_PROFILE : BARRIER_PROFILE;
+        const m = add(ribbon(run, false, (p) => profile.map(([dIn, h]) => ({ d: wallD(p) - side * dIn, h })), 6), barrierMat);
         m.castShadow = true;
         const pts: THREE.Vector3[] = [];
-        const step = Math.max(1, Math.round(5 / track.spacing));
+        const lowRope: THREE.Vector3[] = []; // (Mushroom Valley: a second, lower rope)
+        const step = Math.max(1, Math.round((mushroom ? 4 : 5) / track.spacing));
         run.forEach((p, i) => {
           if (i % step !== 0 && i !== run.length - 1) return;
           const d = wallD(p);
-          pts.push(new THREE.Vector3(p.x + p.rx * d, p.y + 1.55, p.z + p.rz * d));
-          const base = new THREE.Vector3(p.x + p.rx * d, p.y + 0.9, p.z + p.rz * d);
-          posts.push(paint(tubeGeo([base, base.clone().setY(base.y + 0.75)], [0.07, 0.07], 6), () => scratch.copy(steel)));
+          pts.push(new THREE.Vector3(p.x + p.rx * d, p.y + (mushroom ? 1.5 : 1.55), p.z + p.rz * d));
+          lowRope.push(new THREE.Vector3(p.x + p.rx * d, p.y + 1.1, p.z + p.rz * d));
+          const base = new THREE.Vector3(p.x + p.rx * d, p.y + (mushroom ? 0.45 : 0.9), p.z + p.rz * d);
+          posts.push(paint(tubeGeo([base, base.clone().setY(base.y + (mushroom ? 1.1 : 0.75))], mushroom ? [0.1, 0.08] : [0.07, 0.07], 6), () => scratch.copy(steel)));
         });
-        if (pts.length > 1) posts.push(paint(tubeGeo(pts, pts.map(() => 0.06), 6), () => scratch.copy(steel)));
+        if (pts.length > 1) posts.push(paint(tubeGeo(pts, pts.map(() => (mushroom ? 0.045 : 0.06)), 6), () => scratch.copy(steel)));
+        if (mushroom && lowRope.length > 1) posts.push(paint(tubeGeo(lowRope, lowRope.map(() => 0.045), 6), () => scratch.copy(steel)));
       }
     }
     if (posts.length) {
       const metal = metalMaps();
       void metal;
-      const pm = new THREE.Mesh(merge(posts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: treetop ? 0.9 : 0.4, metalness: treetop ? 0 : 0.6 }));
+      const pm = new THREE.Mesh(merge(posts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: treetop || mushroom ? 0.9 : 0.4, metalness: treetop || mushroom ? 0 : 0.6 }));
       pm.castShadow = true;
       this.group.add(pm);
     }

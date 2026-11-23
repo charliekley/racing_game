@@ -47,6 +47,8 @@ export function addExtras(ctx: ExtrasContext): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
   // Treetop tracks (Autumn Speedway): no hot-air balloons above a forest; the hazy giant trees are the horizon.
   if (ctx.track.def.scenery.treetop) return out;
+  // Mushroom Valley: a mountain trail in the clouds; the hot-air balloons would only get in the way of the giant mushrooms.
+  if (ctx.track.def.scenery.mushroom) return out;
   switch (ctx.style) {
 
     case 'harbour':

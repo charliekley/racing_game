@@ -32,6 +32,7 @@ import { tiledGroup } from './env/tiles';
 import { axisGroups, buildLodTriangles, LOD_STRIDES, selectLod, type AxisGroup, type LodGrid, type LodNodeLike, type LodRange } from './env/terrainLod';
 import { envQuality } from './env/batch';
 import { styleFor } from './scenery';
+import { caveFootprint, isMushroom } from './env/mushroom';
 import { biomeFor } from '../track/sceneryPlan';
 
 /** The floor far below everything sits this low (m). */
@@ -175,7 +176,7 @@ class WallSink {
    * the ground (into the void); rock bulges along it. `depth` metres down (or to the floor when
    * `toFloor`). `lip[i]` = ground colour at the top, blended into the rock.
    */
-  wall(top: V3[], out: V3[], depth: number | 'floor', lip: THREE.Color[], bulge = 1): void {
+  wall(top: V3[], out: V3[], depth: number | 'floor', lip: THREE.Color[], bulge = 1, taper = false): void {
     const n = top.length;
     if (n < 2) return;
     const base = this.count;
@@ -188,7 +189,9 @@ class WallSink {
         const d = depth === 'floor' ? Math.max(1, top[i].y - this.floorY + 1) : depth;
         const y = top[i].y - d * t;
         // Rough rock: noise pushes the face in and out; none at the very top so it meets the ground.
-        const k = smoothstep(0.0, 0.12, t);
+        // `taper` (Mushroom Valley's gorges): no bump at the two ends of the wall, so neighbouring walls meet exactly
+        // at the corner (a bump pushed along two different directions would leave a thin slit there).
+        const k = smoothstep(0.0, 0.12, t) * (taper ? Math.min(1, Math.min(i, n - 1 - i) / 1.5) : 1);
         const bump = (fbm3(top[i].x * 0.16, y * 0.14, top[i].z * 0.16, 3, 3) - 0.5) * 3.2 * bulge * k + (ridged3(top[i].x * 0.4, y * 0.35, top[i].z * 0.4, 8, 2) - 0.5) * 0.9 * k;
         const x = top[i].x + out[i].x * bump;
         const z = top[i].z + out[i].z * bump;
@@ -436,6 +439,9 @@ export class TerrainView {
 
     const c = new THREE.Color();
     const treeFeatures = track.def.scenery.treetop ? track.def.terrain?.features : undefined;
+    // Mushroom Valley: under the cave's roof the ground is dark rock, not sunlit grass.
+    const inCave = isMushroom(track) ? caveFootprint(track) : null;
+    const CAVE_FLOOR = new THREE.Color('#2f2c36');
     /** Colour at a point: grass -> rock by slope, height tints, snow/ash, soft blend into the road shoulders. */
     const colorAt = (x: number, y: number, z: number, slope: number): THREE.Color => {
       const n1 = fbm3(x * 0.02, 0, z * 0.02, 12, 3);
@@ -479,6 +485,7 @@ export class TerrainView {
       const dist = track.terrain.roadDistance(x, z);
       const shoulder = 1 - smooth((dist - outer + 1) / 12);
       if (shoulder > 0) c.lerp(pal.shoulder, shoulder * 0.55 * (1 - rockAmt));
+      if (inCave && inCave(x, z)) c.lerp(CAVE_FLOOR, 0.88).multiplyScalar(0.8 + 0.4 * n2);
       return c;
     };
 
@@ -681,6 +688,9 @@ export class TerrainView {
     const hw = def.width / 2;
     const outer = hw + def.offroadWidth;
     const lip = (n: number) => Array.from({ length: n }, () => this.pal.shoulder);
+    // Mushroom Valley: gorge walls start in rock colour (no pale grass-coloured band along the top edge of the wall).
+    const mushroom = isMushroom(track);
+    const rockLip = (n: number) => Array.from({ length: n }, () => this.pal.rock.clone().lerp(this.pal.shoulder, 0.15));
     const level = (p: TrackSample, d: number) => Track.groundLevel(p.y, p.bank, hw, d, def.offroadWidth) + 0.01;
     const point = (p: TrackSample, d: number): V3 => ({ x: p.x + p.rx * d, y: level(p, d), z: p.z + p.rz * d });
 
@@ -707,11 +717,11 @@ export class TerrainView {
       [ss[0], ss[ss.length - 1]].forEach((p, k) => {
         const row = across(p);
         const dir = k === 0 ? 1 : -1;
-        walls.wall(row, row.map(() => ({ x: p.tx * dir, y: 0, z: p.tz * dir })), 'floor', lip(row.length), 0.5);
+        walls.wall(row, row.map(() => ({ x: p.tx * dir, y: 0, z: p.tz * dir })), 'floor', mushroom ? rockLip(row.length) : lip(row.length), 0.5, mushroom);
       });
       for (const side of [-1, 1]) {
         const top = ss.map((p) => point(p, side * (outer + 1)));
-        walls.wall(top, ss.map((p) => ({ x: -p.rx * side, y: 0, z: -p.rz * side })), 'floor', lip(top.length), 0.5);
+        walls.wall(top, ss.map((p) => ({ x: -p.rx * side, y: 0, z: -p.rz * side })), 'floor', mushroom ? rockLip(top.length) : lip(top.length), 0.5, mushroom);
       }
     }
   }

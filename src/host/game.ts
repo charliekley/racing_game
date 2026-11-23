@@ -85,6 +85,8 @@ const HAPTICS = {
   trick: [20, 25, 20],
   respawn: [200],
   cannonFire: [120, 30, 60],
+  /** A mushroom trampoline: a springy double kick. */
+  bounce: [40, 25, 70],
   cannonLand: [35],
   wrongWay: [80, 60, 80],
   /** Storm: a lightning strike (to every victim) and being squashed flat. */
@@ -1093,6 +1095,9 @@ export class Game {
           break;
         case 'trick':
           this.haptic(e.slot, HAPTICS.trick);
+          break;
+        case 'bounce':
+          this.haptic(e.slot, HAPTICS.bounce);
           break;
         case 'cannonFire':
           this.haptic(e.slot, HAPTICS.cannonFire);

@@ -273,12 +273,20 @@ export const ORANGE_ROUTE = [4, 44, 84, 124].map((ds) => {
 // The mountain
 // ---------------------------------------------------------------------------
 
+/** A smooth bump of the terrain (see TerrainDef.features). */
+type Bump = { x: number; z: number; radius: number; height: number };
+/** The bump's weight at an offset (dx, dz) from its centre: 1 at the top, 0 at the rim (the same formula as Terrain.natural). */
+const w2 = (dx: number, dz: number, radius: number): number => {
+  const u = 1 - (dx * dx + dz * dz) / (radius * radius);
+  return u > 0 ? u * u : 0;
+};
+
 /**
  * The ground under the road is a sum of smooth bumps. We place one bump every ~50 m along the lap and fit its height
  * so that the natural ground lies a few metres BELOW the road (the road then sits on a ledge cut into the mountain
  * and the land falls away to the valleys), with a few jacked-up values on the outside of the hairpins.
  */
-function massif(radius: number, below: number, extra: { x: number; z: number; y: number }[]): { x: number; z: number; radius: number; height: number }[] {
+function massif(radius: number, below: number, extra: { x: number; z: number; y: number }[], base: Bump[]): Bump[] {
   const anchors: { x: number; z: number; y: number }[] = [...extra];
   let acc = 0;
   for (let i = 0; i < route.length; i++) {
@@ -290,22 +298,38 @@ function massif(radius: number, below: number, extra: { x: number; z: number; y:
       acc = 0;
     }
   }
-  const w = (dx: number, dz: number) => {
-    const u = 1 - (dx * dx + dz * dz) / (radius * radius);
-    return u > 0 ? u * u : 0;
-  };
-  const h = anchors.map((a) => Math.max(0, a.y - below));
+  const w = (dx: number, dz: number) => w2(dx, dz, radius);
+  // What the broad bumps (the foothills and the far peaks) already add under each anchor.
+  const baseAt = (x: number, z: number) => base.reduce((sum, f) => sum + f.height * w2(x - f.x, z - f.z, f.radius), 0);
+  const goal = anchors.map((a) => a.y - below - baseAt(a.x, a.z));
+  const h = goal.map((g) => Math.max(0, g));
   // Jacobi iterations: shrink each bump by what its neighbours already add there.
   for (let it = 0; it < 30; it++) {
     const next = anchors.map((a, i) => {
       let others = 0;
       for (let j = 0; j < anchors.length; j++) if (j !== i) others += h[j] * w(a.x - anchors[j].x, a.z - anchors[j].z);
-      return Math.max(0, h[i] + 0.7 * (a.y - below - others - h[i]));
+      return Math.max(0, h[i] + 0.7 * (goal[i] - others - h[i]));
     });
     for (let i = 0; i < h.length; i++) h[i] = next[i];
   }
   return anchors.map((a, i) => ({ x: a.x, z: a.z, radius, height: h[i] })).filter((f) => f.height > 0.5);
 }
+
+/**
+ * The big, far landforms: a broad foothill under the whole course and a ring of peaks all round it (well clear of every
+ * road: the nearest is over 150 m away), so the mountain stands in mountain country, not on a flat plain.
+ */
+const FOOTHILLS: Bump[] = [
+  { x: 0, z: -60, radius: 620, height: 26 },
+  { x: 470, z: -40, radius: 190, height: 70 },
+  { x: 450, z: 230, radius: 170, height: 85 },
+  { x: 150, z: 480, radius: 190, height: 80 },
+  { x: -220, z: 430, radius: 180, height: 95 },
+  { x: -520, z: 120, radius: 200, height: 85 },
+  { x: -500, z: -250, radius: 190, height: 90 },
+  { x: -170, z: -560, radius: 200, height: 80 },
+  { x: 240, z: -480, radius: 190, height: 70 },
+];
 
 /** Spots beside the road where the dirt shortcuts run: the mountain has to carry them too (see `massif`). */
 const shortcutAnchors = [
@@ -368,7 +392,7 @@ export const mushroomValley: TrackDef = {
         { from: at('g2a'), to: at('g2b') },
         { from: at('g3a'), to: at('g3b') },
       ],
-      cave: { from: at('caveIn'), to: at('caveOut'), halfWidth: 62, roof: 46 },
+      cave: { from: at('caveIn'), to: at('caveOut'), halfWidth: 58, roof: 46, offset: CAVE_SIDE * 0.42 }, // the vault is centred between the main road and the right-hand shortcut
       glow: 130,
     },
   },
@@ -377,7 +401,8 @@ export const mushroomValley: TrackDef = {
     seed: 17,
     hills: { amplitude: 6, wavelength: 90 },
     features: [
-      ...massif(80, 2, shortcutAnchors),
+      ...FOOTHILLS,
+      ...massif(80, 2, shortcutAnchors, FOOTHILLS),
       // The pits of the gorges with a shortcut (the walls of the main gorges are cut by `chasms`).
       ...cavePits,
       ...g3Pits,
@@ -391,7 +416,7 @@ export const mushroomValley: TrackDef = {
       from: at('g3fork'),
       to: at('g3join'),
       points: [
-        ...G3_CAPS.map((c) => [c.x, c.z, c.y - 0.4] as [number, number, number]),
+        ...G3_CAPS.map((c) => [c.x, c.z, c.y - 1.3] as [number, number, number]),
         (() => {
           const e = local('g3a', G3_LAND, G3_SIDE);
           return [e.x, e.z, e.y - 0.5] as [number, number, number];
@@ -404,7 +429,7 @@ export const mushroomValley: TrackDef = {
       from: at('caveFork'),
       to: at('caveEnd'),
       points: [
-        ...ORANGE_ROUTE.map((c) => [c.x, c.z, c.y] as [number, number, number]),
+        ...ORANGE_ROUTE.map((c) => [c.x, c.z, c.y - 0.8] as [number, number, number]),
         (() => {
           const e = local('caveIn', CAVE_LAND, CAVE_SIDE);
           return [e.x, e.z, e.y - 0.5] as [number, number, number];
@@ -421,18 +446,6 @@ export const mushroomValley: TrackDef = {
     { at: at('g3a'), length: G3 },
     { at: at('caveIn'), length: CAVE },
   ],
-  cliffs: [
-    // The ledge: the ground ends right beside the road on the outside of every hairpin and on both sides of the ridges.
-    { from: at('foot'), to: at('hair1'), side: 'right', edge: 14 },
-    { from: at('hair1'), to: at('hair2'), side: 'left', edge: 14 },
-    { from: at('hair2'), to: at('crest'), side: 'right', edge: 14 },
-    { from: at('ridge1'), to: at('g1a'), side: 'both', edge: 14 },
-    { from: at('g1b'), to: at('g1end'), side: 'both', edge: 14 },
-    { from: at('g2pre'), to: at('g2a'), side: 'both', edge: 14 },
-    { from: at('g2b'), to: at('g2end'), side: 'both', edge: 14 },
-    { from: at('g3fork') - 1, to: at('g3a'), side: 'right', edge: 14 },
-    { from: at('g3b'), to: at('g3join'), side: 'right', edge: 14 },
-    { from: at('caveFork') - 1, to: at('caveIn'), side: 'left', edge: 14 },
-    { from: at('caveOut'), to: at('caveEnd'), side: 'left', edge: 14 },
-  ],
+  // No `cliffs`: a cliff would cut the ground away on that whole side (and in a wedge reaching out to the horizon). The
+  // mountain's own steep flanks fall away outside the rope-fence walls instead; the gorges are `chasms`.
 };

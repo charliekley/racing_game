@@ -19,16 +19,87 @@
  *    scaling or rotating one copy. Squash-and-stretch is just a non-uniform scale on the matrix.
  */
 import * as THREE from 'three';
-import { Bouncers, type Cap } from '../../sim/bouncers';
+import { Bouncers, CAP_DROOP, type Cap } from '../../sim/bouncers';
 import { Track } from '../../sim/track';
 import { seededRandom } from '../textures';
-import { latheGeo, matrix, merge, paint, placed, type ColorFn } from './geo';
+import { fromArrays, latheGeo, matrix, merge, paint, placed, type ColorFn } from './geo';
 import { ENV_TIME } from './materials';
 import { fbm3, noise3, smoothstep } from './noise';
 
 /** True if the track uses the mushroom look. */
 export function isMushroom(track: Track): boolean {
   return track.def.scenery.mushroom !== undefined;
+}
+
+// ---------------------------------------------------------------------------
+// The trail (this track's own road surface)
+// ---------------------------------------------------------------------------
+
+/**
+ * The road surface of Mushroom Valley: a packed-earth mountain trail instead of asphalt. Drawn once on a canvas: warm
+ * tan earth with soft blotches, two darker wheel ruts, small stones and a few cracks. No lane markings. The texture
+ * tiles along the road (the blotch noise is blended with itself shifted by one tile, so there is no seam).
+ */
+export function trailTexture(): THREE.CanvasTexture {
+  const w = 256;
+  const h = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(w, h);
+  const base = new THREE.Color('#a98f68');
+  const dark = new THREE.Color('#7d6648');
+  const light = new THREE.Color('#c4aa80');
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / w;
+      const v = y / h;
+      // Seamless along v: blend the noise with itself one tile further on.
+      const n0 = fbm3(u * 6, v * 12, 0.5, 5, 4);
+      const n1 = fbm3(u * 6, (v - 1) * 12, 0.5, 5, 4);
+      const n = n0 * (1 - v) + n1 * v;
+      const fine = noise3(u * 90, v * 180, 0.2, 7) - 0.5;
+      _c.copy(dark).lerp(base, smoothstep(0.25, 0.6, n)).lerp(light, smoothstep(0.55, 0.8, n) * 0.6);
+      _c.offsetHSL(0, 0, fine * 0.1);
+      // Two wheel ruts (darker, a touch smoother) and a packed, lighter crown in the middle.
+      const rut = Math.exp(-Math.pow((u - 0.3) / 0.07, 2)) + Math.exp(-Math.pow((u - 0.7) / 0.07, 2));
+      _c.multiplyScalar(1 - 0.18 * rut);
+      _c.lerp(light, 0.1 * Math.exp(-Math.pow((u - 0.5) / 0.08, 2)));
+      // The verge is darker and grittier.
+      _c.multiplyScalar(1 - 0.22 * smoothstep(0.86, 1, Math.abs(u - 0.5) * 2));
+      const k = (y * w + x) * 4;
+      img.data[k] = Math.round(_c.r * 255);
+      img.data[k + 1] = Math.round(_c.g * 255);
+      img.data[k + 2] = Math.round(_c.b * 255);
+      img.data[k + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Stones: small grey-brown ovals with a lighter top edge (drawn with wrap-around along the road).
+  const rnd = seededRandom(5);
+  for (let i = 0; i < 200; i++) {
+    const x = rnd() * w;
+    const y = rnd() * h;
+    const r = 0.8 + rnd() * rnd() * 3;
+    const tone = 75 + rnd() * 55;
+    for (const oy of [-h, 0, h]) {
+      if (y + oy + r < 0 || y + oy - r > h) continue;
+      ctx.fillStyle = `rgba(${tone * 0.55},${tone * 0.5},${tone * 0.45},0.55)`;
+      ctx.beginPath();
+      ctx.ellipse(x + 0.8, y + oy + 0.8, r, r * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgb(${tone},${tone * 0.93},${tone * 0.82})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y + oy, r, r * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +114,7 @@ const CREAM = new THREE.Color('#fff3d2');
 const GILL = new THREE.Color('#f3d9a6');
 const STALK = new THREE.Color('#f1e4c4');
 const STALK_SHADE = new THREE.Color('#c9b58c');
+const GILL_DARK = new THREE.Color('#b99a68');
 const MIST = new THREE.Color('#c4d5ea');
 const _c = new THREE.Color();
 
@@ -50,72 +122,111 @@ const _c = new THREE.Color();
 // A cap
 // ---------------------------------------------------------------------------
 
+/** Height of the dome's top surface at radius r (unit cap): the same formula the physics uses (`CAP_DROOP`). */
+const domeY = (r: number): number => -CAP_DROOP * r * r;
+
 /**
- * A cap of radius 1 with its flat top at y = 0: a flat top (the physics surface) with a rounded shoulder, then the
- * rim, then the gills underneath. Painted with a few cream spots on top.
+ * A cap of radius 1 with its crest at y = 0, standing for the physics surface: a gently domed top (it sinks by
+ * CAP_DROOP at the rim, like the ground you drive on), a thick rolled rim, then the underside bowl with its gills.
+ * Painted with cream spots on top and radial gill stripes underneath.
  */
 function capGeo(kind: 'orange' | 'green', seed: number): THREE.BufferGeometry {
   const profile: [number, number][] = [
-    [0.1, -0.36], // under the stalk
-    [0.4, -0.33],
-    [0.7, -0.26],
-    [0.93, -0.2],
-    [1.0, -0.13],
-    [0.99, -0.06], // the rim
-    [0.94, -0.02],
-    [0.86, 0], // top surface starts (flat)
+    [0.1, -0.58], // under the stalk
+    [0.3, -0.54],
+    [0.55, -0.45],
+    [0.78, -0.34],
+    [0.93, -0.24],
+    [1.03, -0.18], // the rim rolls over
+    [1.09, -0.12],
+    [1.08, -0.07],
+    [1.02, domeY(1) - 0.012],
   ];
-  for (let r = 0.82; r > 0.001; r -= 0.04) profile.push([r, 0]); // many rings on the flat top, so the spots have crisp edges
+  // Many rings on the top, so the spots have crisp edges and the dome is smooth.
+  for (let r = 0.94; r > 0.001; r -= 0.12) profile.push([r, domeY(r)]);
   profile.push([0, 0]);
-  const geo = latheGeo(profile, 56);
+  const geo = latheGeo(profile, 40);
   // Cream spots on the top: a few big, a few small, from the seed (the same cap always looks the same).
   const rnd = seededRandom(seed);
   const spots: { x: number; z: number; r: number }[] = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 13; i++) {
     const a = rnd() * Math.PI * 2;
-    const d = Math.sqrt(rnd()) * 0.76;
-    spots.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 0.05 + rnd() * rnd() * 0.15 });
+    const d = Math.sqrt(rnd()) * 0.78;
+    spots.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 0.085 + rnd() * rnd() * 0.15 });
   }
   const base = kind === 'orange' ? ORANGE : GREEN;
   const rim = kind === 'orange' ? ORANGE_RIM : GREEN_RIM;
-  const color: ColorFn = (p, n) => {
-    if (n.y < -0.25 || p.y < -0.18) {
-      // Underside: pale gills, darker toward the stalk.
-      return _c.copy(GILL).multiplyScalar(0.62 + 0.38 * smoothstep(0.1, 0.9, Math.hypot(p.x, p.z)));
+  // Each spot: a small fan of triangles whose corners sit exactly on the dome (height = domeY) plus a hair.
+  const disc: THREE.BufferGeometry[] = spots.map((sp) => {
+    const pos: number[] = [sp.x, domeY(Math.hypot(sp.x, sp.z)) + 0.012, sp.z];
+    const idx: number[] = [];
+    const N = 14;
+    for (let k = 0; k < N; k++) {
+      const a = (k / N) * Math.PI * 2;
+      const x = sp.x + Math.cos(a) * sp.r;
+      const z = sp.z + Math.sin(a) * sp.r;
+      pos.push(x, domeY(Math.hypot(x, z)) + 0.012, z);
+      idx.push(0, 1 + ((k + 1) % N), 1 + k);
     }
-    // Top and shoulder: bright in the middle, deeper toward the rim.
+    return paint(fromArrays(pos, idx), () => _c.copy(CREAM).multiplyScalar(0.96 + 0.08 * ((sp.x * 7.3 + sp.z * 3.1) % 1)));
+  });
+  const color: ColorFn = (p, n) => {
     const r = Math.hypot(p.x, p.z);
-    _c.copy(base).lerp(rim, smoothstep(0.55, 1.0, r) * 0.85);
+    if (n.y < -0.1 || p.y < -0.2) {
+      // Underside: pale gills in radial stripes, darker toward the stalk and under the rim.
+      const stripe = 0.5 + 0.5 * Math.sin(Math.atan2(p.z, p.x) * 56);
+      _c.copy(GILL).lerp(GILL_DARK, 0.2 + 0.5 * stripe * smoothstep(0.1, 0.9, r));
+      return _c.multiplyScalar(0.55 + 0.45 * smoothstep(0.1, 0.95, r));
+    }
+    // Top and rolled rim: bright in the middle, deeper toward the rim.
+    _c.copy(base).lerp(rim, smoothstep(0.5, 1.05, r) * 0.9);
     const blotch = noise3(p.x * 3, 0, p.z * 3, seed) * 0.14 - 0.07;
     _c.offsetHSL(0, 0, blotch);
-    if (p.y > -0.05) {
-      let s = 0;
-      for (const sp of spots) s = Math.max(s, 1 - smoothstep(sp.r * 0.9, sp.r, Math.hypot(p.x - sp.x, p.z - sp.z)));
-      _c.lerp(CREAM, s);
-    }
     return _c;
   };
-  return paint(geo, color);
+  return merge([paint(geo, color), ...disc]);
 }
 
-/** A stalk from just under the cap down into the mist (world units). Colour fades to mist colour with depth. */
+/** The glowing rim of an orange cap: a bright ring on the top edge (drawn with HDR colours, so it blooms). */
+function rimGlowGeo(): THREE.BufferGeometry {
+  const profile: [number, number][] = [];
+  for (let r = 0.78; r <= 1.0001; r += 0.055) profile.push([r, domeY(r) + 0.022]);
+  return latheGeo(profile, 48);
+}
+
+/**
+ * A thick stalk from just under the cap down into the mist (world units): a neck with a ruffled SKIRT RING just under
+ * the cap, swelling toward the bottom into a wide flare. Its colour fades to mist colour with depth.
+ */
 function stalkGeo(cap: Cap, mistY: number): THREE.BufferGeometry {
-  const top = cap.y - cap.radius * 0.3;
+  const R = cap.radius;
+  const top = cap.y - R * 0.5;
   const bottom = mistY - 36;
-  const rTop = cap.radius * 0.2;
-  const steps = 9;
+  const rTop = R * 0.26;
+  const skirtY = top - R * 0.2; // where the ring hangs
+  const steps = 10;
   const profile: [number, number][] = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps; // 0 = bottom, 1 = top
-    const y = bottom + (top - bottom) * t;
-    // Thin neck under the cap, slowly swelling, then a wide flare at the very bottom.
-    const r = rTop * (1 + 1.4 * Math.pow(1 - t, 1.5) + (t < 0.15 ? (0.15 - t) * 8 : 0));
+    const y = bottom + (skirtY - R * 0.5 - bottom) * t;
+    // A neck that swells slowly toward the bottom, then a wide flare at the very bottom.
+    const r = rTop * (1 + 1.3 * Math.pow(1 - t, 1.5) + (t < 0.15 ? (0.15 - t) * 8 : 0));
     profile.push([r, y]);
   }
-  const geo = latheGeo(profile, 12, (a, t) => 1 + 0.06 * Math.sin(a * 3 + t * 9)); // a little lumpy
+  // The skirt ring: flares out and tucks back in.
+  profile.push([rTop * 1.05, skirtY - R * 0.3]);
+  profile.push([rTop * 1.9, skirtY - R * 0.2]);
+  profile.push([rTop * 2.25, skirtY - R * 0.1]);
+  profile.push([rTop * 1.9, skirtY + R * 0.02]);
+  profile.push([rTop * 1.2, skirtY + R * 0.12]);
+  profile.push([rTop, skirtY + R * 0.2]);
+  profile.push([rTop * 0.9, top]);
+  const geo = latheGeo(profile, 12, (a, t) => 1 + 0.05 * Math.sin(a * 3 + t * 9)); // a little lumpy
   const color: ColorFn = (p) => {
     const ring = 0.5 + 0.5 * Math.sin(p.y * 0.9);
+    const inSkirt = smoothstep(skirtY - R * 0.35, skirtY - R * 0.2, p.y) * (1 - smoothstep(skirtY + R * 0.02, skirtY + R * 0.2, p.y));
     _c.copy(STALK).lerp(STALK_SHADE, 0.25 * ring + 0.4 * (1 - smoothstep(top - 25, top, p.y)));
+    _c.lerp(CREAM, inSkirt * 0.6);
     return _c.lerp(MIST, smoothstep(mistY + 12, mistY - 18, p.y));
   };
   return paint(placed(geo, matrix(cap.x, 0, cap.z, 1, 1, 1)), color);
@@ -125,30 +236,39 @@ function stalkGeo(cap: Cap, mistY: number): THREE.BufferGeometry {
 // Mist
 // ---------------------------------------------------------------------------
 
-/** A soft cloud texture (white blobs with a fuzzy edge) drawn on a canvas. Not tiled: its edge fades to nothing. */
+/**
+ * A soft cloud texture: fuzzy white blobs drawn on a canvas. It TILES (every blob near an edge is drawn again on the
+ * opposite side), so the mist can scroll forever without a seam.
+ */
 function mistTexture(): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  const img = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const u = x / size;
-      const v = y / size;
-      const edge = smoothstep(0.5, 0.15, Math.hypot(u - 0.5, v - 0.5)); // fades to nothing at the border
-      const n = fbm3(u * 6, v * 6, 0.3, 5, 4);
-      const a = Math.min(1, edge * smoothstep(0.25, 0.8, n) * 1.25);
-      const k = (y * size + x) * 4;
-      img.data[k] = 255;
-      img.data[k + 1] = 255;
-      img.data[k + 2] = 255;
-      img.data[k + 3] = Math.round(a * 255);
+  const rnd = seededRandom(31);
+  for (let i = 0; i < 46; i++) {
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const r = 22 + rnd() * rnd() * 70;
+    const a = 0.16 + rnd() * 0.34;
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        const cx = x + ox;
+        const cy = y + oy;
+        if (cx + r < 0 || cx - r > size || cy + r < 0 || cy - r > size) continue;
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, `rgba(255,255,255,${a})`);
+        g.addColorStop(0.55, `rgba(255,255,255,${a * 0.45})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+      }
     }
   }
-  ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2.5, 2.5);
   return tex;
 }
 
@@ -164,31 +284,53 @@ function mistQuad(cx: number, y: number, cz: number, w: number, d: number, rot: 
 /**
  * Every gorge and the cave pit get a stack of soft cloud layers well below the road, so the chasms look bottomless and
  * cloudy. The terrain hides the parts that lie under solid ground; only what is inside a chasm shows.
+ *
+ * The clouds move. Each layer has a `drift` attribute (uv units per second) and a few lines of GLSL, spliced into the
+ * built-in material with `onBeforeCompile`, add `drift x time` to the texture coordinates: the texture slides across
+ * the quad (it tiles, so it never runs out). A second varying fades the quad's own edges, so the sliding clouds never
+ * show the edge of the plane.
  */
-function buildMist(track: Track, areas: { x: number; z: number; w: number; d: number; rot: number; y: number }[]): THREE.Mesh {
+function buildMist(areas: { x: number; z: number; w: number; d: number; rot: number; y: number }[]): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
   const rnd = seededRandom(404);
+  const LAYERS = 4;
   for (const a of areas) {
     // Bottom layers first (they are drawn first): the deepest is the thickest, the top one wispy.
-    for (let layer = 0; layer < 3; layer++) {
-      const y = a.y - 8 - layer * 12;
-      const grow = 1 + 0.14 * layer;
+    for (let layer = 0; layer < LAYERS; layer++) {
+      const y = a.y - 6 - layer * 11;
+      const grow = 1 + 0.12 * layer;
       const g = mistQuad(a.x + (rnd() - 0.5) * 8, y, a.z + (rnd() - 0.5) * 8, a.w * grow, a.d * grow, a.rot + (rnd() - 0.5) * 0.4);
       const pos = g.getAttribute('position');
       // Per-layer opacity in the vertex alpha: the bottom layer is nearly solid, the top one thin.
       const col = new Float32Array(pos.count * 4);
-      const k = layer === 2 ? 1.0 : layer === 1 ? 0.75 : 0.5;
-      for (let i = 0; i < pos.count; i++) col.set([1, 1, 1, k], i * 4);
+      const k = [0.45, 0.65, 0.85, 1.0][layer];
+      // Each layer drifts its own way (a slow one, a faster one, a crossing one).
+      const ang = rnd() * Math.PI * 2;
+      const speed = 0.006 + 0.005 * (LAYERS - layer) + rnd() * 0.004;
+      const drift = new Float32Array(pos.count * 2);
+      for (let i = 0; i < pos.count; i++) {
+        col.set([1, 1, 1, k], i * 4);
+        drift.set([Math.cos(ang) * speed, Math.sin(ang) * speed], i * 2);
+      }
       g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+      g.setAttribute('drift', new THREE.BufferAttribute(drift, 2));
       parts.push(g);
     }
   }
   const geo = merge(parts);
-  const mat = new THREE.MeshBasicMaterial({ map: mistTexture(), color: MIST, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.92 });
+  const mat = new THREE.MeshBasicMaterial({ map: mistTexture(), color: MIST, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.95 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = ENV_TIME;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 drift;\nuniform float uTime;\nvarying vec2 vFade;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n  vMapUv += drift * uTime;\n#endif\n  vFade = uv;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vFade;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= smoothstep(0.0, 0.2, vFade.x) * smoothstep(0.0, 0.2, 1.0 - vFade.x) * smoothstep(0.0, 0.2, vFade.y) * smoothstep(0.0, 0.2, 1.0 - vFade.y);');
+  };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 2;
   mesh.frustumCulled = false;
-  void track;
   return mesh;
 }
 
@@ -225,8 +367,27 @@ function caveSections(track: Track): { sections: Section[]; centreOffset: number
     const q = track.samples[p.index];
     sections.push({ x: p.x, z: p.z, y: p.y, rx: q.rx, rz: q.rz, u: i / n });
   }
-  // The vault is centred between the main road and the second route (to the left of the road, about 16 m).
-  return { sections, centreOffset: -m.halfWidth * 0.26 };
+  // The vault is centred between the main road and the second route (the def says how far to the right of the road).
+  return { sections, centreOffset: m.offset ?? -m.halfWidth * 0.26 };
+}
+
+/**
+ * Is the ground point (x, z) inside the cave's footprint (under the rock vault)? Used by the terrain and the road
+ * shoulders to turn the sunlit grass into dark rock under the roof. Cheap rejection first (a bounding circle).
+ */
+export function caveFootprint(track: Track): (x: number, z: number) => boolean {
+  const m = track.def.scenery.mushroom!.cave;
+  const { sections, centreOffset } = caveSections(track);
+  const mid = sections[Math.floor(sections.length / 2)];
+  const reach = (sections.length * 9) / 2 + m.halfWidth + 20;
+  const s0 = track.sAt(m.from) - 22;
+  const s1 = track.sAt(m.to) + 22;
+  return (x, z) => {
+    if (Math.hypot(x - mid.x, z - mid.z) > reach) return false;
+    const p = track.project(x, z);
+    if (track.deltaS(s0, p.s) < 0 || track.deltaS(p.s, s1) < 0) return false;
+    return Math.abs(p.d - centreOffset) < m.halfWidth * 0.9;
+  };
 }
 
 /** The rock shell: an arch swept along the cave, with lumpy rock, portals at both ends and stalactites. */
@@ -284,7 +445,7 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   const foot = Math.min(...sections.map((q) => q.y)) - 14;
   for (let k = 0; k < p.count; k++) {
     const { n, c } = base(k);
-    inside.push(c.r * 0.55, c.g * 0.55, c.b * 0.6);
+    inside.push(c.r * 0.38, c.g * 0.38, c.b * 0.48);
     const topness = smoothstep(0.3, 0.8, Math.abs(nor.getY(k))) * smoothstep(0, 20, p.getY(k) - foot);
     c.lerp(GRASS.clone().multiplyScalar(0.8 + 0.4 * n), topness * (0.45 + 0.55 * smoothstep(0.3, 0.6, n)));
     outside.push(c.r, c.g, c.b);
@@ -305,7 +466,7 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   skin.frustumCulled = false;
   shell.add(skin);
   // Surface points (for the glowing mushrooms): random spots on the inside of the vault.
-  for (let k = 0; k < 600; k++) {
+  for (let k = 0; k < 1100; k++) {
     const i = 1 + Math.floor(rnd() * (N - 3));
     const j = 1 + Math.floor(rnd() * (M - 3));
     const a = i * M + j;
@@ -365,21 +526,31 @@ export class MushroomView {
   private clock = 0;
   private readonly m = new THREE.Matrix4();
   private readonly glow: THREE.InstancedMesh | null = null;
+  /** The glowing rims of the orange caps (instanced like the caps themselves) and their material (pulsed in `update`). */
+  private rims: THREE.InstancedMesh | null = null;
+  private rimMat: THREE.MeshBasicMaterial | null = null;
+  /** Soft coloured light pools on the cave floor (material pulsed in `update`). */
+  private poolMat: THREE.MeshBasicMaterial | null = null;
 
   constructor(track: Track) {
     const caps = new Bouncers(track).caps;
     const def = track.def.scenery.mushroom!;
     // ---- caps and stalks -------------------------------------------------------------------------------
-    const statics: THREE.BufferGeometry[] = [];
     const orangeGeo = capGeo('orange', 11);
     const greenGeos = [capGeo('green', 21), capGeo('green', 22), capGeo('green', 23)];
+    // One static mesh per stretch of road (about 150 m), so the caps far away are culled with their mesh.
+    const capAreas = new Map<number, THREE.BufferGeometry[]>();
+    const capMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
     caps.forEach((c, i) => {
+      const key = Math.floor(track.project(c.x, c.z).s / 150);
+      if (!capAreas.has(key)) capAreas.set(key, []);
+      const list = capAreas.get(key)!;
       // The mist level under this cap: a fixed depth below it.
-      statics.push(stalkGeo(c, c.y - 14));
-      if (c.kind === 'green') statics.push(placed(greenGeos[i % 3], matrix(c.x, c.y, c.z, c.radius, c.radius, c.radius, (i * 1.7) % 6.28)));
+      list.push(stalkGeo(c, c.y - 14));
+      if (c.kind === 'green') list.push(placed(greenGeos[i % 3], matrix(c.x, c.y, c.z, c.radius, c.radius, c.radius, (i * 1.7) % 6.28)));
     });
-    if (statics.length) {
-      const mesh = new THREE.Mesh(merge(statics), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }));
+    for (const list of capAreas.values()) {
+      const mesh = new THREE.Mesh(merge(list), capMat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.group.add(mesh);
@@ -392,8 +563,12 @@ export class MushroomView {
       inst.receiveShadow = true;
       inst.frustumCulled = false;
       this.instanced = inst;
+      // The glowing rim: the same matrices as the caps, so it squashes with them.
+      this.rimMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.0, 0.12), side: THREE.DoubleSide, fog: true });
+      this.rims = new THREE.InstancedMesh(rimGlowGeo(), this.rimMat, this.orange.length);
+      this.rims.frustumCulled = false;
       this.orange.forEach((_, i) => this.setCapMatrix(i, 1));
-      this.group.add(inst);
+      this.group.add(inst, this.rims);
     }
 
     // ---- mist ------------------------------------------------------------------------------------------
@@ -407,11 +582,12 @@ export class MushroomView {
     }
     {
       // The cave pit: one big layer stack over the bounding box of the cave's section.
-      const { sections } = caveSections(track);
+      const { sections, centreOffset } = caveSections(track);
       const mid = sections[Math.floor(sections.length / 2)];
-      areas.push({ x: mid.x - 12, z: mid.z, w: 190, d: sections.length * 9 + 60, rot: 0, y: mid.y - 16 });
+      // Centred on the vault (it lies to one side of the main road) and turned along the road.
+      areas.push({ x: mid.x + mid.rx * centreOffset, z: mid.z + mid.rz * centreOffset, w: 170, d: sections.length * 9 + 80, rot: Math.atan2(-mid.rz, mid.rx), y: mid.y - 16 });
     }
-    this.group.add(buildMist(track, areas));
+    this.group.add(buildMist(areas));
 
     // ---- cave --------------------------------------------------------------------------------------------
     const cave = buildCave(track);
@@ -434,6 +610,68 @@ export class MushroomView {
     glow.frustumCulled = false;
     this.glow = glow;
     this.group.add(glow);
+
+    // ---- stalactites, floor mushrooms and coloured light pools in the cave -----------------------------------
+    const roof = cave.points.filter((p) => p.ny < -0.55);
+    if (roof.length) {
+      const sg = new THREE.ConeGeometry(1, 1, 6, 1, true);
+      sg.rotateX(Math.PI); // point down
+      sg.translate(0, -0.5, 0); // hang from y = 0
+      const count2 = 110;
+      const sm = new THREE.InstancedMesh(sg, new THREE.MeshStandardMaterial({ color: '#5b5260', roughness: 1, flatShading: true }), count2);
+      for (let i = 0; i < count2; i++) {
+        const sp = roof[Math.floor(rnd() * roof.length)];
+        const r = 0.5 + rnd() * rnd() * 1.6;
+        const len = 2 + rnd() * 6 + r * 2;
+        this.m.compose(new THREE.Vector3(sp.x, sp.y + 0.15, sp.z), new THREE.Quaternion().setFromAxisAngle(up, rnd() * 6.28), new THREE.Vector3(r, len, r));
+        sm.setMatrixAt(i, this.m);
+      }
+      sm.frustumCulled = false;
+      this.group.add(sm);
+    }
+    {
+      // Glowing mushrooms standing on the floor beside the road (the left shoulder), and a light pool under some of them.
+      const { sections } = caveSections(track);
+      const floor = new THREE.InstancedMesh(glowMushroomGeo(), new THREE.MeshBasicMaterial({ vertexColors: true }), 56);
+      const pools: { x: number; y: number; z: number; c: THREE.Color; r: number }[] = [];
+      for (let i = 0; i < 56; i++) {
+        const sec = sections[1 + Math.floor(rnd() * (sections.length - 2))];
+        const lat = -(8.5 + rnd() * 4);
+        const x = sec.x + sec.rx * lat;
+        const z = sec.z + sec.rz * lat;
+        const s = 0.5 + rnd() * rnd() * 1.4;
+        const col = palette[Math.floor(rnd() * palette.length)];
+        this.m.compose(new THREE.Vector3(x, sec.y + 0.05, z), new THREE.Quaternion().setFromAxisAngle(up, rnd() * 6.28), new THREE.Vector3(s, s, s));
+        floor.setMatrixAt(i, this.m);
+        floor.setColorAt(i, col);
+        if (i % 3 === 0) pools.push({ x, y: sec.y + 0.14, z, c: col, r: 5 + s * 3 });
+      }
+      floor.frustumCulled = false;
+      this.group.add(floor);
+      // Light pools: additive soft discs (a radial gradient on a canvas): cheap "coloured light" without real lights.
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      const cx = cv.getContext('2d')!;
+      const gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+      gr.addColorStop(0.5, 'rgba(255,255,255,0.28)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      cx.fillStyle = gr;
+      cx.fillRect(0, 0, 64, 64);
+      const poolTex = new THREE.CanvasTexture(cv);
+      this.poolMat = new THREE.MeshBasicMaterial({ map: poolTex, color: new THREE.Color(0.55, 0.55, 0.55), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+      const pg = new THREE.PlaneGeometry(2, 2);
+      pg.rotateX(-Math.PI / 2);
+      const poolMesh = new THREE.InstancedMesh(pg, this.poolMat, pools.length);
+      pools.forEach((p, i) => {
+        this.m.compose(new THREE.Vector3(p.x, p.y, p.z), new THREE.Quaternion(), new THREE.Vector3(p.r, 1, p.r));
+        poolMesh.setMatrixAt(i, this.m);
+        poolMesh.setColorAt(i, p.c);
+      });
+      poolMesh.frustumCulled = false;
+      poolMesh.renderOrder = 3;
+      this.group.add(poolMesh);
+    }
   }
 
   private setCapMatrix(i: number, sy: number): void {
@@ -441,6 +679,7 @@ export class MushroomView {
     const sxz = c.radius / Math.sqrt(sy);
     this.m.compose(new THREE.Vector3(c.x, c.y, c.z), new THREE.Quaternion(), new THREE.Vector3(sxz, c.radius * sy, sxz));
     this.instanced!.setMatrixAt(i, this.m);
+    this.rims?.setMatrixAt(i, this.m);
   }
 
   /** Advance the wobbles and the glow. `time` is the shared environment clock (s). */
@@ -459,8 +698,17 @@ export class MushroomView {
           dirty = true;
         }
       }
-      if (dirty) this.instanced.instanceMatrix.needsUpdate = true;
+      if (dirty) {
+        this.instanced.instanceMatrix.needsUpdate = true;
+        if (this.rims) this.rims.instanceMatrix.needsUpdate = true;
+      }
     }
+    // The orange rims breathe (brighter than the paint, so they bloom): bouncy caps stand out from the green ones.
+    if (this.rimMat) {
+      const k = 1 + 0.25 * Math.sin(time * 3.1);
+      this.rimMat.color.setRGB(2.4 * k, 1.0 * k, 0.12 * k);
+    }
+    if (this.poolMat) this.poolMat.color.setScalar(0.5 + 0.12 * Math.sin(time * 0.9));
     if (this.glow) (this.glow.material as THREE.MeshBasicMaterial).color.setScalar(0.85 + 0.15 * Math.sin(time * 1.3));
   }
 
