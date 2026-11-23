@@ -1,7 +1,7 @@
-﻿/**
+/**
  * Item system: item boxes, roulette, held items, and the objects items create
- * (peels (internal id `slick`), ricochet shots, seeker shots, the magnet and bumper effects). Pure simulation: no Three.js, no
- * DOM, no Math.random (a seeded generator is injected), so it stays testable.
+ * (peels (internal id `slick`), ricochet shots, seeker shots) plus the two kart effects Rocket and Storm. Pure simulation:
+ * no Three.js, no DOM, no Math.random (a seeded generator is injected), so it stays testable.
  *
  * Controls (the phone's ITEM button, edge-detected here):
  *  - Dash and Nova fire the instant you press ITEM.
@@ -9,47 +9,31 @@
  *    shots fly forward; hold BRAKE for a backward Ricochet). HOLD instead and the
  *    item is dragged behind you as a shield; release to fire/drop it.
  *  - A Peel/Slick (dragged or dropped) destroys any shot that hits it.
- *  - Magnet and Bumper are "attached" effects: they live as entities that follow their owner
- *    (the renderer draws the model on the kart) and run their own timers here.
+ *  - Seeker: homing shot that FOLLOWS THE ROAD toward the racer ahead (see rail.ts), homing in directly when close.
+ *  - Rocket: the kart is driven along the road by this system for a few seconds (`driveRocket`, called by the
+ *    World instead of the normal kart physics): invincible, very fast, knocks other karts aside.
+ *  - Storm: shrinks every racer ahead (state lives on the karts: size / shrinkTime / zapTime, see kart.ts).
  *
  * Adding a new item: add its id to `types.ts`, a case in `use()` below
  * (what happens on use), and a row in `odds.ts`.
  */
 import { Buttons, type ControlInput } from '../../shared/protocol';
 import { ITEMS, KART, SIM_DT, type KartConfig } from '../config';
-import { applyBoost, spinOut, type KartState } from '../kart';
+import { applyBoost, forwardOf, rightOf, spinOut, type KartState } from '../kart';
 import { groundPose } from './groundPose';
 import type { Colliders } from '../colliders';
 import type { Ground } from '../ground';
 import type { Track } from '../track';
+import { angleDiff, railAim, steerToward } from './rail';
 import { rollItem } from './odds';
 import { ROULETTE_SECONDS, type HeldItem, type ItemBox, type ItemEntity, type ItemId } from './types';
 
-export type HitSource = 'slick' | 'ricochet' | 'seeker' | 'nova';
+export type HitSource = 'slick' | 'ricochet' | 'seeker' | 'nova' | 'rocket' | 'storm';
 
 /** Shots are the fast projectiles; the other entity kinds are traps (peel) or effects tied to a kart. */
 const isShot = (e: { kind: string }) => e.kind === 'ricochet' || e.kind === 'seeker';
 
-/** Per-owner state of a running Magnet. */
-interface MagnetState {
-  /** Seconds left. */
-  time: number;
-  /** Slot of the kart being towed toward, or null while nobody is in range. */
-  target: number | null;
-}
-
-/** Per-owner state of a running Bumper orb. */
-interface BumperState {
-  time: number;
-  /** Bumps / blocked shots left before the orb pops. */
-  charges: number;
-  /** Where the orb is on its circle (radians). */
-  angle: number;
-  /** Per victim: seconds until this orb may bump that kart again. */
-  cooldown: Map<number, number>;
-}
-
-/** A kart being shoved sideways by a Bumper: it slides `dx,dz` metres per second for `time` more seconds. */
+/** A kart being shoved sideways (by the Rocket): it slides `dx,dz` metres per second for `time` more seconds. */
 interface Shove {
   slot: number;
   dx: number;
@@ -65,8 +49,12 @@ export type ItemEvent =
   | { kind: 'blocked'; slot: number; by: HitSource }
   /** `slot`'s steering was flipped by `attacker`'s Jumble. */
   | { kind: 'jumbled'; slot: number; attacker: number }
-  /** `slot` was knocked aside by `attacker`'s Bumper orb. */
-  | { kind: 'bumped'; slot: number; attacker: number }
+  /** `attacker`'s Storm struck `slot`: it loses its item, spins out and shrinks. */
+  | { kind: 'shrunk'; slot: number; attacker: number }
+  /** A full-size kart (`by`) drove over the shrunk kart `slot` and flattened it. */
+  | { kind: 'squashed'; slot: number; by: number }
+  /** `slot`'s Rocket ran out: the kart is a normal kart again. */
+  | { kind: 'rocketEnd'; slot: number }
   /** A shot and a Slick cancelled each other out at (x, z). */
   | { kind: 'itemDestroyed'; x: number; z: number };
 
@@ -104,8 +92,8 @@ export class ItemSystem {
   readonly states = new Map<number, ItemState>();
   private entities: Entity[] = [];
   private nextUid = 1;
-  private readonly magnets = new Map<number, MagnetState>();
-  private readonly bumpers = new Map<number, BumperState>();
+  /** Karts that are rockets right now, with the seconds they have left. */
+  private readonly rockets = new Map<number, { time: number }>();
   private shoves: Shove[] = [];
   /** Solid scenery that destroys shots (null = shots fly through everything, as before). */
   private colliders: Colliders | null = null;
@@ -158,6 +146,12 @@ export class ItemSystem {
     const racers = standings.length;
     const dt = SIM_DT;
     this.lastStandings = standings;
+    this.lastFinished = finished;
+    // A rocket that finishes the race (or is knocked out) turns back into a kart.
+    for (const slot of [...this.rockets.keys()]) {
+      const rk = karts.get(slot);
+      if (rk && finished.has(slot)) this.endRocket(slot, rk, events);
+    }
 
     // --- Boxes: respawn timers and pick-ups -----------------------------------------
     for (const box of this.boxes) {
@@ -168,7 +162,7 @@ export class ItemSystem {
       }
       for (const [slot, k] of karts) {
         const st = this.states.get(slot);
-        if (!st || finished.has(slot) || k.respawnTime > 0) continue;
+        if (!st || finished.has(slot) || k.respawnTime > 0 || this.rockets.has(slot)) continue; // (a rocket's hands are full)
         const dx = k.pos.x - box.x;
         const dz = k.pos.z - box.z;
         if (dx * dx + dz * dz > ITEMS.boxRadius * ITEMS.boxRadius || Math.abs(k.pos.y - box.y) > 3) continue;
@@ -203,7 +197,7 @@ export class ItemSystem {
       const pressedNow = down && !st.wasDown;
       const releasedNow = !down && st.wasDown;
       st.wasDown = down;
-      if (k.spinTime > 0 || k.respawnTime > 0 || k.flight) continue; // can't act while spinning / being carried / in a cannon
+      if (k.spinTime > 0 || k.respawnTime > 0 || k.flight || this.rockets.has(slot)) continue; // can't act while spinning / being carried / in a cannon
       if (!st.held || st.roulette > 0) {
         st.pressing = false;
         continue;
@@ -240,13 +234,13 @@ export class ItemSystem {
     const k = karts.get(slot);
     if (!k) return false;
     if (k.flight) return false; // inside a launch cannon: nothing can touch you
+    if (this.rockets.has(slot)) return false; // a Rocket is invincible
     if (k.invulnTime > 0) return false; // just been hit: no chain-hits (the item passes through)
     if (k.starTime > 0) {
       events.push({ kind: 'blocked', slot, by });
       return false;
     }
     spinOut(k, this.configOf(slot));
-    this.magnets.delete(slot); // a spun-out kart loses the tow
     // A hit while dragging an item loses it (a dragged Slick is left on the road).
     const st = this.states.get(slot);
     if (st) this.cancelHold(slot, st, true);
@@ -315,13 +309,11 @@ export class ItemSystem {
       case 'jumble':
         this.jumbleAhead(slot, karts, events);
         break;
-      case 'magnet':
-        this.magnets.set(slot, { time: ITEMS.magnetTime, target: null });
-        this.ensureAttached('magnet', slot, k);
+      case 'storm':
+        this.stormAhead(slot, karts, events);
         break;
-      case 'bumper':
-        this.bumpers.set(slot, { time: ITEMS.bumperTime, charges: ITEMS.bumperCharges, angle: k.heading, cooldown: new Map() });
-        this.ensureAttached('bumper', slot, k);
+      case 'rocket':
+        this.startRocket(slot, k, st);
         break;
       case 'ricochet':
         this.spawnShot('ricochet', slot, k, backward);
@@ -365,28 +357,6 @@ export class ItemSystem {
     });
   }
 
-  /** Make sure `owner` has an entity of this kind (magnet / bumper) that follows the kart. */
-  private ensureAttached(kind: 'magnet' | 'bumper', owner: number, k: KartState): void {
-    if (this.entities.some((e) => e.kind === kind && e.owner === owner)) return;
-    this.entities.push({
-      uid: this.nextUid++,
-      kind,
-      x: k.pos.x,
-      y: k.pos.y,
-      z: k.pos.z,
-      heading: k.heading,
-      owner,
-      trailing: false,
-      speed: 0,
-      age: 0,
-      bounces: 0,
-      target: null,
-      grace: 0,
-      trackIndex: k.trackIndex,
-      life: 1,
-    });
-  }
-
   private spawnShot(kind: 'ricochet' | 'seeker', owner: number, k: KartState, backward: boolean): void {
     const heading = backward ? k.heading + Math.PI : k.heading;
     const fx = Math.sin(heading);
@@ -410,6 +380,8 @@ export class ItemSystem {
   }
 
   private lastStandings: Standings = [];
+  /** Slots that had finished the race (or were knocked out) at the last tick. */
+  private lastFinished: ReadonlySet<number> = new Set();
 
   private targetAhead(owner: number): number | null {
     const i = this.lastStandings.indexOf(owner);
@@ -459,30 +431,22 @@ export class ItemSystem {
         if (e.age > ITEMS.slickLifetime) dead.add(e);
         continue;
       }
-      if (e.kind === 'magnet') {
-        if (!this.updateMagnet(e, karts, dt)) dead.add(e);
-        continue;
-      }
-      if (e.kind === 'bumper') {
-        if (!this.updateBumper(e, karts, events, dead, dt)) dead.add(e);
-        continue;
-      }
-
       // Shots
       const life = e.kind === 'ricochet' ? ITEMS.ricochetLifetime : ITEMS.seekerLifetime;
       if (e.age > life) {
         dead.add(e);
         continue;
       }
-      if (e.kind === 'seeker') this.steerSeeker(e, karts, dt);
+      const homing = e.kind === 'seeker' ? this.steerSeeker(e, karts, dt) : null;
       e.x += Math.sin(e.heading) * e.speed * dt;
       e.z += Math.cos(e.heading) * e.speed * dt;
       const p = this.track.project(e.x, e.z, e.trackIndex);
       e.trackIndex = p.index;
       e.y = followGround(ground, e, dt);
+      if (homing) e.y = climbToTarget(ground, e, homing, dt);
 
       // Scenery: a shot that runs into a solid tree/house/etc. is destroyed.
-      if (this.colliders?.blocksPoint(e.x, e.z, e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius)) {
+      if (this.colliders?.blocksPoint(e.x, e.z, e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius, e.y)) {
         dead.add(e);
         events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
         continue;
@@ -521,7 +485,7 @@ export class ItemSystem {
 
     // Objects vs karts.
     for (const e of this.entities) {
-      if (dead.has(e) || e.trailing || e.kind === 'magnet' || e.kind === 'bumper') continue;
+      if (dead.has(e) || e.trailing) continue;
       const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
       for (const [slot, k] of karts) {
         if (k.respawnTime > 0 || k.spinTime > 0 || k.invulnTime > 0 || k.flight) continue; // protected karts: shots and slicks pass through
@@ -529,7 +493,7 @@ export class ItemSystem {
         if (e.kind === 'slick' && !k.grounded) continue; // jumping over a slick is fine
         if (Math.abs(k.pos.y - e.y) > 2.2) continue;
         const d = Math.hypot(k.pos.x - e.x, k.pos.z - e.z);
-        if (d < r + KART.radius * 0.6) {
+        if (d < r + KART.radius * 0.6 * k.size) {
           this.hitKart(slot, karts, e.kind, e.owner, events);
           dead.add(e); // consumed whether it hurt (spin) or was blocked (Nova)
           break;
@@ -539,131 +503,190 @@ export class ItemSystem {
     for (const e of dead) this.remove(e);
   }
 
-  // --- Magnet ----------------------------------------------------------------------------------
-  /**
-   * Run one tick of a Magnet. Each tick it picks the nearest kart roughly ahead of its owner
-   * (within `magnetRange`); while that kart is farther than `magnetMinDist` and the owner is not
-   * already faster than it by `magnetOverspeed`, the owner gets a boost: a tow. Returns false when it ends.
-   */
-  private updateMagnet(e: Entity, karts: Map<number, KartState>, dt: number): boolean {
-    const m = this.magnets.get(e.owner);
-    const o = karts.get(e.owner);
-    if (!m || !o || o.respawnTime > 0) {
-      this.magnets.delete(e.owner);
-      return false;
-    }
-    m.time -= dt;
-    e.x = o.pos.x;
-    e.y = o.pos.y;
-    e.z = o.pos.z;
-    e.heading = o.heading;
-    e.life = Math.max(0, m.time / ITEMS.magnetTime);
-    if (m.time <= 0) {
-      this.magnets.delete(e.owner);
-      return false;
-    }
-    m.target = this.magnetTarget(e.owner, o, karts);
-    const t = m.target === null ? undefined : karts.get(m.target);
-    if (!t) {
-      e.link = undefined;
-      return true;
-    }
-    e.link = { x: t.pos.x, y: t.pos.y, z: t.pos.z };
-    const gap = Math.hypot(t.pos.x - o.pos.x, t.pos.z - o.pos.z);
-    if (o.grounded && o.spinTime <= 0 && gap > ITEMS.magnetMinDist && o.speed < t.speed + ITEMS.magnetOverspeed) applyBoost(o, 0.1);
-    return true;
+  // --- Rocket --------------------------------------------------------------------------------------
+  /** Is this kart a rocket right now? (The World then calls `driveRocket` instead of the normal kart physics.) */
+  rocketActive(slot: number): boolean {
+    return this.rockets.has(slot);
   }
 
-  /** Nearest other kart in front of `k` (inside a widening cone) within the magnet's range. */
-  private magnetTarget(owner: number, k: KartState, karts: Map<number, KartState>): number | null {
-    const fx = Math.sin(k.heading);
-    const fz = Math.cos(k.heading);
-    let best: number | null = null;
-    let bestAlong = Infinity;
-    for (const [slot, t] of karts) {
-      if (slot === owner || t.respawnTime > 0 || t.flight) continue;
-      const dx = t.pos.x - k.pos.x;
-      const dz = t.pos.z - k.pos.z;
-      const along = dx * fx + dz * fz;
-      const side = Math.abs(dx * fz - dz * fx);
-      if (along < ITEMS.magnetMinDist * 0.5 || along > ITEMS.magnetRange) continue;
-      if (side > 3 + 0.4 * along || Math.abs(t.pos.y - k.pos.y) > 6) continue;
-      if (along < bestAlong) {
-        bestAlong = along;
-        best = slot;
+  /** The kart turns into a rocket: it sheds whatever it was doing and the automatic flight begins. */
+  private startRocket(slot: number, k: KartState, st: ItemState): void {
+    this.rockets.set(slot, { time: ITEMS.rocketTime });
+    k.rocketTime = ITEMS.rocketTime;
+    k.spinTime = 0;
+    k.invertTime = 0;
+    k.boostTime = 0;
+    k.driftDir = 0;
+    k.driftCharge = 0;
+    k.driftTier = 0;
+    k.hopping = false;
+    k.shrinkTime = 0; // a rocket is full size and never squashed
+    k.size = 1;
+    k.squashTime = 0;
+    st.pressing = false;
+    st.trailing = false;
+  }
+
+  /**
+   * One tick of a Rocket kart (replaces `stepKart` for it). The kart steers itself along the road (pure pursuit on
+   * the track's centerline, see rail.ts), accelerates to `rocketSpeed` and glides over the ground like a shot does.
+   * Over a ravine, a water gap or a ramp gap there is no ground, so it just keeps its height and the road line:
+   * it cannot fall in. A launch cannon still captures it (the cannon system moves it, then it flies on).
+   * After `rocketTime` the kart returns to normal with a small boost and a short grace period.
+   */
+  driveRocket(slot: number, k: KartState, ground: Ground, dt: number, events: ItemEvent[]): void {
+    const r = this.rockets.get(slot);
+    if (!r) return;
+    r.time -= dt;
+    k.rocketTime = Math.max(0, r.time);
+    k.invulnTime = Math.max(k.invulnTime, 0.1); // hazards and shots pass through a rocket
+    if (r.time <= 0) {
+      this.endRocket(slot, k, events);
+      return;
+    }
+    if (k.flight) return; // inside a launch cannon: the cannon moves the kart
+    k.spinTime = 0;
+    k.invertTime = 0;
+    k.driftDir = 0;
+    k.hopping = false;
+    k.trickable = false;
+
+    // Speed up to the rocket speed.
+    k.speed = Math.min(ITEMS.rocketSpeed, Math.max(0, k.speed) + ITEMS.rocketAccel * dt);
+
+    // Steer along the road: aim at a point a little way down the centerline.
+    const aim = railAim(this.track, k.pos.x, k.pos.z, k.trackIndex, ITEMS.rocketLookahead + k.speed * 0.2);
+    const h0 = k.heading;
+    k.heading = steerToward(k.heading, k.pos.x, k.pos.z, aim.x, aim.z, ITEMS.rocketTurnRate * dt);
+    k.yawRate = angleDiff(h0, k.heading) / dt;
+    k.steer = Math.max(-1, Math.min(1, -k.yawRate / ITEMS.rocketTurnRate));
+
+    // Move, and follow the ground (or hold the height over a gap).
+    const f = forwardOf(k.heading);
+    k.vel.x = f.x * k.speed;
+    k.vel.z = f.z * k.speed;
+    k.pos.x += k.vel.x * dt;
+    k.pos.z += k.vel.z * dt;
+    const probe = { x: k.pos.x, z: k.pos.z, heading: k.heading, speed: k.speed, y: k.pos.y, trackIndex: k.trackIndex };
+    const y = followGround(ground, probe, dt);
+    const here = ground.sample(k.pos.x, k.pos.z, k.trackIndex);
+    k.vel.y = (y - k.pos.y) / dt;
+    k.pos.y = y;
+    k.grounded = !!here && y <= here.height + 0.3;
+    if (here) k.surface = here.surface;
+    k.trackIndex = this.track.project(k.pos.x, k.pos.z, k.trackIndex).index;
+    k.offTrackTime = 0;
+  }
+
+  /** The race ended (or the kart left it) while it was a rocket: quietly make it a normal kart again. */
+  cancelRocket(slot: number, k: KartState): void {
+    if (!this.rockets.delete(slot)) return;
+    k.rocketTime = 0;
+  }
+
+  /** The Rocket is over: back to a normal kart, with a small boost and a grace period so it does not land into a pile. */
+  private endRocket(slot: number, k: KartState, events: ItemEvent[]): void {
+    this.rockets.delete(slot);
+    k.rocketTime = 0;
+    const c = this.configOf(slot);
+    k.speed = Math.min(k.speed, c.maxSpeed * c.boostSpeedFactor);
+    const f = forwardOf(k.heading);
+    k.vel.x = f.x * k.speed;
+    k.vel.z = f.z * k.speed;
+    applyBoost(k, ITEMS.rocketEndBoost);
+    k.invulnTime = Math.max(k.invulnTime, ITEMS.rocketGrace);
+    events.push({ kind: 'rocketEnd', slot });
+  }
+
+  /** Rockets knock aside every full-size kart they touch (it spins out and is shoved sideways). */
+  private rocketCollisions(karts: Map<number, KartState>, events: ItemEvent[]): void {
+    for (const [sa] of this.rockets) {
+      const a = karts.get(sa);
+      if (!a || a.flight || a.respawnTime > 0) continue;
+      const right = rightOf(a.heading);
+      for (const [sb, b] of karts) {
+        if (sb === sa || this.rockets.has(sb) || b.respawnTime > 0 || b.flight || b.starTime > 0) continue;
+        if (b.size < ITEMS.shrunkBelow) continue; // tiny karts are squashed instead (see squashChecks)
+        if (Math.abs(a.pos.y - b.pos.y) > 2) continue;
+        const dx = b.pos.x - a.pos.x;
+        const dz = b.pos.z - a.pos.z;
+        if (Math.hypot(dx, dz) > ITEMS.rocketReach) continue;
+        if (!this.hitKart(sb, karts, 'rocket', sa, events)) continue;
+        const side = dx * right.x + dz * right.z >= 0 ? 1 : -1; // away from the rocket's path
+        const rate = ITEMS.rocketShove / ITEMS.rocketShoveTime;
+        this.shoves.push({ slot: sb, dx: right.x * side * rate, dz: right.z * side * rate, time: ITEMS.rocketShoveTime });
       }
     }
-    return best;
   }
 
-  // --- Bumper ----------------------------------------------------------------------------------
+  // --- Storm (lightning) ------------------------------------------------------------------------------
   /**
-   * Run one tick of a Bumper orb: it circles its owner, shoves aside any other kart it touches
-   * (they lose speed, no spin-out) and swallows shots. Returns false when the orb pops.
+   * The user fires the Storm: a dark cloud appears over every racer AHEAD of them at once. Each victim loses its
+   * item, spins out and shrinks; the lower its race position the sooner it is full size again (see ITEMS.stormTime*).
+   * Rockets and Nova karts are not affected; karts behind the user are not either.
    */
-  private updateBumper(e: Entity, karts: Map<number, KartState>, events: ItemEvent[], dead: Set<Entity>, dt: number): boolean {
-    const b = this.bumpers.get(e.owner);
-    const o = karts.get(e.owner);
-    if (!b || !o || o.respawnTime > 0) {
-      this.bumpers.delete(e.owner);
-      return false;
-    }
-    b.time -= dt;
-    b.angle += ITEMS.bumperSpin * dt;
-    e.x = o.pos.x + Math.sin(b.angle) * ITEMS.bumperOrbit;
-    e.z = o.pos.z + Math.cos(b.angle) * ITEMS.bumperOrbit;
-    e.y = o.pos.y + 0.55;
-    e.heading = b.angle;
-    e.life = Math.max(0, b.time / ITEMS.bumperTime);
-    for (const [slot, left] of b.cooldown) {
-      if (left <= dt) b.cooldown.delete(slot);
-      else b.cooldown.set(slot, left - dt);
-    }
-
-    // Karts: shove aside whoever touches the orb.
-    for (const [slot, k] of karts) {
-      if (slot === e.owner || k.respawnTime > 0 || k.flight || k.spinTime > 0 || b.cooldown.has(slot)) continue;
-      if (Math.abs(k.pos.y - e.y) > 2.2) continue;
-      if (Math.hypot(k.pos.x - e.x, k.pos.z - e.z) > ITEMS.bumperRadius + KART.radius * 0.6) continue;
-      b.cooldown.set(slot, ITEMS.bumperCooldown);
-      if (k.starTime > 0) {
-        events.push({ kind: 'blocked', slot, by: 'nova' });
+  private stormAhead(slot: number, karts: Map<number, KartState>, events: ItemEvent[]): void {
+    const standings = this.lastStandings;
+    const rank = standings.indexOf(slot);
+    const racers = standings.length;
+    for (let i = 0; i < rank; i++) {
+      const victim = standings[i];
+      const vk = karts.get(victim);
+      const st = this.states.get(victim);
+      if (!vk || this.lastFinished.has(victim)) continue;
+      if (this.rockets.has(victim)) continue; // a Rocket is invincible
+      if (vk.starTime > 0) {
+        events.push({ kind: 'blocked', slot: victim, by: 'nova' });
         continue;
       }
-      // Away from the owner's kart.
-      let ax = k.pos.x - o.pos.x;
-      let az = k.pos.z - o.pos.z;
-      const len = Math.hypot(ax, az) || 1;
-      ax /= len;
-      az /= len;
-      const rate = ITEMS.bumperShove / ITEMS.bumperShoveTime;
-      this.shoves.push({ slot, dx: ax * rate, dz: az * rate, time: ITEMS.bumperShoveTime });
-      k.speed *= ITEMS.bumperSpeedFactor;
-      k.vel.x *= ITEMS.bumperSpeedFactor;
-      k.vel.z *= ITEMS.bumperSpeedFactor;
-      events.push({ kind: 'bumped', slot, attacker: e.owner });
-      b.charges--;
-    }
-    // Shots: swallowed (each costs a charge).
-    for (const s of this.entities) {
-      if (b.charges <= 0) break;
-      if (dead.has(s) || !isShot(s) || s.owner === e.owner) continue;
-      const r = s.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
-      if (Math.hypot(s.x - e.x, s.z - e.z) < ITEMS.bumperRadius + r) {
-        dead.add(s);
-        b.charges--;
-        events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
+      // Lose the item (a dragged Peel stays on the road).
+      if (st) {
+        this.cancelHold(victim, st, true);
+        st.held = null;
+        st.heldFor = 0;
       }
+      // Shrink for a time that depends on the position: first place longest, last place shortest.
+      const u = racers <= 1 ? 0.5 : (racers - (i + 1)) / (racers - 1);
+      const total = ITEMS.stormTimeLast + (ITEMS.stormTimeFirst - ITEMS.stormTimeLast) * u;
+      const age = vk.shrinkTime > 0 ? vk.shrinkTotal - vk.shrinkTime : 0; // already small: keep the size continuous
+      vk.shrinkTime = Math.max(vk.shrinkTime, total);
+      vk.shrinkTotal = age + vk.shrinkTime;
+      vk.zapTime = ITEMS.stormZapSeconds;
+      // Spin out (even right after another hit: a lightning strike is not skipped), unless in a cannon or on the carrier.
+      if (!vk.flight && vk.respawnTime <= 0) {
+        spinOut(vk, this.configOf(victim));
+        events.push({ kind: 'hit', slot: victim, by: 'storm', attacker: slot });
+      }
+      events.push({ kind: 'shrunk', slot: victim, attacker: slot });
     }
-    if (b.time <= 0 || b.charges <= 0) {
-      this.bumpers.delete(e.owner);
-      events.push({ kind: 'itemDestroyed', x: e.x, z: e.z });
-      return false;
-    }
-    return true;
   }
 
-  /** Slide the karts that were bumped (the push is spread over a fraction of a second so it looks like a shove). */
+  /**
+   * A full-size kart driving over a shrunk one flattens it: it is slowed for a moment (see ITEMS.squash*).
+   * (The World lets full-size and shrunk karts pass through each other, so "driving over" really happens.)
+   */
+  private squashChecks(karts: Map<number, KartState>, events: ItemEvent[]): void {
+    for (const [sb, b] of karts) {
+      if (b.size >= ITEMS.shrunkBelow || b.squashTime > 0 || b.flight || b.respawnTime > 0) continue;
+      for (const [sa, a] of karts) {
+        if (sa === sb || a.size < ITEMS.fullSizeAbove || a.flight || a.respawnTime > 0 || a.speed < 3) continue;
+        if (Math.abs(a.pos.y - b.pos.y) > 1.5) continue;
+        if (Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) > KART.radius) continue;
+        b.squashTime = ITEMS.squashTime;
+        b.speed *= ITEMS.squashSpeedKept;
+        b.vel.x *= ITEMS.squashSpeedKept;
+        b.vel.z *= ITEMS.squashSpeedKept;
+        b.boostTime = 0;
+        b.driftDir = 0;
+        b.driftCharge = 0;
+        b.driftTier = 0;
+        events.push({ kind: 'squashed', slot: sb, by: sa });
+        break;
+      }
+    }
+  }
+
+  /** Slide the karts that were shoved (the push is spread over a fraction of a second so it looks like a shove). */
   private applyShoves(karts: Map<number, KartState>, dt: number): void {
     if (this.shoves.length === 0) return;
     for (const s of this.shoves) {
@@ -705,20 +728,69 @@ export class ItemSystem {
     return true;
   }
 
-  private steerSeeker(e: Entity, karts: Map<number, KartState>, dt: number): void {
-    if (e.target === null) return; // nobody ahead: flies straight
-    const t = karts.get(e.target);
-    if (!t || t.respawnTime > 0 || t.flight) return;
-    const want = Math.atan2(t.pos.x - e.x, t.pos.z - e.z);
-    const err = Math.atan2(Math.sin(want - e.heading), Math.cos(want - e.heading));
-    const maxTurn = ITEMS.seekerTurnRate * dt;
-    e.heading += Math.max(-maxTurn, Math.min(maxTurn, err));
+  /**
+   * Steer a Seeker for one tick. It follows the ROAD toward the racer ahead (like a red shell in other kart games):
+   *  - far from its target it aims at a point a little way down the track's centerline (rail.ts), so corners, hairpins,
+   *    jumps, ravines and cannons are followed through the air without hitting walls or falling in;
+   *  - near the target (within `seekerHomeRange` metres, on the same stretch of road) it homes in on it directly;
+   *  - if its target is passed, out of play or cannot be hit right now (just hit itself) it goes for the next racer up the standings; with nobody ahead at all
+   *    (the leader fired it) it simply follows the road, hitting whatever it meets, until its time runs out.
+   * Returns the target kart while it is homing directly (the caller then also matches height), otherwise null.
+   */
+  private steerSeeker(e: Entity, karts: Map<number, KartState>, dt: number): KartState | null {
+    const track = this.track;
+    const here = track.project(e.x, e.z, e.trackIndex);
+    const info = (k: KartState) => {
+      // A kart inside a launch cannon is nowhere near the road: it counts as being at the cannon's mouth, or at its
+      // landing point once it is flying (so the shot keeps following the road through the sky gap toward it).
+      if (k.flight) {
+        const c = track.cannons[k.flight.cannon];
+        return { gap: track.deltaS(here.s, k.flight.phase === 'air' ? c.landing.s : c.mouth.s), d: 0, route: 0 };
+      }
+      const p = track.project(k.pos.x, k.pos.z, k.trackIndex);
+      return { gap: track.deltaS(here.s, p.s), d: p.d, route: p.route };
+    };
+    // The target: the racer ahead of the owner in the race. If we flew past it (or it is out of play, e.g. being
+    // carried back after a fall), go for whoever is ahead of THAT racer, and so on up the standings.
+    let t: KartState | undefined;
+    let ti: ReturnType<typeof info> | null = null;
+    let target = e.target;
+    for (let guard = 0; target !== null && guard < 16; guard++) {
+      const k = karts.get(target);
+      const i = k ? info(k) : null;
+      if (k && i && k.respawnTime <= 0 && k.invulnTime <= 0 && k.spinTime <= 0 && i.gap >= -SEEKER_PASSED) {
+        t = k;
+        ti = i;
+        break;
+      }
+      const idx = this.lastStandings.indexOf(target);
+      target = idx > 0 ? this.lastStandings[idx - 1] : null;
+    }
+    e.target = target;
+    // Close and on the same stretch of road: home in directly.
+    if (t && ti && !t.flight && Math.hypot(t.pos.x - e.x, t.pos.z - e.z) < ITEMS.seekerHomeRange && ti.gap < ITEMS.seekerHomeRange + 6) {
+      e.heading = steerToward(e.heading, e.x, e.z, t.pos.x, t.pos.z, ITEMS.seekerTurnRate * dt);
+        return t;
+    }
+    // Otherwise follow the road, lined up with the target's side of it (and onto its branch if it took a shortcut).
+    const half = here.width / 2 - 1.2;
+    const lane = ti && ti.route === 0 ? Math.max(-half, Math.min(half, ti.d)) : 0;
+    const aim = railAim(track, e.x, e.z, e.trackIndex, ITEMS.seekerLookahead + e.speed * 0.15, lane, ti ? ti.route : 0);
+    e.heading = steerToward(e.heading, e.x, e.z, aim.x, aim.z, ITEMS.seekerRailTurnRate * dt);
+    return null;
   }
 
   /**
-   * Nova bump: an invincible kart sends any kart it touches into a spin-out.
+   * Everything kart-on-kart that items cause: Nova bumps, Rocket knock-asides and squashing of shrunk karts.
    * Called by the world after kart-vs-kart collision resolution.
    */
+  bodyCollisions(karts: Map<number, KartState>, events: ItemEvent[]): void {
+    this.novaCollisions(karts, events);
+    this.rocketCollisions(karts, events);
+    this.squashChecks(karts, events);
+  }
+
+  /** Nova bump: an invincible kart sends any kart it touches into a spin-out. */
   novaCollisions(karts: Map<number, KartState>, events: ItemEvent[]): void {
     const list = [...karts.entries()];
     const reach = KART.radius * 2 + 0.4;
@@ -732,6 +804,19 @@ export class ItemSystem {
       }
     }
   }
+}
+
+/** A Seeker that is more than this many metres (along the road) past its target gives up on it and goes for the next racer ahead. */
+const SEEKER_PASSED = 8;
+
+/** While a Seeker homes in on a kart that is in the air (jumping a ravine), it climbs or dives toward the kart's height. */
+function climbToTarget(ground: Ground, e: { x: number; z: number; y: number; trackIndex: number }, target: KartState, dt: number): number {
+  if (target.grounded) return e.y; // on the ground: following the ground is already right
+  const step = ITEMS.seekerClimb * dt;
+  let y = e.y + Math.max(-step, Math.min(step, target.pos.y + 0.3 - e.y));
+  const here = ground.sample(e.x, e.z, e.trackIndex);
+  if (here) y = Math.max(y, here.height); // never into the ground
+  return y;
 }
 
 /** How far ahead (s of flight) a shot looks at the ground, so it starts climbing before a slope arrives. */

@@ -18,21 +18,22 @@ describe('item odds', () => {
     for (const k of ITEM_PICKS) {
       expect(lead[k]).toBeGreaterThanOrEqual(0);
       expect(last[k]).toBeGreaterThan(0);
-      // Jumble has its own ramp (nothing before mid-field); the rest is a straight line.
-      if (k !== 'jumble') expect(mid[k]).toBeCloseTo((lead[k] + last[k]) / 2);
+      // Jumble, Storm and Rocket have their own ramps (nothing before their starting point); the rest is a straight line.
+      if (k !== 'jumble' && k !== 'storm' && k !== 'rocket') expect(mid[k]).toBeCloseTo((lead[k] + last[k]) / 2);
     }
   });
 
-  it('the better you are doing, the weaker your items: leaders never get Seeker, Jumble, Magnet or Nova', () => {
+  it('the better you are doing, the weaker your items: leaders never get Seeker, Jumble, Storm, Rocket or Nova', () => {
     const lead = distribution(1, 4);
     expect(lead.seeker).toBe(0);
     expect(lead.jumble).toBe(0);
-    expect(lead.magnet).toBe(0);
+    expect(lead.storm).toBe(0);
+    expect(lead.rocket).toBe(0);
     expect(lead.nova).toBe(0);
     // Strength rises steadily toward the back of the field.
     const strong = (p: number) => {
       const d = distribution(p, 4);
-      return d.nova + d.seeker + d.jumble + d.magnet + d.dash3;
+      return d.nova + d.seeker + d.jumble + d.storm + d.rocket + d.dash3;
     };
     expect(strong(1)).toBeLessThan(strong(2));
     expect(strong(2)).toBeLessThan(strong(3));
@@ -53,12 +54,23 @@ describe('item odds', () => {
     expect(itemWeights(2, 2).jumble).toBeGreaterThan(0);
   });
 
-  it('Magnet needs someone ahead; Bumper is a defensive item the leader can get', () => {
-    expect(itemWeights(1, 4).magnet).toBe(0);
-    expect(itemWeights(2, 4).magnet).toBeGreaterThan(0);
-    expect(distribution(1, 4).bumper).toBeGreaterThan(0.1);
-    expect(distribution(1, 4).bumper).toBeGreaterThan(distribution(4, 4).bumper);
-    expect(distribution(4, 4).magnet).toBeGreaterThan(distribution(2, 4).magnet);
+  it('Rocket and Storm are comeback items: never for the leader, nothing in the front half, rare-ish for the back markers', () => {
+    for (const k of ['rocket', 'storm'] as const) {
+      expect(itemWeights(1, 4)[k]).toBe(0);
+      expect(itemWeights(2, 4)[k]).toBe(0);
+      expect(itemWeights(3, 4)[k]).toBeGreaterThan(0);
+      expect(itemWeights(3, 4)[k]).toBeLessThan(itemWeights(4, 4)[k]);
+      // 12 racers: only the back ~40 % ever sees them.
+      for (let pos = 1; pos <= 7; pos++) expect(itemWeights(pos, 12)[k]).toBe(0);
+      expect(itemWeights(9, 12)[k]).toBeGreaterThan(0);
+      expect(itemWeights(12, 12)[k]).toBeGreaterThan(itemWeights(9, 12)[k]);
+      expect(distribution(1, 12)[k]).toBe(0);
+    }
+    // Storm is the rarer of the two; neither dominates even last place's boxes.
+    expect(itemWeights(12, 12).storm).toBeLessThan(itemWeights(12, 12).rocket);
+    expect(distribution(12, 12).rocket).toBeLessThan(0.2);
+    expect(distribution(12, 12).storm).toBeLessThan(0.08);
+    expect(distribution(12, 12).storm).toBeGreaterThan(0.01);
   });
 
   it('leaders mostly get defensive items; trailing players get the strong ones', () => {

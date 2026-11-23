@@ -13,13 +13,16 @@
  *   jumble   = ink spray: the (two) racers just AHEAD of you get their steering flipped for a few
  *              seconds and an ink splat over their screen (a rare comeback item: only karts well
  *              behind get it)
- *   magnet   = for a few seconds you are towed toward the kart ahead (a catch-up pull, not a rocket)
- *   bumper   = an orb orbits you for a while: karts that touch it are shoved aside and slowed,
- *              and it swallows shots. A defensive item that also wins you elbow room.
+ *   storm    = lightning: a dark cloud shocks every racer AHEAD of you at once: they lose their item,
+ *              spin out and shrink to a tiny size (slower, lighter, easy to bump). The furthest-back
+ *              victim grows back first, the leader last (about ten seconds). Rare, back markers only.
+ *   rocket   = your kart becomes a rocket: driven automatically along the track at very high speed for
+ *              a few seconds, invincible, knocking other karts aside. Only for karts far back.
  *
- * New ids go at the END of the list: the index is what travels over the network.
+ * The id list order is what travels over the network. New ids go at the END; `storm` and `rocket`
+ * took over the slots of two retired items (index 6 and 7), so the list length did not change.
  */
-export const ITEM_IDS = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'magnet', 'bumper'] as const;
+export const ITEM_IDS = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'storm', 'rocket'] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
 export const ITEM_INFO: Record<ItemId, { name: string; blurb: string }> = {
@@ -29,8 +32,8 @@ export const ITEM_INFO: Record<ItemId, { name: string; blurb: string }> = {
   seeker: { name: 'Seeker', blurb: 'Homing shot that chases the racer ahead of you.' },
   nova: { name: 'Nova', blurb: 'Brief invincibility: faster, ignores grass, knocks rivals aside.' },
   jumble: { name: 'Jumble', blurb: 'Inks the two racers just ahead of you: their steering flips left/right for a few seconds.' },
-  magnet: { name: 'Magnet', blurb: 'Tows you toward the kart ahead for a few seconds.' },
-  bumper: { name: 'Bumper', blurb: 'An orb circles you: karts that touch it get shoved aside. It also swallows shots.' },
+  storm: { name: 'Storm', blurb: 'A dark cloud shocks everyone ahead of you: they drop their item, spin out and shrink.' },
+  rocket: { name: 'Rocket', blurb: 'Turns your kart into a rocket: auto-driven at huge speed along the track, knocking rivals aside.' },
 };
 
 /** What a player is carrying. `count` > 1 only for the Dash pack. */
@@ -40,8 +43,8 @@ export interface HeldItem {
 }
 
 /** A moving or placed item object in the world (for the renderer). */
-/** 'magnet' and 'bumper' are effects attached to their owner (the renderer draws the model on the owner). */
-export type ItemEntityKind = 'slick' | 'ricochet' | 'seeker' | 'magnet' | 'bumper';
+/** Things that exist in the world on their own. (The rocket and the storm are effects ON karts: see KartState.) */
+export type ItemEntityKind = 'slick' | 'ricochet' | 'seeker';
 
 export interface ItemEntity {
   /** Unique, stable id (use it to match meshes between frames). */
@@ -62,10 +65,6 @@ export interface ItemEntity {
    */
   pitch?: number;
   roll?: number;
-  /** Magnet: where the kart being towed is (the renderer draws a beam to it); absent when nothing is in range. */
-  link?: { x: number; y: number; z: number };
-  /** Magnet / Bumper: fraction of the effect left (1 = just started, 0 = about to end). */
-  life?: number;
 }
 
 /** A floating item box on the track. */

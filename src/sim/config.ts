@@ -147,7 +147,7 @@ export type KartConfig = {
   -readonly [K in keyof typeof KART]: (typeof KART)[K] extends readonly number[] ? readonly number[] : number;
 };
 
-/** Items: boxes, roulette, the five items. */
+/** Items: boxes, roulette, the eight items. */
 export const ITEMS = {
   /** Item box pick-up radius (m) and how long a collected box stays away (s). */
   boxRadius: 1.9,
@@ -172,33 +172,75 @@ export const ITEMS = {
   ricochetBounces: 4,
   ricochetLifetime: 9,
   ricochetRadius: 1.3,
-  /** Seeker (homing) shot. */
-  seekerSpeed: 38,
-  seekerTurnRate: 3.2,
-  seekerLifetime: 9,
+
+  // --- Seeker: homing shot that follows the TRACK toward the racer ahead -------------------------
+  /** Speed (m/s) and lifetime (s): 44 m/s x 12 s reaches about 530 m down the road. */
+  seekerSpeed: 44,
+  seekerLifetime: 12,
   seekerRadius: 1.3,
+  /** Turn rate (rad/s) while it follows the road line; fast, so it also takes hairpins. */
+  seekerRailTurnRate: 6,
+  /** Turn rate (rad/s) of the final, direct homing on the target. */
+  seekerTurnRate: 5,
+  /** Metres ahead along the road the seeker aims at while following the track (plus a little per m/s of speed). */
+  seekerLookahead: 7,
+  /** It homes in directly once the target is this close (m) and on the same stretch of road (within this many metres of track). */
+  seekerHomeRange: 26,
+  /** While homing it also climbs / dives toward the target's height (m/s), so a kart in the air over a gap can be hit. */
+  seekerClimb: 20,
+
   /** Jumble: how long a hit racer's steering stays flipped (s), and how many racers directly ahead of the user it hits. */
   jumbleTime: 4.5,
   jumbleReach: 2,
-  /** Magnet: how long it tugs (s), the range ahead it looks for a kart to tow behind (m), and the gap at which the tug lets go (m). */
-  magnetTime: 3.5,
-  magnetRange: 40,
-  magnetMinDist: 6,
-  /** The magnet never pulls you faster than the towed kart plus this (m/s): it helps you catch up, it does not rocket you past. */
-  magnetOverspeed: 9,
-  /** Bumper orb: orbits its owner for this long (s) or until it has bumped / blocked this many times. */
-  bumperTime: 7,
-  bumperCharges: 3,
-  /** Orb radius, orbit radius (m) and orbit speed (rad/s). */
-  bumperRadius: 0.75,
-  bumperOrbit: 2.3,
-  bumperSpin: 5,
-  /** A bumped kart is shoved sideways this far (m), over this many seconds, and keeps this fraction of its speed. */
-  bumperShove: 2.6,
-  bumperShoveTime: 0.3,
-  bumperSpeedFactor: 0.72,
-  /** The same kart can't be bumped again by the same orb for this long (s). */
-  bumperCooldown: 1.2,
+
+  // --- Rocket: the kart becomes a rocket and is driven along the track ---------------------------
+  /** How long the rocket flight lasts (s) and its speed (m/s; the normal top speed is 28). */
+  rocketTime: 7,
+  rocketSpeed: 50,
+  /** Acceleration up to the rocket speed (m/s^2). */
+  rocketAccel: 45,
+  /** Turn rate (rad/s) of the automatic steering, and the metres ahead on the road it aims at (plus a little per m/s). */
+  rocketTurnRate: 5,
+  rocketLookahead: 9,
+  /** A kart the rocket touches (within this many metres of the rocket's centre) is knocked aside and spins out. */
+  rocketReach: 2.4,
+  /** Sideways shove (m, over rocketShoveTime s) given to a kart hit by the rocket. */
+  rocketShove: 3,
+  rocketShoveTime: 0.35,
+  /** When it ends: a small boost (s) and a short grace (s) in which items pass through the kart. */
+  rocketEndBoost: 1.4,
+  rocketGrace: 2.2,
+
+  // --- Storm (lightning): shrinks every racer ahead of the user -------------------------------------
+  /** Size of a shrunk kart (1 = normal), and how long the shrinking and the growing back take (s). */
+  stormSize: 0.38,
+  stormShrinkSeconds: 0.35,
+  stormGrowSeconds: 1.2,
+  /**
+   * How long a victim stays small (s, from the strike until it is full size again), by race position:
+   * first place `stormTimeFirst`, last place `stormTimeLast`, linear in between. The kart that is furthest
+   * back grows first (almost at once), the leader last (about ten seconds): the equaliser.
+   */
+  stormTimeFirst: 10,
+  stormTimeLast: 1.4,
+  /** How long the dark cloud and bolt are shown over a victim (s). */
+  stormZapSeconds: 1.1,
+  /** A shrunk kart's top speed and acceleration, as fractions of normal at the smallest size (lighter = slower). */
+  stormSpeedFactor: 0.72,
+  stormAccelFactor: 0.8,
+  /** At the smallest size the mass is this fraction of normal, and wall bounces are this many times livelier. */
+  stormMassFactor: 0.45,
+  stormWallBounce: 1.9,
+  stormWallLoss: 1.5,
+  /** Squashed flat by a full-size kart driving over a shrunk one: for this long (s) ... */
+  squashTime: 1.6,
+  /** ... the squashed kart keeps this fraction of its top speed, and loses this much of its current speed at once. */
+  squashSpeedFactor: 0.4,
+  squashSpeedKept: 0.35,
+  /** A kart counts as "shrunk" (and can be driven over / squashed) below this size, and a "full-size" kart is above this. */
+  shrunkBelow: 0.8,
+  fullSizeAbove: 0.9,
+
   /** Shots spawn this far in front of / behind the kart (m). */
   muzzleDistance: 2.4,
 } as const;

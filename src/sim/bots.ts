@@ -429,8 +429,13 @@ export class Bot {
     buttons |= this.itemLogic(world, k, ahead, recovering);
 
     // --- Stuck: back up and turn around ---------------------------------------------------------------
-    const stuckable = k.grounded && k.spinTime <= 0 && k.respawnTime <= 0 && k.stallTime <= 0 && !k.flight;
-    this.stuckFor = stuckable && Math.abs(k.speed) < 3.5 && race.time > 1 ? this.stuckFor + SIM_DT : 0;
+    // (A bot that stands still on purpose, waiting for a hazard such as the raised drawbridge, is not stuck.)
+    const waiting = hazard.brake * care >= 0.5;
+    const stuckable = k.grounded && k.spinTime <= 0 && k.respawnTime <= 0 && k.stallTime <= 0 && !k.flight && !waiting;
+    // (After a reversing spell the bot gets a moment to drive forward before it may decide it is stuck again: a kart that
+    // creeps backwards along a wall below 3.5 m/s would otherwise reverse for ever and never try the road ahead.)
+    const retrying = this.clock < this.reverseUntil + 1.2;
+    this.stuckFor = stuckable && !retrying && Math.abs(k.speed) < 3.5 && race.time > 1 ? this.stuckFor + SIM_DT : 0;
     if (this.stuckFor > 1.5) {
       this.reverseUntil = this.clock + 1.6;
       this.stuckFor = 0;
@@ -733,18 +738,13 @@ export class Bot {
         return ready && (rank > 0 || st.heldFor > 3 || hot) ? tap() : 0;
       case 'jumble':
         return ready && (rank > 0 || rivalFront) ? tap() : 0;
-      case 'magnet': {
-        // Worth it when a kart is a decent way ahead (inside the tow range, not already next to us).
-        const target = front !== null && front.d > ITEMS.magnetMinDist + 4 && front.d < ITEMS.magnetRange - 5 && Math.abs(front.side) < 6;
-        if (!ready || rank === 0) return 0;
-        return target || st.heldFor > 8 ? tap() : 0;
-      }
-      case 'bumper': {
-        // Use it when somebody is close alongside, ahead or behind (the orb needs company to be useful).
-        const near = (o: { d: number; side: number } | null, reach = 10) => o !== null && o.d < reach && Math.abs(o.side) < 7;
-        if (!ready) return 0;
-        return near(front, rivalFront ? 16 : 10) || near(back, rivalBack ? 16 : 10) || st.heldFor > 10 ? tap() : 0;
-      }
+      case 'rocket':
+        // The Rocket drives itself: use it as soon as it is ready (it only comes to karts far back anyway).
+        return ready && rank > 0 ? tap() : 0;
+      case 'storm':
+        // Lightning hits everybody AHEAD: worth it as soon as someone is. The more racers ahead, the better, so a
+        // bot in the pack waits a moment; a bot right behind the leader fires when its rival is ahead or it has held it long.
+        return ready && rank > 0 && (rank >= 2 || rivalFront || st.heldFor > 4) ? tap() : 0;
       case 'seeker':
         return ready && (rank > 0 || rivalFront) ? tap() : ready && st.heldFor > 8 ? tap() : 0;
       case 'ricochet': {

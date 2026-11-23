@@ -19,7 +19,7 @@
  *  4. Release DRIFT -> mini-turbo boost, longer for tier 2.
  */
 import { Buttons, type ControlInput } from '../shared/protocol';
-import { KART, type KartConfig } from './config';
+import { ITEMS, KART, type KartConfig } from './config';
 import type { Ground, Surface } from './ground';
 
 export interface Vec3 {
@@ -93,6 +93,19 @@ export interface KartState {
   /** Seconds left of flipped steering (hit by a Jumble). */
   invertTime: number;
 
+  // Storm (lightning) and Rocket effects, see sim/items/items.ts
+  /** Body scale: 1 = normal, ITEMS.stormSize = fully shrunk. Driven by `stepSize` from the shrink timers below. */
+  size: number;
+  /** Seconds until a shrunk kart is back to full size (0 = not shrunk), and the length of this whole shrink. */
+  shrinkTime: number;
+  shrinkTotal: number;
+  /** Seconds the lightning cloud and bolt are still shown over this kart (the strike itself). */
+  zapTime: number;
+  /** Seconds left of being squashed flat by a full-size kart that drove over a shrunk one. */
+  squashTime: number;
+  /** Seconds left of being a rocket (0 = normal kart). While > 0 the item system drives the kart. */
+  rocketTime: number;
+
   /** Inside a launch cannon (loading or flying), null normally. */
   flight: KartFlight | null;
   /** Seconds before this kart can be captured by a cannon again (after a landing). */
@@ -137,6 +150,12 @@ export function createKart(x: number, z: number, heading: number, y = 0): KartSt
     starTime: 0,
     invulnTime: 0,
     invertTime: 0,
+    size: 1,
+    shrinkTime: 0,
+    shrinkTotal: 0,
+    zapTime: 0,
+    squashTime: 0,
+    rocketTime: 0,
     flight: null,
     cannonCooldown: 0,
     prevButtons: 0,
@@ -214,6 +233,32 @@ export function turnRateFor(speed: number, c: KartConfig = KART): number {
   const authority = clamp(s / c.fullTurnSpeed, 0, 1);
   const frac = clamp(s / c.maxSpeed, 0, 1);
   return lerp(c.turnRateLow, c.turnRateHigh, frac) * authority;
+}
+
+const smooth01 = (t: number) => t * t * (3 - 2 * t);
+
+/**
+ * Body scale of a kart that was shrunk by a Storm, from how long ago the strike was (`age`) and how long is left
+ * (`left`): it shrinks over `stormShrinkSeconds`, stays tiny, then grows back over the last `stormGrowSeconds`.
+ */
+export function shrinkSize(age: number, left: number): number {
+  const min = ITEMS.stormSize;
+  if (left <= 0) return 1;
+  if (age < ITEMS.stormShrinkSeconds) return 1 - (1 - min) * smooth01(age / ITEMS.stormShrinkSeconds);
+  if (left < ITEMS.stormGrowSeconds) return 1 - (1 - min) * smooth01(left / ITEMS.stormGrowSeconds);
+  return min;
+}
+
+/** Count down the Storm / squash timers of a kart and update its `size`. Called every tick by the World (any phase of driving). */
+export function stepSize(k: KartState, dt: number): void {
+  k.zapTime = Math.max(0, k.zapTime - dt);
+  k.squashTime = Math.max(0, k.squashTime - dt);
+  if (k.shrinkTime > 0) {
+    k.shrinkTime = Math.max(0, k.shrinkTime - dt);
+    k.size = shrinkSize(k.shrinkTotal - k.shrinkTime, k.shrinkTime);
+  } else {
+    k.size = 1;
+  }
 }
 
 /** Start (or extend) a boost. */

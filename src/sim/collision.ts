@@ -72,7 +72,13 @@ export function collideWalls(k: KartState, track: Track, c: KartConfig = KART): 
  * change is impulse / mass, so the lighter kart gets shoved more. With equal masses this is the
  * plain "half each" split the game always had.
  */
-export function collideKarts(karts: Map<number, KartState>, c: KartConfig = KART, massOf: (slot: number) => number = () => 1): CollisionEvent[] {
+export function collideKarts(
+  karts: Map<number, KartState>,
+  c: KartConfig = KART,
+  massOf: (slot: number) => number = () => 1,
+  /** Pairs for which this returns false pass through each other (a full-size kart drives over a shrunk one). */
+  canCollide: (a: KartState, b: KartState) => boolean = () => true,
+): CollisionEvent[] {
   const events: CollisionEvent[] = [];
   const list = [...karts.entries()];
   const minDist = c.radius * 2;
@@ -80,7 +86,7 @@ export function collideKarts(karts: Map<number, KartState>, c: KartConfig = KART
     for (let j = i + 1; j < list.length; j++) {
       const [sa, a] = list[i];
       const [sb, b] = list[j];
-      if (Math.abs(a.pos.y - b.pos.y) > 1.5) continue;
+      if (Math.abs(a.pos.y - b.pos.y) > 1.5 || !canCollide(a, b)) continue;
       let nx = b.pos.x - a.pos.x;
       let nz = b.pos.z - a.pos.z;
       const dist = Math.hypot(nx, nz);

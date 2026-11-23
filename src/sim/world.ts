@@ -5,17 +5,18 @@
  */
 import type { ControlInput } from '../shared/protocol';
 import { DEFAULT_LOADOUT, sanitizeLoadout, type Loadout } from '../shared/characters';
-import { KART, SIM_DT, START, type KartConfig } from './config';
+import { ITEMS, KART, SIM_DT, START, type KartConfig } from './config';
 import { kartConfigFor } from './classes';
 import { stepCannons, type CannonEvent } from './cannon';
 import { collideKarts, collideWalls, type CollisionEvent } from './collision';
 import { Colliders } from './colliders';
 import type { Ground } from './ground';
-import { applyBoost, cloneKart, createKart, stepKart, type KartEvent, type KartState } from './kart';
+import { applyBoost, cloneKart, createKart, stepKart, stepSize, type KartEvent, type KartState } from './kart';
 import { HazardSystem } from './hazards/system';
 import type { HazardEvent } from './hazards/types';
 import { ItemSystem, type ItemEvent } from './items/items';
 import { seededRng } from './items/odds';
+import { effectiveConfig } from './items/shrink';
 import type { BotMoodEvent } from './bots';
 import { Race, type RaceEvent } from './race';
 import { ComboTracker, SlipstreamSystem, applyComboBonus, type StyleEvent } from './style';
@@ -101,6 +102,11 @@ export class World {
     return this.configs.get(slot) ?? KART;
   }
 
+  /** The kart's numbers right now: its own config adjusted for a Storm shrink or a squash (the same object when neither applies). */
+  private activeConfig(slot: number, k: KartState): KartConfig {
+    return effectiveConfig(this.configOf(slot), k);
+  }
+
   addKart(slot: number, spawn: SpawnPoint): void {
     const hit = this.ground.sample(spawn.x, spawn.z);
     const k = createKart(spawn.x, spawn.z, spawn.heading, hit?.height ?? 0);
@@ -154,7 +160,17 @@ export class World {
         this.lowerByCarrier(slot, kart);
         continue;
       }
-      for (const e of stepKart(kart, inputs.get(slot)!, ground, SIM_DT, this.configOf(slot))) {
+      stepSize(kart, SIM_DT); // Storm shrink / squash timers
+      // Rocket: the item system drives the kart along the road (no steering, no walls, nothing can hurt it).
+      if (this.items?.rocketActive(slot)) {
+        if (this.race?.phase === 'racing') {
+          this.items.driveRocket(slot, kart, ground, SIM_DT, events as ItemEvent[]);
+          continue;
+        }
+        this.items.cancelRocket(slot, kart); // the race is over: back to a normal kart
+      }
+      const cfg = this.activeConfig(slot, kart);
+      for (const e of stepKart(kart, inputs.get(slot)!, ground, SIM_DT, cfg)) {
         events.push({ ...e, slot });
         if (e.kind === 'trickBoost') this.noteStyle(slot, 'trick', kart, events);
         if (e.kind === 'miniTurbo') this.noteStyle(slot, 'miniTurbo', kart, events);
@@ -164,10 +180,10 @@ export class World {
         applyBoost(kart, KART.boostPadTime);
       }
       if (this.track && !kart.flight) {
-        const impact = collideWalls(kart, this.track, this.configOf(slot));
+        const impact = collideWalls(kart, this.track, cfg);
         if (impact > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact });
         // Solid scenery bounces karts like walls do (and reports the same event for haptics/audio).
-        const bump = this.colliders?.collideKart(kart, this.configOf(slot)) ?? 0;
+        const bump = this.colliders?.collideKart(kart, cfg) ?? 0;
         if (bump > WALL_EVENT_MIN_IMPACT) events.push({ kind: 'wall', slot, impact: bump });
         if (this.needsRespawn(kart)) {
           this.startRespawn(slot, kart);
@@ -188,8 +204,18 @@ export class World {
     }
     if (!frozen) {
       // Karts being carried back or flying through a cannon don't bump into anything.
-      const active = new Map([...this.karts].filter(([, k]) => k.respawnTime <= 0 && !k.flight));
-      events.push(...collideKarts(active, KART, (slot) => this.configOf(slot).mass));
+      // Rockets are not bumped either (they knock others aside: see ItemSystem.rocketCollisions), and a full-size
+      // kart drives over a shrunk one instead of bouncing off it.
+      const active = new Map([...this.karts].filter(([slot, k]) => k.respawnTime <= 0 && !k.flight && !this.items?.rocketActive(slot)));
+      const shrunk = (k: KartState) => k.size < ITEMS.shrunkBelow;
+      events.push(
+        ...collideKarts(
+          active,
+          KART,
+          (slot) => this.activeConfig(slot, this.karts.get(slot)!).mass,
+          (a, b) => !((a.size >= ITEMS.fullSizeAbove && shrunk(b)) || (b.size >= ITEMS.fullSizeAbove && shrunk(a))),
+        ),
+      );
     }
 
     // Slipstream: karts in each other's wake charge a boost.
@@ -208,7 +234,7 @@ export class World {
       // (a knocked-out kart is done with items too, like a finished one)
       const finished = new Set([...this.race.racers.values()].filter((r) => r.finished || r.out).map((r) => r.slot));
       events.push(...this.items.tick(this.karts, inputs, this.race.standings(), finished, ground));
-      this.items.novaCollisions(this.karts, events as ItemEvent[]);
+      this.items.bodyCollisions(this.karts, events as ItemEvent[]);
     }
 
     if (this.race && this.track) {

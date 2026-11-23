@@ -63,12 +63,13 @@ export class Colliders {
 
   /**
    * Is a disc of radius `r` at (x, z) inside a solid collider? Used to stop
-   * item shots (Ricochet / Seeker) on scenery.
+   * item shots (Ricochet / Seeker) on scenery. With a height `y`, a shot flying above a collider's top
+   * (e.g. along a bridge deck over its piers) passes over it, like a kart does.
    */
-  blocksPoint(x: number, z: number, r = 0): boolean {
+  blocksPoint(x: number, z: number, r = 0, y = -Infinity): boolean {
     let hit = false;
     this.forEachNear(x, z, r, (c) => {
-      if (!hit && depth(c, x, z, r) !== null) hit = true;
+      if (!hit && y <= c.y + c.height && depth(c, x, z, r) !== null) hit = true;
     });
     return hit;
   }
