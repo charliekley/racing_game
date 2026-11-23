@@ -61,7 +61,7 @@ describe('Mushroom Valley', () => {
     expect(bouncers.caps.filter((c) => c.kind === 'orange' && track.project(c.x, c.z).route === 2).length).toBeGreaterThanOrEqual(4);
   });
 
-  it('every orange cap has a landing, a floaty arc (apex 2.5..11 m, speed <= 32 m/s) and lands on a cap or solid ground', () => {
+  it('every orange cap has a landing, an arc (apex 2..11 m, speed <= 45 m/s) and lands on a cap or solid ground', () => {
     const oranges = bouncers.caps.filter((c) => c.kind === 'orange');
     expect(oranges.length).toBeGreaterThanOrEqual(8);
     let biggest = 0;
@@ -70,8 +70,8 @@ describe('Mushroom Valley', () => {
       const arc = bounceArc(c.x, c.y, c.z, c.target!, c.air);
       biggest = Math.max(biggest, arc.apex);
       expect(arc.apex, `cap ${c.index} apex`).toBeLessThanOrEqual(11);
-      expect(arc.apex, `cap ${c.index} apex`).toBeGreaterThan(2.5); // a proper arc, not a hop
-      expect(arc.speed, `cap ${c.index} speed`).toBeLessThanOrEqual(32);
+      expect(arc.apex, `cap ${c.index} apex`).toBeGreaterThan(2); // a proper arc, not a hop
+      expect(arc.speed, `cap ${c.index} speed`).toBeLessThanOrEqual(45); // (the shortcut hops are fast and flat: that is what makes the orange route quicker)
       const land = bouncers.caps.find((o) => Math.hypot(o.x - c.target!.x, o.z - c.target!.z) < 0.5);
       if (!land) {
         const ground = track.sample(c.target!.x, c.target!.z);

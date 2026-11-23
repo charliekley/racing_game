@@ -63,7 +63,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
         if (dist > -30 && dist < SHORTCUT_APPROACH) {
           route = b.route;
           at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
-          atFork = true;
+          atFork = b.def.surface !== 'road'; // (a hard-packed branch is taken at full speed)
           break;
         }
       }

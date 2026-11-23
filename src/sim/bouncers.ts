@@ -15,19 +15,25 @@
  *   a bounce can never be "too slow" or "too fast". T grows with the distance, so the horizontal speed is
  *   about BOUNCE.speed (close to a kart's top speed: the bounce route is about as quick as driving).
  *
- * While the kart is in the air after a bounce the kart is GUIDED: each tick its heading points at the target and
- * its speed is (distance left) / (time left). Steering in the air cannot make it miss. (Tricks still work: a
- * bounce counts as a ramp launch, so a trick gives its boost on landing.)
+ * AIR CONTROL (no guidance): the arc is aimed at the target from the cap, but the kart keeps part of how it arrived. Its
+ * launch velocity is the ideal one plus BOUNCE.carryLateral / carryForward of the entry velocity's error (sideways, and
+ * too fast / too slow), and half of its offset from the cap's centre stays. A well-aligned kart at racing speed lands on
+ * the target; one that comes in off-centre, at a bad angle or too slowly drifts off it. In the air the steering moves the
+ * kart sideways (lateral acceleration, capped) and gas / brake nudge it forward / back (see `BOUNCE.air*`), so the player
+ * has to line the landing up. Missing the cap and the road means the abyss and a respawn. Bots fly with `Bouncers.pilot`.
+ * (Tricks still work: a bounce counts as a ramp launch, so a trick gives its boost on landing.)
  *
  * Deterministic: pure functions of the kart state and the track; no randomness, no clock.
  *
  * Hooks in world.ts: `wrapGround` (the caps are ground) and `step` (touching an orange cap starts a bounce).
  */
+import { Buttons, type ControlInput } from '../shared/protocol';
 import type { CapDef } from '../track/types';
 import { KART, type KartConfig } from './config';
 import type { Ground, GroundHit } from './ground';
 import type { KartState } from './kart';
-import type { Track } from './track';
+import { ROUTE_STRIDE } from './shortcuts';
+import { Track } from './track';
 
 /** The bounce rules (all in one place so tests and the renderer agree). */
 export const BOUNCE = {
@@ -40,15 +46,33 @@ export const BOUNCE = {
   touchAbove: 0.15,
   /** ...and not more than this far below it (so a kart falling past the side of a cap never triggers it). */
   touchBelow: 0.6,
-  /** Over the last this-many seconds of a flight the guidance stops changing the speed (avoids a spike at landing). */
-  settle: 0.08,
+  /** Share of the entry velocity's error that survives the launch: sideways (angle) and forward (too fast / slow). */
+  carryLateral: 0.9,
+  carryForward: 0.8,
+  /** The entry speed that counts as "right" when a kart arrives from the road (a kart's top speed, m/s); chained hops use the previous arc's ideal velocity. */
+  refSpeed: 28,
+  /** The entry error that counts is capped at this (m/s). */
+  carryMax: 14,
+  /** Share of the kart's offset from the cap's centre that is still there on landing (0 = always lands on the target). */
+  keepOffset: 0.5,
+  /** Air control: sideways acceleration at full steering and its cap (m/s^2, m/s); forward / back nudge from gas / brake. */
+  airLateralAccel: 24,
+  airLateralMax: 12,
+  airForwardAccel: 8,
+  airForwardMax: 7,
 } as const;
 
 /**
- * Caps are gently domed: the surface is highest in the middle (the cap's `y`) and sinks by `CAP_DROOP x radius` at the
- * rim: height(r) = y - CAP_DROOP x r^2 / radius. A 10 m cap is 0.6 m lower at its edge. The renderer draws the same dome.
+ * Caps are gently domed: the surface is highest in the middle (the cap's `y`) and sinks at the rim:
+ * height(r) = y - droop x r^2 / radius. ORANGE caps droop by CAP_DROOP (6 %: a 10 m cap is 0.6 m lower at its edge, a
+ * pleasant trampoline dome). GREEN caps are bridges and must feel like road, so they are almost flat (GREEN_DROOP, 1.2 %:
+ * 0.12 m at the rim of a 10 m cap) and they TILT with the road under them (`Cap.gx / gz`), so the first and the last cap meet
+ * the road flush and the overlapping caps do not make steps or a ripple. (Round domes of 6 % used to give a 0.5 m lip at the
+ * joint with the road: the kart's crest-launch rule threw it into the air.) The renderer draws the same surface.
  */
 export const CAP_DROOP = 0.06;
+export const GREEN_DROOP = 0.012;
+export const capDroop = (kind: 'orange' | 'green'): number => (kind === 'green' ? GREEN_DROOP : CAP_DROOP);
 
 /** A cap with its bounce target worked out. */
 export interface Cap {
@@ -58,6 +82,9 @@ export interface Cap {
   z: number;
   radius: number;
   y: number;
+  /** Slope of the cap's surface (m of height per m of x / z): a green cap tilts with the road it bridges, orange caps are level. */
+  gx: number;
+  gz: number;
   /** Orange: where a bounce lands (world point). */
   target: { x: number; z: number; y: number } | null;
   /** Orange: fixed time in the air (s) or 0 to work it out from the distance. */
@@ -99,11 +126,30 @@ interface Flight {
   cap: number;
   /** Seconds of flight still to come. */
   left: number;
+  /** Heading of the ideal arc (rad) and the horizontal launch velocity. */
+  heading: number;
+  vx: number;
+  vz: number;
+  /** The ideal arc's velocity (no entry error, no controls): what the next hop of a chain is compared with. */
+  idealX: number;
+  idealZ: number;
+  /** Velocity added in the air by the controls: along the ideal heading and to its right (m/s). */
+  dvF: number;
+  dvR: number;
+}
+
+/** What a computer driver should do in the air (see `Bouncers.pilot`). */
+export interface AirControl {
+  steer: number;
+  gas: boolean;
+  brake: boolean;
 }
 
 export class Bouncers {
   readonly caps: Cap[];
   private readonly flights = new Map<number, Flight>();
+  /** Karts that landed from a bounce this tick (a landing straight on the next orange cap chains the hops). */
+  private readonly chained = new Map<number, Flight>();
 
   constructor(private readonly track: Track) {
     const defs: CapDef[] = track.def.caps ?? [];
@@ -128,7 +174,19 @@ export class Bouncers {
           target = { x: t.x, z: t.z, y: track.sample(t.x, t.z)?.height ?? me.y };
         }
       }
-      return { index, kind: d.kind, x: me.x, z: me.z, radius: d.radius, y: me.y, target, air: d.air ?? 0 };
+      // A green cap on the main road tilts with the road's own slope there (so it joins the road without a step).
+      let gx = 0;
+      let gz = 0;
+      if (d.kind === 'green' && d.at !== undefined) {
+        const s0 = track.sAt(d.at) + (d.ds ?? 0);
+        const a = track.pointAt(s0 - 3, d.offset ?? 0);
+        const b = track.pointAt(s0 + 3, d.offset ?? 0);
+        const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+        const slope = (b.y - a.y) / len;
+        gx = (slope * (b.x - a.x)) / len;
+        gz = (slope * (b.z - a.z)) / len;
+      }
+      return { index, kind: d.kind, x: me.x, z: me.z, radius: d.radius, y: me.y, gx, gz, target, air: d.air ?? 0 };
     });
   }
 
@@ -141,7 +199,7 @@ export class Bouncers {
       const dz = z - c.z;
       const d2 = dx * dx + dz * dz;
       if (d2 > c.radius * c.radius) continue;
-      const h = c.y - (CAP_DROOP * d2) / c.radius;
+      const h = c.y + c.gx * dx + c.gz * dz - (capDroop(c.kind) * d2) / c.radius;
       if (h > bestH) {
         bestH = h;
         best = c;
@@ -154,7 +212,19 @@ export class Bouncers {
   static surface(c: Cap, x: number, z: number): number {
     const dx = x - c.x;
     const dz = z - c.z;
-    return c.y - (CAP_DROOP * (dx * dx + dz * dz)) / c.radius;
+    return c.y + c.gx * dx + c.gz * dz - (capDroop(c.kind) * (dx * dx + dz * dz)) / c.radius;
+  }
+
+  /**
+   * The height you drive on over a cap. Orange caps: the dome (`surface`). GREEN caps are a bridge and ARE the road: the
+   * ground there is exactly the height the road would have (centre line + banking), so the joints with the real road
+   * have no step at all. (Even a 3 cm step makes the kart's crest-launch rule throw it: it reads the sudden change in
+   * the ground's slope as a crest. The visible green dome, `surface`, is within a few cm of this.)
+   */
+  private groundTop(c: Cap, x: number, z: number, hint?: number): number {
+    if (c.kind !== 'green') return Bouncers.surface(c, x, z);
+    const p = this.track.projectOnMain(x, z, hint !== undefined && hint >= 0 && hint < ROUTE_STRIDE ? hint : -1);
+    return p.y + Track.bankLift(p.bank, p.width / 2, p.d);
   }
 
   /** Ground with the caps added: inside a cap's disc the surface is at least as high as the cap's top. */
@@ -165,7 +235,7 @@ export class Bouncers {
         const hit = base.sample(x, z, hint);
         const cap = this.capAt(x, z);
         if (!cap) return hit;
-        const top = Bouncers.surface(cap, x, z);
+        const top = this.groundTop(cap, x, z, hint);
         if (hit && hit.height >= top) return hit;
         // Keep the kart's "which road am I on" hint alive over the void (the base ground has no index there).
         const index = hit?.index ?? this.track.project(x, z, hint ?? -1).index;
@@ -176,10 +246,10 @@ export class Bouncers {
   }
 
   /**
-   * Run after the kart physics each tick: start a bounce for karts touching an orange cap, and guide karts that are
-   * in the air after one. `configOf` gives each kart's physics numbers (the gravity may differ per class).
+   * Run after the kart physics each tick: start a bounce for karts touching an orange cap, and fly karts that are
+   * in the air after one (air control from `inputs`). `configOf` gives each kart's physics numbers (the gravity may differ per class).
    */
-  step(karts: Map<number, KartState>, dt: number, configOf: (slot: number) => KartConfig = () => KART): BounceEvent[] {
+  step(karts: Map<number, KartState>, dt: number, configOf: (slot: number) => KartConfig = () => KART, inputs: Map<number, ControlInput> = new Map()): BounceEvent[] {
     const events: BounceEvent[] = [];
     if (this.caps.length === 0) return events;
     for (const [slot, k] of karts) {
@@ -190,18 +260,42 @@ export class Bouncers {
       }
       const f = this.flights.get(slot);
       if (f) {
-        if (k.grounded) this.flights.delete(slot);
-        else this.guide(k, f, dt);
+        if (k.grounded) {
+          this.flights.delete(slot);
+          this.chained.set(slot, f);
+        } else this.fly(k, f, inputs.get(slot), dt);
       }
       if (this.flights.has(slot)) continue; // still in the air from the last bounce
       const hit = this.touching(k);
+      const prev = this.chained.get(slot); // (landed from a bounce this tick: the next hop keeps what the last one did)
+      this.chained.delete(slot);
       if (!hit || !hit.target) continue;
       const g = configOf(slot).gravity;
-      const arc = bounceArc(k.pos.x, k.pos.y, k.pos.z, hit.target, hit.air, g);
-      k.heading = arc.heading;
-      k.speed = arc.speed;
-      k.vel.x = Math.sin(arc.heading) * arc.speed;
-      k.vel.z = Math.cos(arc.heading) * arc.speed;
+      // The ideal arc leaves from where the kart is, aimed so that it would land on the target if the kart had started
+      // from the cap's centre; half of the kart's offset from the centre is kept (come in off-centre, land off-target).
+      const keep = BOUNCE.keepOffset;
+      const aim = { x: hit.target.x + (k.pos.x - hit.x) * keep, y: hit.target.y, z: hit.target.z + (k.pos.z - hit.z) * keep };
+      const arc = bounceArc(k.pos.x, k.pos.y, k.pos.z, aim, hit.air, g);
+      // ...and the kart keeps part of how it ARRIVED: sideways error (angle) and forward error (too fast / too slow).
+      const ux = Math.sin(arc.heading);
+      const uz = Math.cos(arc.heading);
+      const rx = -uz;
+      const rz = ux;
+      // The error is measured against the velocity the kart SHOULD arrive with: on the road a racing speed along the line of
+      // the arc; on a chained hop the ideal velocity of the hop before (so the bends of the route cost nothing).
+      const refX = prev ? prev.idealX : ux * Math.min(BOUNCE.refSpeed, arc.speed);
+      const refZ = prev ? prev.idealZ : uz * Math.min(BOUNCE.refSpeed, arc.speed);
+      const ex = k.vel.x - refX;
+      const ez = k.vel.z - refZ;
+      const cap = (v: number) => Math.max(-BOUNCE.carryMax, Math.min(BOUNCE.carryMax, v));
+      const errF = cap(ex * ux + ez * uz) * BOUNCE.carryForward;
+      const errR = cap(ex * rx + ez * rz) * BOUNCE.carryLateral;
+      const vx = ux * (arc.speed + errF) + rx * errR;
+      const vz = uz * (arc.speed + errF) + rz * errR;
+      k.heading = Math.atan2(vx, vz);
+      k.speed = Math.hypot(vx, vz);
+      k.vel.x = vx;
+      k.vel.z = vz;
       k.vel.y = arc.vy;
       k.pos.y = Math.max(k.pos.y, Bouncers.surface(hit, k.pos.x, k.pos.z)) + 0.02; // a hair above the cap so the next tick is clearly airborne
       k.grounded = false;
@@ -212,7 +306,7 @@ export class Bouncers {
       k.yawRate = 0;
       k.trickable = true; // the bounce counts as a ramp launch: a trick in the air pays out a boost on landing
       k.trickDone = false;
-      this.flights.set(slot, { cap: hit.index, left: arc.air });
+      this.flights.set(slot, { cap: hit.index, left: arc.air, heading: arc.heading, vx, vz, idealX: ux * arc.speed, idealZ: uz * arc.speed, dvF: 0, dvR: 0 });
       events.push({ kind: 'bounce', slot, cap: hit.index });
     }
     return events;
@@ -232,21 +326,51 @@ export class Bouncers {
     return null;
   }
 
-  /** One tick of guidance: point at the target and fly at the speed that gets there on time. */
-  private guide(k: KartState, f: Flight, dt: number): void {
+  /**
+   * One tick in the air: steering pushes the kart sideways (right of the ideal heading), gas / brake forward / back, each
+   * within a cap. The horizontal velocity is launch velocity + what the controls added; the kart's nose follows it.
+   * (World.tick feeds `stepKart` zero steering during a flight, so the plain turning physics stays out of the way.)
+   */
+  private fly(k: KartState, f: Flight, input: ControlInput | undefined, dt: number): void {
     f.left -= dt;
-    const target = this.caps[f.cap].target;
-    if (!target) return;
-    const dx = target.x - k.pos.x;
-    const dz = target.z - k.pos.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist > 1) k.heading = Math.atan2(dx, dz); // (right above the target the bearing is meaningless)
+    if (input) {
+      const steer = Number.isFinite(input.steer) ? Math.max(-1, Math.min(1, input.steer)) : 0;
+      const pedal = (input.buttons & Buttons.GAS ? 1 : 0) - (input.buttons & Buttons.BRAKE ? 1 : 0);
+      f.dvR = Math.max(-BOUNCE.airLateralMax, Math.min(BOUNCE.airLateralMax, f.dvR + steer * BOUNCE.airLateralAccel * dt));
+      f.dvF = Math.max(-BOUNCE.airForwardMax, Math.min(BOUNCE.airForwardMax, f.dvF + pedal * BOUNCE.airForwardAccel * dt));
+    }
+    const ux = Math.sin(f.heading);
+    const uz = Math.cos(f.heading);
+    const vx = f.vx + ux * f.dvF - uz * f.dvR;
+    const vz = f.vz + uz * f.dvF + ux * f.dvR;
+    k.vel.x = vx;
+    k.vel.z = vz;
+    k.speed = Math.hypot(vx, vz);
+    k.heading = Math.atan2(vx, vz);
     k.yawRate = 0;
-    if (f.left > BOUNCE.settle) k.speed = Math.min(60, dist / f.left);
     // Over a chasm there is no ground, so nothing else updates the kart's "where am I on the road" hint. On a long flight
     // the hint would fall further behind than the track search window, and the landing would be looked up on the wrong
     // part of the road. Follow the kart ourselves, every tick.
     k.trackIndex = this.track.project(k.pos.x, k.pos.z, k.trackIndex).index;
+  }
+
+  /**
+   * What a computer driver does in the air: predict where the kart will land if it stops steering, and push the
+   * difference away (steer = sideways, gas / brake = forward / back). `aimOff` (m, to the right of the flight) is a
+   * deliberate error for easier bots. Null when the kart is not on a bounce flight.
+   */
+  pilot(slot: number, k: KartState, aimOff = 0): AirControl | null {
+    const f = this.flights.get(slot);
+    const target = f ? this.caps[f.cap].target : null;
+    if (!f || !target) return null;
+    const tau = Math.max(f.left, 0.3);
+    const ux = Math.sin(f.heading);
+    const uz = Math.cos(f.heading);
+    const ex = target.x + -uz * aimOff - (k.pos.x + k.vel.x * Math.max(f.left, 0));
+    const ez = target.z + ux * aimOff - (k.pos.z + k.vel.z * Math.max(f.left, 0));
+    const needF = (ex * ux + ez * uz) / tau; // velocity change wanted along / to the right of the flight
+    const needR = (ex * -uz + ez * ux) / tau;
+    return { steer: Math.max(-1, Math.min(1, needR / 3)), gas: needF > 1, brake: needF < -1 };
   }
 
   /** Is this kart in the air after a bounce? (Renderer and audio may ask.) */

@@ -177,7 +177,10 @@ export class World {
         this.items.cancelRocket(slot, kart); // the race is over: back to a normal kart
       }
       const cfg = this.activeConfig(slot, kart);
-      for (const e of stepKart(kart, inputs.get(slot)!, ground, SIM_DT, cfg)) {
+      // During a cap bounce the controls fly the kart (see Bouncers.fly); the plain air steering must not turn it too.
+      const given = inputs.get(slot)!;
+      const drive = this.bouncers?.bouncing(slot) ? { ...given, steer: 0 } : given;
+      for (const e of stepKart(kart, drive, ground, SIM_DT, cfg)) {
         events.push({ ...e, slot });
         if (e.kind === 'trickBoost') this.noteStyle(slot, 'trick', kart, events);
         if (e.kind === 'miniTurbo') this.noteStyle(slot, 'miniTurbo', kart, events);
@@ -199,7 +202,7 @@ export class World {
       }
     }
     // Orange caps: a kart touching one is thrown along its arc; karts in the air after a bounce are guided to the landing.
-    if (this.bouncers && !frozen) events.push(...this.bouncers.step(this.karts, SIM_DT, (slot) => this.configOf(slot)));
+    if (this.bouncers && !frozen) events.push(...this.bouncers.step(this.karts, SIM_DT, (slot) => this.configOf(slot), inputs));
     // Hazards act after kart physics, on the race clock (identical for every viewer and bot).
     if (this.hazards && this.race && !frozen) events.push(...this.hazards.step(this.race.time, this.karts, (slot) => this.configOf(slot)));
     // Launch cannons: capture, fly and land karts; a landing credits the skipped checkpoints.

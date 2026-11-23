@@ -19,7 +19,7 @@
  *    scaling or rotating one copy. Squash-and-stretch is just a non-uniform scale on the matrix.
  */
 import * as THREE from 'three';
-import { Bouncers, CAP_DROOP, type Cap } from '../../sim/bouncers';
+import { Bouncers, capDroop, type Cap } from '../../sim/bouncers';
 import { Track } from '../../sim/track';
 import { seededRandom } from '../textures';
 import { fromArrays, latheGeo, matrix, merge, paint, placed, tubeGeo, type ColorFn } from './geo';
@@ -125,8 +125,9 @@ const _c = new THREE.Color();
 // A cap
 // ---------------------------------------------------------------------------
 
-/** Height of the dome's top surface at radius r (unit cap): the same formula the physics uses (`CAP_DROOP`). */
-const domeY = (r: number): number => -CAP_DROOP * r * r;
+/** Height of the dome's top surface at radius r (unit cap): the same formula the physics uses (`capDroop`). */
+let droop = capDroop('orange');
+const domeY = (r: number): number => -droop * r * r;
 
 /**
  * A cap of radius 1 with its crest at y = 0, standing for the physics surface: a gently domed top (it sinks by
@@ -134,6 +135,7 @@ const domeY = (r: number): number => -CAP_DROOP * r * r;
  * Painted with cream spots on top and radial gill stripes underneath.
  */
 function capGeo(kind: 'orange' | 'green', seed: number): THREE.BufferGeometry {
+  droop = capDroop(kind);
   const profile: [number, number][] = [
     [0.1, -0.58], // under the stalk
     [0.3, -0.54],
@@ -201,6 +203,7 @@ function capGeo(kind: 'orange' | 'green', seed: number): THREE.BufferGeometry {
 
 /** The glowing rim of an orange cap: a bright ring on the top edge (drawn with HDR colours, so it blooms). */
 function rimGlowGeo(): THREE.BufferGeometry {
+  droop = capDroop('orange');
   const profile: [number, number][] = [];
   for (let r = 0.78; r <= 1.0001; r += 0.055) profile.push([r, domeY(r) + 0.022]);
   return latheGeo(profile, 48);
@@ -657,7 +660,11 @@ export class MushroomView {
       const list = capAreas.get(key)!;
       // The mist level under this cap: a fixed depth below it.
       list.push(stalkGeo(c, c.y - 14));
-      if (c.kind === 'green') list.push(placed(greenGeos[i % 3], matrix(c.x, c.y, c.z, c.radius, c.radius, c.radius, (i * 1.7) % 6.28)));
+      if (c.kind === 'green') {
+        // The green cap tilts with the road it bridges: shear the finished cap so y += gx (x - cx) + gz (z - cz).
+        const shear = new THREE.Matrix4().set(1, 0, 0, 0, c.gx, 1, c.gz, -(c.gx * c.x + c.gz * c.z), 0, 0, 1, 0, 0, 0, 0, 1);
+        list.push(placed(greenGeos[i % 3], shear.multiply(matrix(c.x, c.y, c.z, c.radius, c.radius, c.radius, (i * 1.7) % 6.28))));
+      }
     });
     for (const list of capAreas.values()) {
       const mesh = new THREE.Mesh(merge(list), capMat);

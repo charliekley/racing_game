@@ -670,12 +670,13 @@ export class Track implements Ground {
   }
 
   /**
-   * Ground on a shortcut dirt path: simply the terrain (the path is draped on it), counted as off-road for speed.
+   * Ground on a shortcut dirt path: simply the terrain (the path is draped on it), counted as off-road for speed unless the def says 'road'.
    * No ramps, gaps, cliffs or bridges here.
    */
   private branchSurfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
     const height = x !== undefined && z !== undefined ? this.terrain.height(x, z) : p.y;
-    return { height, surface: 'offroad' };
+    // A branch def may say `surface: 'road'` (a hard-packed trail: full speed, Mushroom Valley's orange routes).
+    return { height, surface: this.branches[p.route - 1]?.def.surface === 'road' ? 'road' : 'offroad' };
   }
 
   /** Ground interface (vertical raycast). Off the road: the terrain height field (flat 0 by default). */

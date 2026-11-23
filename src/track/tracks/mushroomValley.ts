@@ -230,12 +230,12 @@ add({ kind: 'orange', radius: 11, at: at('g1a'), ds: 7, dy: -0.4, air: 1.8, to: 
 // STEPPING STONES: a snaking path of big green caps (they overlap, so it is one continuous bridge).
 for (let k = 0; k < 5; k++) {
   const off = [0, 4.5, -3.5, 3.5, 0][k];
-  add({ kind: 'green', radius: 9.5, at: at('g2a'), ds: 6 + k * 12.5, offset: off, dy: -0.3 });
+  add({ kind: 'green', radius: 9.5, at: at('g2a'), ds: 6 + k * 12.5, offset: off, dy: 0 });
 }
 // TWIN SPANS, main route: a long snaking bridge of green caps.
 for (let k = 0; k < 7; k++) {
   const off = [0, -4, 0, 4, 0, -4, 0][k];
-  add({ kind: 'green', radius: 10, at: at('g3a'), ds: 6 + k * 12.5, offset: off, dy: -0.3 });
+  add({ kind: 'green', radius: 10, at: at('g3a'), ds: 6 + k * 12.5, offset: off, dy: 0 });
 }
 // TWIN SPANS, shortcut: three orange caps beside the gorge on the left, hop by hop (6 hops-worth of air each).
 export const G3_SIDE = -27; // metres to the left of the main road
@@ -246,13 +246,13 @@ const G3_CAPS = [10, 46, 82].map((ds) => local('g3a', ds, G3_SIDE));
   G3_CAPS.forEach((c, k) => {
     const last = k === G3_CAPS.length - 1;
     const land = local('g3a', G3_LAND, G3_SIDE);
-    add({ kind: 'orange', radius: 8.5, x: c.x, z: c.z, y: c.y - 0.4, air: last ? 1.0 : 1.25, to: last ? { x: land.x, z: land.z } : first + k + 1 });
+    add({ kind: 'orange', radius: 8.5, x: c.x, z: c.z, y: c.y - 0.4, air: last ? 0.8 : 0.88, to: last ? { x: land.x, z: land.z } : first + k + 1 });
   });
 }
 // THE CAVE, main route: green caps all the way (a bit wider apart in the middle).
 for (let k = 0; k < 9; k++) {
   const off = [0, 3, 0, -3, 0, 3, 0, -3, 0][k];
-  add({ kind: 'green', radius: 10.5, at: at('caveIn'), ds: 5 + k * 14, offset: off, dy: -0.3 });
+  add({ kind: 'green', radius: 10.5, at: at('caveIn'), ds: 5 + k * 14, offset: off, dy: 0 });
 }
 // THE CAVE, second route (the dirt shortcut on the right): orange caps on the branch's own line.
 export const CAVE_SIDE = 30; // metres to the right of the main road
@@ -265,7 +265,7 @@ export const ORANGE_ROUTE = [4, 44, 84, 124].map((ds) => {
   const first = caps.length;
   const exit = local('caveIn', CAVE_LAND, CAVE_SIDE);
   ORANGE_ROUTE.forEach((c, k) => {
-    add({ kind: 'orange', radius: 8, x: c.x, z: c.z, y: c.y, air: k === ORANGE_ROUTE.length - 1 ? 1.1 : 1.4, to: k < ORANGE_ROUTE.length - 1 ? first + k + 1 : { x: exit.x, z: exit.z } });
+    add({ kind: 'orange', radius: 8, x: c.x, z: c.z, y: c.y, air: k === ORANGE_ROUTE.length - 1 ? 0.8 : 0.95, to: k < ORANGE_ROUTE.length - 1 ? first + k + 1 : { x: exit.x, z: exit.z } });
   });
 }
 
@@ -434,6 +434,7 @@ export const mushroomValley: TrackDef = {
       ],
       width: 10,
       hold: true,
+      surface: 'road', // hard-packed: no dirt slow-down, the orange route's only cost is the skill it asks
     },
     {
       from: at('caveFork'),
@@ -447,6 +448,7 @@ export const mushroomValley: TrackDef = {
       ],
       width: 10,
       hold: true,
+      surface: 'road', // hard-packed: no dirt slow-down, the orange route's only cost is the skill it asks
     },
   ],
   caps,

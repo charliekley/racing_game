@@ -363,6 +363,13 @@ export class Bot {
     const base = autopilot(sliding ? { ...k, heading: Math.atan2(k.vel.x, k.vel.z) } : k, track, style, world.configOf(this.slot));
     let steer = base.steer;
     let buttons = base.buttons;
+    // In the air after an orange-cap bounce nothing guides the kart: fly it onto the landing like a careful player would
+    // (easy bots aim a little to one side, so their landings are sloppier).
+    const air = world.bouncers?.pilot(this.slot, k, this.difficulty === 'easy' ? (this.slot % 2 ? 1.5 : -1.5) : 0);
+    if (air) {
+      steer = air.steer;
+      buttons = (buttons & ~(Buttons.GAS | Buttons.BRAKE)) | (air.gas ? Buttons.GAS : 0) | (air.brake ? Buttons.BRAKE : 0);
+    }
     // No free lane past a hazard: lift (and brake when it is close) so we arrive after it has finished.
     if (hazard.brake * care >= 0.5 && k.grounded) {
       buttons &= ~Buttons.GAS;
@@ -415,7 +422,7 @@ export class Bot {
       this.driftCooldown = Math.max(this.driftCooldown, 1);
     }
     if (driftButton.hold) buttons |= Buttons.DRIFT;
-    if (driftButton.forceSteer !== 0) steer = driftButton.forceSteer * Math.max(Math.abs(steer), 0.7);
+    if (driftButton.forceSteer !== 0 && !air) steer = driftButton.forceSteer * Math.max(Math.abs(steer), 0.7);
     if (this.drifting) buttons |= Buttons.GAS; // never lift in a drift: the charge needs speed
 
     // --- Tricks off ramps -------------------------------------------------------------------------

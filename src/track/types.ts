@@ -190,7 +190,7 @@ export interface ShortcutDef {
    * ignored and the path follows the terrain.
    */
   hold?: boolean;
-  /** Ignored: every shortcut is a dirt path (slows you like off-road). */
+  /** 'dirt' (default): the path slows you like off-road. 'road': a hard-packed trail, driven at full speed (it is still drawn as dirt). */
   surface?: 'road' | 'dirt';
   /**
    * Barriers along the branch. Same shape as the main `walls`, but `from`/`to` are in
