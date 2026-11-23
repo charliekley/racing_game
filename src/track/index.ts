@@ -3,9 +3,11 @@ import { emberPeaks } from './tracks/emberPeaks';
 import { docksideLoop } from './tracks/docksideLoop';
 import { cloudGarden } from './tracks/cloudGarden';
 import { switchbackSummit } from './tracks/switchbackSummit';
+import { autumnSpeedway } from './tracks/autumnSpeedway';
 import type { TrackDef } from './types';
 
-export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit];
+// The Grand Prix runs them in this order too, so Autumn Speedway (the showcase) is the 5th and final race.
+export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit, autumnSpeedway];
 export type { TrackDef };
 
 // Dev-only test tracks (never in the lobby picker). Open one with

@@ -10,6 +10,8 @@ import type { Track } from './track';
 export const MAX_ROUTE_POINTS = 120;
 /** Spacing (m) of the points along bridges and cliffs. */
 const BRIDGE_STEP = 6;
+/** A very long bridge (Autumn Speedway's branch roads) is thinned to at most this many points, so the message stays small. */
+const MAX_BRIDGE_POINTS = 80;
 const CLIFF_STEP = 10;
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -62,7 +64,7 @@ export function mapDataFromTrack(track: Track): MapData {
   }
 
   const bridges: MapBridge[] = track.bridges.map((b) => ({
-    points: sRange(track, b.s0, b.s1, BRIDGE_STEP).map((s) => {
+    points: sRange(track, b.s0, b.s1, Math.max(BRIDGE_STEP, ((((b.s1 - b.s0) % track.length) + track.length) % track.length) / MAX_BRIDGE_POINTS)).map((s) => {
       const p = track.pointAt(s);
       return { x: r1(p.x), y: r1(p.y), z: r1(p.z) };
     }),

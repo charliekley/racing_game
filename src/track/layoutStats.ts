@@ -24,7 +24,21 @@ export interface LayoutStats {
   tightCorners: number;
   /** Highest minus lowest main-road height (m). */
   heightRange: number;
+  /**
+   * Steepest climb and steepest drop of the main road, as a grade (rise / run: 0.10 = 10 %), measured over
+   * GRADE_WINDOW metres so a single sample's wobble does not count. Ramps (kickers, humps) are NOT included:
+   * this is the road itself. `maxDrop` is positive (a 0.2 drop = 20 % downhill).
+   */
+  maxClimb: number;
+  maxDrop: number;
+  /** Mean |grade| over the driven road (how hilly the lap is overall). */
+  meanGrade: number;
+  /** Fraction of the driven road steeper than 8 % (up or down). */
+  steepShare: number;
 }
+
+/** Window (m) over which grades are measured. */
+export const GRADE_WINDOW = 10;
 
 /** Runs of consecutive true flags (circular), as [start, count] pairs. */
 function circularRuns(flags: boolean[]): [number, number][] {
@@ -79,6 +93,24 @@ export function layoutStats(track: Track): LayoutStats {
       }).length;
 
   const ys = S.filter((_, i) => driven[i]).map((p) => p.y);
+
+  // Grades: height change over GRADE_WINDOW metres ahead, for every driven sample whose window is driven too.
+  const w = Math.max(1, Math.round(GRADE_WINDOW / ds));
+  let maxClimb = 0;
+  let maxDrop = 0;
+  let gradeSum = 0;
+  let gradeCount = 0;
+  let steep = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + w) % n;
+    if (!driven[i] || !driven[j]) continue;
+    const g = (S[j].y - S[i].y) / (w * ds);
+    maxClimb = Math.max(maxClimb, g);
+    maxDrop = Math.max(maxDrop, -g);
+    gradeSum += Math.abs(g);
+    gradeCount++;
+    if (Math.abs(g) > 0.08) steep++;
+  }
   return {
     length: track.length,
     straights,
@@ -86,5 +118,9 @@ export function layoutStats(track: Track): LayoutStats {
     turningDeg: (turning * 180) / Math.PI,
     tightCorners,
     heightRange: Math.max(...ys) - Math.min(...ys),
+    maxClimb,
+    maxDrop,
+    meanGrade: gradeCount ? gradeSum / gradeCount : 0,
+    steepShare: gradeCount ? steep / gradeCount : 0,
   };
 }
