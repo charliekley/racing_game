@@ -25,6 +25,35 @@ export interface TerrainDef {
   features?: { x: number; z: number; radius: number; height: number }[];
   /** Distance over which the terrain blends from road level out to natural height (m, default 16). */
   blend?: number;
+  /**
+   * Valleys (Mushroom Valley): stretches of road where the natural ground falls away to `valleyFloor` on BOTH sides, so the
+   * road runs along a narrow ridge (or a pillar) and the gorge beside it is a broad open abyss, not a slot cut in a massif.
+   */
+  valleys?: ValleyDef[];
+  /** Ground level (m) at the bottom of a valley: below the cloud sea, so the floor is never seen. */
+  valleyFloor?: number;
+  /**
+   * A ceiling on the natural ground (Mushroom Valley: no lone spires, only road-following ridges stand up): within 150 m of
+   * the road the ground may be at most `rise` metres above the nearest road, plus `slope` metres for every metre farther than 20 m away.
+   */
+  ceiling?: { rise: number; slope: number };
+  /** Discs (world metres) the valleys never carve: the pillars that carry a shortcut's landing ledge. Eased out over 10 m. */
+  valleyKeep?: { x: number; z: number; radius: number }[];
+}
+
+/** One valley: the ground is carved away beside the road between `from` and `to` (+ `pad`), easing in over `fade` metres. */
+export interface ValleyDef {
+  /** Control-point units of the first and last road point of the fully open stretch. */
+  from: number;
+  to: number;
+  /** Extra metres of fully open valley before `from` and after `to` (default 0). */
+  pad?: number;
+  /** Metres along the road over which the ridge widens back to the mountain at either end (default 40). */
+  fade?: number;
+  /** Distance from the centerline (m) where the carving starts on the [left, right] side (default [4, 4]). */
+  inner?: [number, number];
+  /** Void gaps (chasms) inside the stretch: leave their road segments out of the ground blend, so the ground there is the valley. Default true. */
+  open?: boolean;
 }
 
 /**

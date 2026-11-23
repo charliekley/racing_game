@@ -333,7 +333,7 @@ const FOOTHILLS: Bump[] = [
 
 /** Spots beside the road where the dirt shortcuts run: the mountain has to carry them too (see `massif`). */
 const shortcutAnchors = [
-  ...[-20, 0, 105, 125].map((ds) => local('g3a', ds, G3_SIDE)),
+  ...[-20, 105, 125].map((ds) => local('g3a', ds, G3_SIDE)), // the landing ledge of the Twin Spans shortcut (a pillar: see `valleyKeep`)
   ...[-30, -5, 150, 175].map((ds) => local('caveIn', ds, CAVE_SIDE)),
 ];
 
@@ -342,17 +342,7 @@ const pit = (p: { x: number; z: number }, radius: number, depth = 110) => ({ x: 
 
 /** The cave pit: holes along the cave's chasm, wide enough for both routes (the main road and the right-hand shortcut). */
 const cavePits = [0, 1, 2].map((k) => pit(local('caveIn', 30 + k * 40, CAVE_SIDE), 42, 130));
-/**
- * The flanks of the two single-road gorges: a pit on each side, well clear of the road (its edge stays beyond the
- * shoulders), so the mountain falls away in broken slopes beside the chasm and the opening looks wide, not like a slot.
- */
-const flankPits = [
-  { name: 'g1a', ds: G1 / 2, r: 30 },
-  { name: 'g2a', ds: G2 / 2, r: 34 },
-].flatMap((g) => [-1, 1].map((side) => pit(local(g.name, g.ds, side * (g.r + 15)), g.r, 55)));
-
-/** The pit under the Twin Spans shortcut (the main gorge is cut by the chasm itself). */
-const g3Pits = [0, 1].map((k) => pit(local('g3a', 28 + k * 34, G3_SIDE), 40, 130));
+// (The gorges themselves are `terrain.valleys`: the ground is carved away beside the road, so no pits are needed.)
 
 // ---------------------------------------------------------------------------
 // The track
@@ -414,10 +404,20 @@ export const mushroomValley: TrackDef = {
       ...massif(80, 2, shortcutAnchors, FOOTHILLS),
       // The pits of the gorges with a shortcut (the walls of the main gorges are cut by `chasms`).
       ...cavePits,
-      ...g3Pits,
-      ...flankPits,
     ],
     blend: 10,
+    // THE GORGES. The road runs along a ridge and the ground falls away steeply on BOTH sides of every crossing into a broad
+    // abyss under the cloud sea, so the caps stand on tall stalks over an open chasm and the far side is a separate cliff.
+    ceiling: { rise: 6, slope: 0.45 },
+    valleyFloor: 8,
+    valleyKeep: [-24, -14, G3_LAND, G3_LAND + 14].map((ds) => local('g3a', ds, G3_SIDE)).map((p) => ({ x: p.x, z: p.z, radius: 16 })),
+    valleys: [
+      { from: at('g1a'), to: at('g1b'), pad: 14, fade: 45 },
+      { from: at('g2a'), to: at('g2b'), pad: 14, fade: 45 },
+      { from: at('g3a'), to: at('g3b'), pad: 6, fade: 40 },
+      // The cave: the hill (the rock shell, +-58 m round its axis) stands as a mesa of its own; only the ground OUTSIDE it falls away.
+      { from: at('caveIn'), to: at('caveOut'), pad: 26, fade: 40, inner: [44, 74], open: false },
+    ],
   },
   // THE DIRT SHORTCUTS. Each leaves the road before a gorge, runs beside it and rejoins after it. Their middles are
   // held at the road's height (third number), far above a pit, and the orange caps are the only ground there.

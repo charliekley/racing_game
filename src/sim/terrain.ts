@@ -178,6 +178,15 @@ function valueNoise(x: number, z: number, seed: number): number {
   return (top + (bottom - top) * sz) * 2 - 1;
 }
 
+/** How softly (m) the ceiling bends the ground over (no sharp crease where it meets the hills). */
+const CEILING_SOFT = 8;
+
+/** Smooth minimum of a and b: min(a, b) with the corner rounded over `k` metres (polynomial blend). */
+function smoothMin(a: number, b: number, k: number): number {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - (h * h * k) / 4;
+}
+
 export class Terrain {
   /** False for old tracks without a terrain def: the ground follows the road exactly as before. */
   readonly enabled: boolean;
@@ -209,8 +218,36 @@ export class Terrain {
     return this.reach + TERRAIN_SKIRT + this.blend;
   }
 
-  /** Natural terrain only: hills plus mounds/pits (0 when the def has none). */
+  /** Valleys: how far the natural ground is carved away at (x, z), 0..1 (set by the track, see `Track.valleyWeight`). */
+  setValleys(weight: (x: number, z: number) => number, floor: number): void {
+    this.valleyWeight = weight;
+    this.valleyFloor = floor;
+  }
+  /** How much the valleys carve the ground at (x, z): 0 = not at all, 1 = down to the valley floor (0 on tracks without valleys). */
+  valleyAt(x: number, z: number): number {
+    return this.valleyWeight ? this.valleyWeight(x, z) : 0;
+  }
+
+  /** Ceiling on the natural ground: the highest it may be at (x, z), or null where there is no limit (set by the track). */
+  setCeiling(limit: (x: number, z: number) => number | null): void {
+    this.ceilingAt = limit;
+  }
+  private ceilingAt: ((x: number, z: number) => number | null) | null = null;
+  private valleyWeight: ((x: number, z: number) => number) | null = null;
+  private valleyFloor = 0;
+
+  /** Natural terrain only: hills plus mounds/pits, carved down to the valley floor inside a valley (0 when the def has none). */
   natural(x: number, z: number): number {
+    let h = this.rawNatural(x, z);
+    if (this.ceilingAt) {
+      const lim = this.ceilingAt(x, z);
+      if (lim !== null) h = smoothMin(h, lim, CEILING_SOFT);
+    }
+    if (!this.valleyWeight || h <= this.valleyFloor) return h;
+    return h + (this.valleyFloor - h) * this.valleyWeight(x, z);
+  }
+
+  private rawNatural(x: number, z: number): number {
     const def = this.def;
     if (!def) return 0;
     let h = 0;

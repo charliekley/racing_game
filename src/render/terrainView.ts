@@ -735,6 +735,10 @@ export class TerrainView {
         walls.wall(row, row.map(() => ({ x: p.tx * dir, y: 0, z: p.tz * dir })), 'floor', mushroom ? rockLip(row.length) : lip(row.length), 0.5, mushroom);
       });
       for (const side of [-1, 1]) {
+        // An open valley (Mushroom Valley's gorges): the ground beside the gap is already carved away, so there is no
+        // wall along the gap's sides, only the ends: the gap is open abyss all the way across, not a slot.
+        const m = ss[Math.floor(ss.length / 2)];
+        if (mushroom && track.terrain.valleyAt(m.x + m.rx * side * (outer + 3), m.z + m.rz * side * (outer + 3)) > 0.95) continue;
         const top = ss.map((p) => point(p, side * (outer + 1)));
         walls.wall(top, ss.map((p) => ({ x: -p.rx * side, y: 0, z: -p.rz * side })), 'floor', mushroom ? rockLip(top.length) : lip(top.length), 0.5, mushroom);
       }

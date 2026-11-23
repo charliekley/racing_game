@@ -146,6 +146,17 @@ export interface BoostPad {
   d1: number;
 }
 
+/** Valleys: metres over which the carving ramps up across the flanks, where it is full out to, and where it ends. */
+const VALLEY_FLANK = 8;
+const VALLEY_FULL = 95;
+const VALLEY_REACH = 150;
+/** ...and the metres over which a `valleyKeep` disc eases back into the carved ground. */
+const VALLEY_KEEP_EASE = 10;
+const smoothUnit = (t: number): number => {
+  const u = Math.max(0, Math.min(1, t));
+  return u * u * (3 - 2 * u);
+};
+
 export class Track implements Ground {
   readonly samples: TrackSample[] = [];
   readonly length: number;
@@ -316,11 +327,15 @@ export class Track implements Ground {
       const onBridge = S.map((p) => this.onBridge(p.s));
       // (Same for the sky gap of a mandatory cannon: the ground under the flight stays natural, a crater or open sky.)
       const sky = S.map((p) => this.inSkyGap(p.s));
-      const skip = onBridge.map((b, i) => b || onBridge[(i + 1) % count] || sky[i] || sky[(i + 1) % count]);
+      // (And for the chasms inside an `open` valley: the ground there is the valley, not the road's level.)
+      const open = this.valleyOpen(S);
+      const skip = onBridge.map((b, i) => b || onBridge[(i + 1) % count] || sky[i] || sky[(i + 1) % count] || open[i] || open[(i + 1) % count]);
       const influence = reach + TERRAIN_SKIRT + (def.terrain?.blend ?? TERRAIN_BLEND);
       field = new RoadField(S, skip, influence, spacing);
     }
     this.terrain = new Terrain(def.terrain, terrainOn, field, reach, (hit) => this.roadLevel(hit));
+    this.setupValleys(spacing);
+    this.setupCeiling(spacing);
     // Shortcut dirt paths follow the terrain (and nudge it a little); they need the terrain, the main samples and sAt.
     this.branches = buildBranches(this);
     for (const b of def.boostPads) {
@@ -358,6 +373,78 @@ export class Track implements Ground {
         this.itemBoxes.push({ x: p.x, y: ground.height, z: p.z, s });
       }
     }
+  }
+
+  /** Valleys with their stretch of road in metres (see TerrainDef.valleys). Empty on every other track. */
+  private valleys: { s0: number; len: number; fade: number; inner: [number, number]; open: boolean }[] = [];
+
+  /** Per sample: true on the void gaps (chasms) that lie inside an `open` valley. */
+  private valleyOpen(S: TrackSample[]): boolean[] {
+    this.valleys = (this.def.terrain?.valleys ?? []).map((v) => {
+      const pad = v.pad ?? 0;
+      const s0 = this.sAt(v.from) - pad;
+      const len = (((this.sAt(v.to) + pad - s0) % this.length) + this.length) % this.length;
+      return { s0: (s0 + this.length) % this.length, len, fade: v.fade ?? 40, inner: v.inner ?? [4, 4], open: v.open ?? true };
+    });
+    return S.map((p) =>
+      this.valleys.some((v) => v.open && this.gaps.some((g) => g.kind === 'void' && this.within(p.s, g.s0, g.s1) && this.within(p.s, v.s0, v.s0 + v.len))),
+    );
+  }
+
+  /**
+   * Carve the valleys (Mushroom Valley's gorges): beside the road the natural ground falls away to `valleyFloor`, out to
+   * VALLEY_REACH metres, so the road is a ridge between broad abysses. The weight is 1 inside the valley's stretch of
+   * road and eases to 0 over `fade` metres along the road past its ends, and from the road outward across the flanks.
+   * Near the road the road's own blend (TERRAIN_SKIRT + blend) still wins, so the ridge keeps its shoulders.
+   */
+  private setupValleys(spacing: number): void {
+    if (!this.valleys.length) return;
+    const S = this.samples;
+    const n = S.length;
+    // Per sample: the valley's weight along the road (0 = not near any valley) and which valley it belongs to.
+    const along = new Float64Array(n);
+    const zone = new Int32Array(n);
+    S.forEach((p, i) => {
+      this.valleys.forEach((v, k) => {
+        const into = (((p.s - v.s0) % this.length) + this.length) % this.length;
+        const out = into <= v.len ? 0 : Math.min(into - v.len, this.length - into);
+        const a = out >= v.fade ? 0 : 1 - smoothUnit(out / v.fade);
+        if (a > along[i]) {
+          along[i] = a;
+          zone[i] = k;
+        }
+      });
+    });
+    const field = new RoadField(S, Array.from(along, (a) => a <= 0), VALLEY_REACH, spacing);
+    const floor = this.def.terrain?.valleyFloor ?? 0;
+    const keep = this.def.terrain?.valleyKeep ?? [];
+    this.terrain.setValleys((x, z) => {
+      const hit = field.nearest(x, z);
+      if (!hit) return 0;
+      const a = along[hit.i] + (along[(hit.i + 1) % n] - along[hit.i]) * hit.u;
+      if (a <= 0) return 0;
+      let spared = 0;
+      for (const k of keep) spared = Math.max(spared, 1 - smoothUnit((Math.hypot(x - k.x, z - k.z) - k.radius) / VALLEY_KEEP_EASE));
+      if (spared >= 1) return 0;
+      const inner = this.valleys[zone[hit.i]].inner[hit.d < 0 ? 0 : 1];
+      const across = smoothUnit((hit.dist - inner) / VALLEY_FLANK) * (1 - smoothUnit((hit.dist - VALLEY_FULL) / (VALLEY_REACH - VALLEY_FULL)));
+      return a * across * (1 - spared);
+    }, floor);
+  }
+
+  /** Ceiling on the natural ground near the road (TerrainDef.ceiling): hills may not tower over the road beside them. */
+  private setupCeiling(spacing: number): void {
+    const c = this.def.terrain?.ceiling;
+    if (!c) return;
+    const S = this.samples;
+    const field = new RoadField(S, S.map(() => false), VALLEY_REACH, spacing);
+    this.terrain.setCeiling((x, z) => {
+      const hit = field.nearest(x, z);
+      if (!hit) return null;
+      const a = S[hit.i];
+      const b = S[(hit.i + 1) % S.length];
+      return a.y + (b.y - a.y) * hit.u + c.rise + c.slope * Math.max(0, hit.dist - 20);
+    });
   }
 
   /** Control-point units (e.g. 3.5) -> distance along the track. */

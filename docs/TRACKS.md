@@ -421,3 +421,13 @@ height the arc was worked out for, caps 6-12 m wide inside the corridor, two cho
 time within 7 %, lap 55-80 s, no respawns), item rows either side of every crossing, bots of every difficulty finish 3 laps and
 really bounce, 12 hard bots too. `bouncers.test.ts`: arc maths, crossing at every speed, off-centre and angled entries, guided
 flights, tricks, solid green caps, no bounce from below, caps are ground.
+
+### Mushroom Valley: open gorges (valleys)
+
+The gorges used to be slots cut through one wide massif. Now the terrain def carries `valleys`, `valleyFloor`, `valleyKeep` and `ceiling`
+(`src/track/types.ts`, built in `Track.setupValleys/setupCeiling`, applied in `Terrain.natural`): beside every gorge the natural ground
+is carved down to the cloud sea (flanks ~10 m wide, out to 95 m, easing out by 150 m, along-road fade 40-45 m), the road segments inside
+the chasm are left out of the road blend, so the course is a ridge between broad abysses and the caps stand on stalks over open air. The
+cave hill is a mesa: only the ground outside the shell (44 m left / 74 m right of the road) is carved. `ceiling` stops lone spires
+(ground may rise at most 6 m + 0.45 m per metre beyond 20 m above the nearest road); `valleyKeep` discs hold the pillars under the Twin
+Spans shortcut ledges. The renderer draws no side walls along an open gap (only the ends).
