@@ -44,6 +44,12 @@ export const BOUNCE = {
   settle: 0.08,
 } as const;
 
+/**
+ * Caps are gently domed: the surface is highest in the middle (the cap's `y`) and sinks by `CAP_DROOP x radius` at the
+ * rim: height(r) = y - CAP_DROOP x r^2 / radius. A 10 m cap is 0.6 m lower at its edge. The renderer draws the same dome.
+ */
+export const CAP_DROOP = 0.06;
+
 /** A cap with its bounce target worked out. */
 export interface Cap {
   index: number;
@@ -126,14 +132,29 @@ export class Bouncers {
     });
   }
 
-  /** The cap whose disc contains (x, z), or null. (Caps never overlap each other except green ones, which share a height.) */
+  /** The cap whose disc contains (x, z) and whose surface is highest there, or null. (Green caps overlap to make bridges.) */
   capAt(x: number, z: number): Cap | null {
+    let best: Cap | null = null;
+    let bestH = -Infinity;
     for (const c of this.caps) {
       const dx = x - c.x;
       const dz = z - c.z;
-      if (dx * dx + dz * dz <= c.radius * c.radius) return c;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > c.radius * c.radius) continue;
+      const h = c.y - (CAP_DROOP * d2) / c.radius;
+      if (h > bestH) {
+        bestH = h;
+        best = c;
+      }
     }
-    return null;
+    return best;
+  }
+
+  /** Height of a cap's surface at (x, z) (inside its disc). */
+  static surface(c: Cap, x: number, z: number): number {
+    const dx = x - c.x;
+    const dz = z - c.z;
+    return c.y - (CAP_DROOP * (dx * dx + dz * dz)) / c.radius;
   }
 
   /** Ground with the caps added: inside a cap's disc the surface is at least as high as the cap's top. */
@@ -144,10 +165,11 @@ export class Bouncers {
         const hit = base.sample(x, z, hint);
         const cap = this.capAt(x, z);
         if (!cap) return hit;
-        if (hit && hit.height >= cap.y) return hit;
+        const top = Bouncers.surface(cap, x, z);
+        if (hit && hit.height >= top) return hit;
         // Keep the kart's "which road am I on" hint alive over the void (the base ground has no index there).
         const index = hit?.index ?? this.track.project(x, z, hint ?? -1).index;
-        const out: GroundHit = { height: cap.y, surface: 'road', index };
+        const out: GroundHit = { height: top, surface: 'road', index };
         return out;
       },
     };
@@ -181,7 +203,7 @@ export class Bouncers {
       k.vel.x = Math.sin(arc.heading) * arc.speed;
       k.vel.z = Math.cos(arc.heading) * arc.speed;
       k.vel.y = arc.vy;
-      k.pos.y = Math.max(k.pos.y, hit.y) + 0.02; // a hair above the cap so the next tick is clearly airborne
+      k.pos.y = Math.max(k.pos.y, Bouncers.surface(hit, k.pos.x, k.pos.z)) + 0.02; // a hair above the cap so the next tick is clearly airborne
       k.grounded = false;
       k.hopping = false;
       k.driftDir = 0;
@@ -204,7 +226,7 @@ export class Bouncers {
       const dx = k.pos.x - c.x;
       const dz = k.pos.z - c.z;
       if (dx * dx + dz * dz > c.radius * c.radius) continue;
-      const above = k.pos.y - c.y;
+      const above = k.pos.y - Bouncers.surface(c, k.pos.x, k.pos.z);
       if (above <= BOUNCE.touchAbove && above >= -BOUNCE.touchBelow) return c;
     }
     return null;

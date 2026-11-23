@@ -153,7 +153,7 @@ describe('bots race Mushroom Valley', () => {
     expect(world.race!.phase).toBe('done');
     expect([...world.race!.racers.values()].filter((r) => r.finished).length).toBeGreaterThanOrEqual(3);
     expect(counts.respawn ?? 0).toBeLessThan(3);
-    expect(counts.bounce ?? 0).toBeGreaterThan(10); // they really bounced
+    expect(counts.bounce ?? 0).toBeGreaterThan(5); // they really bounced (the Sky Leap once a lap, more on the shortcuts)
   }, 120_000);
 
   it('12 bots on hard also cross the gorges (a crowd on the caps)', () => {
