@@ -252,25 +252,35 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     tone(e, t, { type: 'sine', f0: 240, f1: 180, dur: 0.5, gain: 0.25 * g, vib: [50, 14] });
     return 0.55;
   },
-  useMagnet: (e, t, g) => {
-    // Charging up: a rising hum with a buzzing edge, then a bright "clack" as the field locks on.
-    tone(e, t, { type: 'sawtooth', f0: 110, f1: 330, dur: 0.45, gain: 0.18 * g, cutoff: 1500, vib: [30, 40] });
-    tone(e, t, { type: 'sine', f0: 220, f1: 660, dur: 0.45, gain: 0.25 * g });
-    tone(e, t + 0.4, { type: 'square', f0: 1200, f1: 900, dur: 0.07, gain: 0.2 * g, cutoff: 3500 });
-    noiseBurst(e, t + 0.4, { dur: 0.05, gain: 0.25 * g, filter: 'highpass', f0: 3500 });
+  useStorm: (e, t, g) => {
+    // A dark cloud rolling in: low rumbling thunder (noise through a falling low-pass, sub-bass underneath) and a distant crackle.
+    noiseBurst(e, t, { dur: 1.1, gain: 0.5 * g, filter: 'lowpass', f0: 700, f1: 80, q: 0.8, a: 0.12 });
+    tone(e, t, { type: 'sine', f0: 70, f1: 32, dur: 1.0, gain: 0.55 * g, a: 0.1 });
+    tone(e, t + 0.05, { type: 'sawtooth', f0: 110, f1: 55, dur: 0.9, gain: 0.12 * g, cutoff: 500, vib: [10, 17] });
+    noiseBurst(e, t + 0.35, { dur: 0.12, gain: 0.25 * g, filter: 'highpass', f0: 3500 });
+    return 1.15;
+  },
+  useRocket: (e, t, g) => {
+    // Ignition: a hiss that climbs into a roar, a rising saw sweep, and a deep thump as the capsule closes round the kart.
+    tone(e, t, { type: 'sine', f0: 120, f1: 40, dur: 0.25, gain: 0.55 * g });
+    noiseBurst(e, t + 0.05, { dur: 1.0, gain: 0.5 * g, f0: 250, f1: 4200, q: 0.9, a: 0.25 });
+    tone(e, t + 0.05, { type: 'sawtooth', f0: 70, f1: 520, dur: 0.9, gain: 0.22 * g, cutoff: 1800, a: 0.1, vib: [14, 30] });
+    tone(e, t + 0.5, { type: 'square', f0: 330, f1: 660, dur: 0.4, gain: 0.08 * g, cutoff: 3000 });
+    return 1.1;
+  },
+  zap: (e, t, g) => {
+    // The bolt: a sharp crack, a burst of crackling and a falling buzz as the kart shrinks.
+    noiseBurst(e, t, { dur: 0.09, gain: 0.55 * g, filter: 'highpass', f0: 2500, q: 0.7 });
+    [0.03, 0.09, 0.15, 0.22].forEach((s, i) => noiseBurst(e, t + s, { dur: 0.05, gain: (0.3 - i * 0.04) * g, filter: 'bandpass', f0: 3500 - i * 500, q: 2 }));
+    tone(e, t, { type: 'sawtooth', f0: 1600, f1: 140, dur: 0.45, gain: 0.25 * g, cutoff: 3000, vib: [120, 40] });
+    tone(e, t, { type: 'sine', f0: 90, f1: 40, dur: 0.3, gain: 0.5 * g });
     return 0.5;
   },
-  useBumper: (e, t, g) => {
-    // A rubbery "boing" as the orb pops out and starts circling.
-    tone(e, t, { type: 'sine', f0: 180, f1: 520, dur: 0.18, gain: 0.4 * g, vib: [25, 30] });
-    tone(e, t + 0.12, { type: 'sine', f0: 500, f1: 260, dur: 0.22, gain: 0.3 * g, vib: [20, 24] });
-    return 0.35;
-  },
-  bumped: (e, t, g) => {
-    // The orb knocks a kart aside: a dull thump and a short springy twang.
-    tone(e, t, { type: 'sine', f0: 140, f1: 60, dur: 0.18, gain: 0.45 * g });
-    tone(e, t, { type: 'triangle', f0: 600, f1: 250, dur: 0.16, gain: 0.22 * g, vib: [30, 28] });
-    noiseBurst(e, t, { dur: 0.06, gain: 0.2 * g, f0: 1400, q: 1 });
+  squash: (e, t, g) => {
+    // Flattened: a wet squelch with a squeaky pitch drop and a dull thump.
+    tone(e, t, { type: 'sine', f0: 140, f1: 45, dur: 0.18, gain: 0.55 * g });
+    tone(e, t, { type: 'triangle', f0: 900, f1: 180, dur: 0.22, gain: 0.25 * g, vib: [60, 30] });
+    noiseBurst(e, t, { dur: 0.1, gain: 0.3 * g, filter: 'lowpass', f0: 1800, f1: 300, q: 2 });
     return 0.25;
   },
   hit: (e, t, g) => {

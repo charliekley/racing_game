@@ -369,8 +369,10 @@ export function reactionsForEvent(e: WorldEvent, ctx: FaceContext): FaceReaction
       return [{ slot: e.slot, expr: 'dizzy', duration: ctx.spinTime + 0.7, look: { side: 0, hold: 0.8, delay: ctx.spinTime * 0.8, priority: 2 } }];
     case 'jumbled':
       return [{ slot: e.slot, expr: 'shocked', duration: 1.4, look: { side: 0, hold: 0.6, priority: 2 } }];
-    case 'bumped':
-      return [{ slot: e.slot, expr: 'shocked', duration: 0.9 }];
+    case 'shrunk':
+      return [{ slot: e.slot, expr: 'shocked', duration: 1.4, look: { side: 0, hold: 0.6, priority: 2 } }];
+    case 'squashed':
+      return [{ slot: e.slot, expr: 'shocked', duration: 1.0 }];
     case 'wall':
       return e.impact >= WALL_SHOCK ? [{ slot: e.slot, expr: 'shocked', duration: 0.7 }] : [];
     case 'kart':

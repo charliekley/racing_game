@@ -18,8 +18,8 @@ export const SOUND_IDS = [
   'lap', 'finalLap', 'finishWin', 'finish', 'resultsJingle',
   // Track hazards (wave 4). Only ever append to this list.
   'hazardWarn', 'geyser', 'bridgeBell', 'bridgeMove', 'gust', 'roller', 'hazardHit',
-  // Items added later (Magnet, Bumper). Only ever append to this list.
-  'useMagnet', 'useBumper', 'bumped',
+  // Items added later (Storm, Rocket; they replaced Magnet and Bumper). Only ever append to this list.
+  'useStorm', 'useRocket', 'zap', 'squash',
   // Hazard hits with their own character (snowball, water). Only ever append to this list.
   'hitSnow', 'hitWater',
 ] as const;
@@ -102,19 +102,22 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
     case 'itemUse': {
       const map: Record<string, SoundId> = {
         dash: 'useDash', slick: 'useSlick', ricochet: 'useRicochet', seeker: 'useSeeker', nova: 'useNova', jumble: 'useJumble',
-        magnet: 'useMagnet', bumper: 'useBumper',
+        storm: 'useStorm', rocket: 'useRocket',
       };
       const id = map[String(ev.id)];
       return id ? [cue(id)] : [];
     }
     case 'hit':
-      return [cue(ev.by === 'nova' ? 'hitNova' : 'hit')];
+      // A Storm strike has its own "zap" sound (the `shrunk` event); no second spin-out sound on top.
+      return ev.by === 'storm' ? [] : [cue(ev.by === 'nova' || ev.by === 'rocket' ? 'hitNova' : 'hit')];
     case 'blocked':
       return [cue('blocked')];
     case 'jumbled':
       return [cue('jumbled')];
-    case 'bumped':
-      return [cue('bumped')];
+    case 'shrunk':
+      return [cue('zap')];
+    case 'squashed':
+      return [cue('squash')];
     case 'itemDestroyed':
       return [{ id: 'itemDestroyed', gain: 0.6, rate: 1 }];
     case 'cannonFire':

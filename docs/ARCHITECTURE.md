@@ -104,7 +104,7 @@ racing_game/
    │                              mountains, clouds, gantry), meshBatch.ts (merges many shapes
    │                              into one draw call), layout.ts (split-screen rects),
    │                              minimap.ts, effects.ts (drift sparks, boost flames, carrier drone),
-   │                              itemMeshes.ts + peelModel.ts (item box, peel, shots, magnet, bumper, Nova aura)
+   │                              itemMeshes.ts + peelModel.ts (item box, peel, shots, Nova aura, Rocket capsule, Storm cloud)
    └─ audio/                   M7 Web Audio synth + optional sample overrides
 ```
 

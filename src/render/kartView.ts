@@ -10,13 +10,13 @@
 import * as THREE from 'three';
 import type { KartState } from '../sim/kart';
 import type { Ground } from '../sim/ground';
-import { KART } from '../sim/config';
+import { ITEMS, KART } from '../sim/config';
 import { DEFAULT_LOADOUT, paletteFor, type Loadout } from '../shared/characters';
 import { buildKartModel, type KartModel } from './kartModel';
 import { CarrierDrone, SparkEmitter, buildFlame } from './effects';
 import { CARRIER_HEIGHT } from '../sim/world';
 import type { ItemId } from '../sim/items/types';
-import { buildHeldItemMesh, buildNovaAura, type NovaAura } from './itemMeshes';
+import { buildHeldItemMesh, buildNovaAura, buildRocketShell, buildStormCloud, type NovaAura, type RocketShell, type StormCloud } from './itemMeshes';
 import { DriverRig, type DriverInput } from './kart/driverRig';
 import { DriverFace, type FaceConditions } from './kart/expression';
 
@@ -71,6 +71,11 @@ export class KartView {
   private flames: THREE.Group[] = [];
   private drone: CarrierDrone;
   private aura: NovaAura;
+  /** The glowing capsule while the kart is a Rocket, and the dark cloud + bolt over a kart struck by a Storm. */
+  private shell: RocketShell;
+  private cloud: StormCloud;
+  /** 0 = normal, 1 = squashed flat (eased, so the pancake squashes fast and pops back slowly). */
+  private squash = 0;
   private heldMeshes = new Map<ItemId, THREE.Object3D>();
   private shownHeld: THREE.Object3D | null = null;
   /** Set by the game each frame: the item currently dragged behind this kart (shots only; a dragged Slick is a world entity). */
@@ -105,6 +110,10 @@ export class KartView {
     this.drone = new CarrierDrone(scene);
     this.aura = buildNovaAura();
     this.model.root.add(this.aura.object);
+    this.shell = buildRocketShell();
+    this.model.root.add(this.shell.object);
+    this.cloud = buildStormCloud();
+    scene.add(this.cloud.object);
     this.rig = new DriverRig(this.model);
     // Put the driver in the neutral pose (hands on the wheel) and freeze that into the merged far model.
     this.rig.update(0, this.riderInput);
@@ -160,7 +169,12 @@ export class KartView {
     let scale = 1;
     if (fl?.phase === 'load') scale = 1 - 0.45 * Math.min(1, fl.t / 0.5);
     else if (fl?.phase === 'air') scale = 0.55 + 0.45 * Math.min(1, fl.t / 0.2);
-    m.root.scale.setScalar(scale);
+    // Storm: the kart is shrunk (smoothly, the sim already eases `size`); a squashed kart is flat and wide like a pancake.
+    const size = prev.size + (cur.size - prev.size) * alpha;
+    const squashTarget = cur.squashTime > 0 ? 1 : 0;
+    this.squash += (squashTarget - this.squash) * (1 - Math.exp(-dt / (squashTarget ? 0.04 : 0.3)));
+    const s = scale * size;
+    m.root.scale.set(s * (1 + 0.4 * this.squash), s * (1 - 0.86 * this.squash), s * (1 + 0.4 * this.squash));
 
     // Lean outward in turns (roll around forward axis), proportional to lateral acceleration.
     const lateralAccel = p.yawRate * p.speed;
@@ -210,7 +224,7 @@ export class KartView {
     inp.accel = this.accel;
     inp.speed01 = Math.min(1, Math.abs(p.speed) / KART.maxSpeed);
     inp.drift = cur.driftDir;
-    inp.boosting = cur.boostTime > 0;
+    inp.boosting = cur.boostTime > 0 || cur.rocketTime > 0;
     inp.airborne = !cur.grounded;
     inp.trick = this.trickT;
     inp.spun = cur.spinTime > 0;
@@ -257,8 +271,11 @@ export class KartView {
       }
     }
 
-    // Nova glow, and a shot being dragged behind the kart.
-    this.aura.update(performance.now() / 1000, cur.starTime > 0);
+    // Nova glow, the Rocket capsule, the Storm cloud, and a shot being dragged behind the kart.
+    const now = performance.now() / 1000;
+    this.aura.update(now, cur.starTime > 0);
+    this.shell.update(dt, now, cur.rocketTime > 0, cur.rocketTime);
+    this.cloud.update(dt, p.x, p.y, p.z, cur.zapTime, ITEMS.stormZapSeconds);
     this.showTrailing(this.trailingItem);
 
     // Respawn carrier: hovers above and lowers the kart back onto the track.
@@ -291,6 +308,8 @@ export class KartView {
   dispose(scene: THREE.Scene): void {
     this.aura.dispose();
     scene.remove(this.model.root);
+    scene.remove(this.cloud.object);
+    this.cloud.dispose();
     this.sparks.dispose(scene);
     this.drone.dispose(scene);
   }

@@ -8,6 +8,8 @@ import {
   buildHeldItemMesh,
   buildItemBox,
   buildNovaAura,
+  buildRocketShell,
+  buildStormCloud,
   updateEntityMesh,
 } from './itemMeshes';
 
@@ -46,25 +48,34 @@ describe('item meshes', () => {
       expect(meshCount(buildEntityMesh(k))).toBeGreaterThan(0);
       expect(buildHeldItemMesh(k)).not.toBeNull();
     }
-    for (const k of ['magnet', 'bumper'] as const) {
-      expect(meshCount(buildEntityMesh(k))).toBeGreaterThan(0);
-      expect(buildHeldItemMesh(k)).toBeNull(); // not dragged
-    }
     expect(buildHeldItemMesh('dash')).toBeNull();
     expect(buildHeldItemMesh('nova')).toBeNull();
   });
 
-  it('shows the magnet beam only while it has a kart to tow, and the orb keeps its distance from the owner', () => {
-    const m = buildEntityMesh('magnet');
-    updateEntityMesh(m, ent(1, { kind: 'magnet', life: 1 }), 1);
-    expect(m.getObjectByName('beam')!.visible).toBe(false);
-    updateEntityMesh(m, ent(1, { kind: 'magnet', life: 1, link: { x: 1, y: 2, z: 30 } }), 1);
-    const beam = m.getObjectByName('beam')!;
-    expect(beam.visible).toBe(true);
-    expect(beam.scale.z).toBeGreaterThan(26); // about the distance to the towed kart
-    const b = buildEntityMesh('bumper');
-    updateEntityMesh(b, ent(2, { kind: 'bumper', life: 1 }), 1);
-    expect(b.position.x).toBe(1); // placed exactly where the sim says
+  it('the rocket shell is hidden until the kart is a rocket, grows in, and pops away again after it ends', () => {
+    const shell = buildRocketShell();
+    shell.update(1 / 60, 0, false, 0);
+    expect(shell.object.visible).toBe(false);
+    for (let i = 0; i < 30; i++) shell.update(1 / 60, i / 60, true, 5);
+    expect(shell.object.visible).toBe(true);
+    expect(meshCount(shell.object)).toBeLessThanOrEqual(12);
+    for (let i = 0; i < 60; i++) shell.update(1 / 60, 1 + i / 60, false, 0);
+    expect(shell.object.visible).toBe(false);
+  });
+
+  it('the storm cloud shows only while the strike lasts, with the bolt in the middle of it', () => {
+    const cloud = buildStormCloud();
+    cloud.update(1 / 60, 1, 2, 3, 0, 1.1);
+    expect(cloud.object.visible).toBe(false);
+    cloud.update(1 / 60, 1, 2, 3, 1.1 - 0.3, 1.1); // 0.3 s after the strike
+    expect(cloud.object.visible).toBe(true);
+    expect(cloud.object.position.toArray()).toEqual([1, 2, 3]); // over the kart, in world coordinates
+    expect(meshCount(cloud.object)).toBeLessThanOrEqual(9);
+    cloud.update(1 / 60, 1, 2, 3, 0.05, 1.1); // fading away at the end
+    expect(cloud.object.visible).toBe(true);
+    cloud.update(1 / 60, 1, 2, 3, 0, 1.1);
+    expect(cloud.object.visible).toBe(false);
+    cloud.dispose();
   });
 
   it('lifts a dragged slick off the road', () => {

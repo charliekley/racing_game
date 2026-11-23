@@ -14,13 +14,17 @@ describe('soundsForEvent', () => {
   });
 
   it('uses a different sound per item and per hit type', () => {
-    const used = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble'].map((id) => ids({ kind: 'itemUse', slot: 0, id })[0]);
-    expect(new Set(used).size).toBe(6);
+    const used = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'storm', 'rocket'].map((id) => ids({ kind: 'itemUse', slot: 0, id })[0]);
+    expect(new Set(used).size).toBe(8);
     expect(ids({ kind: 'hit', slot: 0, by: 'nova', attacker: 1 })).toEqual(['hitNova']);
     expect(ids({ kind: 'hit', slot: 0, by: 'slick', attacker: 1 })).toEqual(['hit']);
-    expect(ids({ kind: 'itemUse', slot: 0, id: 'magnet' })).toEqual(['useMagnet']);
-    expect(ids({ kind: 'itemUse', slot: 0, id: 'bumper' })).toEqual(['useBumper']);
-    expect(ids({ kind: 'bumped', slot: 0, attacker: 1 })).toEqual(['bumped']);
+    expect(ids({ kind: 'itemUse', slot: 0, id: 'storm' })).toEqual(['useStorm']);
+    expect(ids({ kind: 'itemUse', slot: 0, id: 'rocket' })).toEqual(['useRocket']);
+    // Storm: a "zap" for each victim and no extra spin-out sound; a Rocket knock-aside sounds like a Nova hit; squash has its own.
+    expect(ids({ kind: 'shrunk', slot: 0, attacker: 1 })).toEqual(['zap']);
+    expect(ids({ kind: 'hit', slot: 0, by: 'storm', attacker: 1 })).toEqual([]);
+    expect(ids({ kind: 'hit', slot: 0, by: 'rocket', attacker: 1 })).toEqual(['hitNova']);
+    expect(ids({ kind: 'squashed', slot: 0, by: 1 })).toEqual(['squash']);
   });
 
   it('steps the drift sound at blue and orange, silent for tier 0', () => {

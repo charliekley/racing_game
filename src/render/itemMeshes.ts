@@ -9,11 +9,11 @@
  *
  *   item box   2   (cube + glow shell)
  *   peel       1   (one merged, vertex-coloured geometry: see peelModel.ts; internal id `slick`)
- *   magnet     3   (horseshoe + two field rings; plus 1 beam while it tows)
- *   bumper     2   (studded orb + glow shell)
  *   ricochet   3   (ball + ring + trail)
  *   seeker     4   (body + nose + fins + exhaust)
  *   nova aura  3   (two shells + one Points object for sparkles)
+ *   rocket     ~8  (capsule + glow + bands + nose + fins + flame; shown only on a kart that is a Rocket)
+ *   storm      8   (cloud puffs + bolt; shown over a kart for about a second after the strike)
  *
  * Because geometry/materials are shared, removing an entity needs no disposal;
  * only the nova aura owns per-instance materials (it has its own dispose()).
@@ -226,117 +226,6 @@ function buildSeeker(): THREE.Object3D {
 }
 
 // ---------------------------------------------------------------------------
-// Magnet (red horseshoe with silver tips, floating above the kart, plus a beam to the kart it tows toward)
-// ---------------------------------------------------------------------------
-
-/** Horseshoe lying in the XZ plane with its open end toward +Z (the direction of travel). Vertex-coloured: one draw call. */
-const magnetGeo = (() => {
-  const red = new THREE.Color('#e8362e');
-  const silver = new THREE.Color('#d6dbe6');
-  const paintAll = (g: THREE.BufferGeometry, c: THREE.Color) => {
-    const n = g.getAttribute('position').count;
-    const arr = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) arr.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-    g.deleteAttribute('uv');
-    return g.toNonIndexed();
-  };
-  // Half circle (the bend) of radius 0.36 around the origin, opening toward +Z.
-  const bend = new THREE.TorusGeometry(0.36, 0.11, 10, 24, Math.PI).rotateX(-Math.PI / 2);
-  const legs: THREE.BufferGeometry[] = [];
-  for (const sx of [-1, 1]) {
-    legs.push(paintAll(new THREE.CylinderGeometry(0.11, 0.11, 0.4, 10).rotateX(Math.PI / 2).translate(sx * 0.36, 0, 0.2), red));
-    legs.push(paintAll(new THREE.CylinderGeometry(0.115, 0.115, 0.16, 10).rotateX(Math.PI / 2).translate(sx * 0.36, 0, 0.48), silver));
-  }
-  return mergeGeometries([paintAll(bend, red), ...legs])!;
-})();
-const magnetMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#3a0a08' });
-const magnetRingGeo = new THREE.TorusGeometry(0.5, 0.035, 6, 28); // axis along Z: a ring facing the direction of travel
-const magnetRingMat = new THREE.MeshBasicMaterial({
-  color: new THREE.Color('#7ad7ff').multiplyScalar(2),
-  transparent: true,
-  opacity: 0.6,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-// The beam is a thin cylinder along +Z of unit length; it is scaled/rotated to reach the towed kart.
-const magnetBeamGeo = new THREE.CylinderGeometry(0.11, 0.11, 1, 8, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
-const magnetBeamMat = new THREE.MeshBasicMaterial({
-  color: new THREE.Color('#6fd0ff').multiplyScalar(2),
-  transparent: true,
-  opacity: 0.45,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-
-const MAGNET_HEIGHT = 1.75;
-
-function buildMagnet(): THREE.Object3D {
-  const g = new THREE.Group();
-  const hover = new THREE.Group(); // bobs above the kart and points the way it faces
-  hover.name = 'hover';
-  hover.position.y = MAGNET_HEIGHT;
-  hover.add(new THREE.Mesh(magnetGeo, magnetMat));
-  for (let i = 0; i < 2; i++) {
-    const ring = new THREE.Mesh(magnetRingGeo, magnetRingMat);
-    ring.name = `ring${i}`;
-    hover.add(ring);
-  }
-  const beam = new THREE.Mesh(magnetBeamGeo, magnetBeamMat);
-  beam.name = 'beam';
-  beam.visible = false;
-  beam.frustumCulled = false;
-  g.add(hover, beam);
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// Bumper (glossy orb with rubber studs that circles its owner)
-// ---------------------------------------------------------------------------
-
-const bumperGeo = (() => {
-  const body = new THREE.SphereGeometry(0.4, 18, 12);
-  const paintAll = (g: THREE.BufferGeometry, c: THREE.Color) => {
-    const n = g.getAttribute('position').count;
-    const arr = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) arr.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-    g.deleteAttribute('uv');
-    return g.toNonIndexed();
-  };
-  const parts = [paintAll(body, new THREE.Color('#ff7a1a'))];
-  // Six studs along the axes.
-  const dirs = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)];
-  const q = new THREE.Quaternion();
-  for (const d of dirs) {
-    const stud = new THREE.CylinderGeometry(0.13, 0.17, 0.22, 10);
-    q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
-    stud.applyQuaternion(q);
-    stud.translate(d.x * 0.42, d.y * 0.42, d.z * 0.42);
-    parts.push(paintAll(stud, new THREE.Color('#2b2d3a')));
-  }
-  return mergeGeometries(parts)!;
-})();
-const bumperMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#2a1000' });
-const bumperGlowGeo = new THREE.SphereGeometry(0.55, 14, 10);
-const bumperGlowMat = new THREE.MeshBasicMaterial({
-  color: new THREE.Color('#ffb04a'),
-  transparent: true,
-  opacity: 0.1,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-});
-
-function buildBumper(): THREE.Object3D {
-  const g = new THREE.Group();
-  const spin = new THREE.Group();
-  spin.name = 'spin';
-  spin.add(new THREE.Mesh(bumperGeo, bumperMat));
-  g.add(spin, new THREE.Mesh(bumperGlowGeo, bumperGlowMat));
-  return g;
-}
-
-// ---------------------------------------------------------------------------
 // Entity API
 // ---------------------------------------------------------------------------
 
@@ -351,10 +240,6 @@ export function buildEntityMesh(kind: ItemEntityKind): THREE.Object3D {
   if (kind === 'slick') {
     body.position.y = PEEL_HEIGHT;
     body.add(buildSlick());
-  } else if (kind === 'magnet') {
-    body.add(buildMagnet());
-  } else if (kind === 'bumper') {
-    body.add(buildBumper());
   } else {
     body.position.y = PROJECTILE_HEIGHT;
     body.add(kind === 'ricochet' ? buildRicochet() : buildSeeker());
@@ -386,49 +271,6 @@ export function updateEntityMesh(obj: THREE.Object3D, entity: ItemEntity, timeSe
       }
       break;
     }
-    case 'magnet': {
-      // The magnet is not rotated with the kart's heading by the root: its own group turns and the beam is in world axes.
-      obj.rotation.set(0, 0, 0);
-      const hover = body.getObjectByName('hover');
-      if (hover) {
-        hover.rotation.y = entity.heading;
-        hover.position.y = MAGNET_HEIGHT + Math.sin(t * 5) * 0.07;
-        const life = entity.life ?? 1;
-        hover.visible = life > 0.18 || Math.sin(t * 30) > 0; // blinks just before it runs out
-        for (let i = 0; i < 2; i++) {
-          // Field rings: expand ahead of the magnet while fading (a repeating pulse, the two a half-cycle apart).
-          const ring = hover.getObjectByName(`ring${i}`);
-          if (!ring) continue;
-          const ph = (t * 1.6 + i * 0.5) % 1;
-          ring.position.z = 0.4 + ph * 1.2;
-          ring.scale.setScalar(0.5 + ph * 0.9);
-        }
-      }
-      const beam = body.getObjectByName('beam');
-      if (beam) {
-        const link = entity.link;
-        beam.visible = !!link;
-        if (link) {
-          // From the horseshoe to the roof of the towed kart, in world axes.
-          const dx = link.x - entity.x;
-          const dy = link.y + 1 - (entity.y + MAGNET_HEIGHT);
-          const dz = link.z - entity.z;
-          const len = Math.hypot(dx, dy, dz) || 1;
-          beam.position.set(0, MAGNET_HEIGHT, 0);
-          beam.quaternion.setFromUnitVectors(_zAxis, _v.set(dx / len, dy / len, dz / len));
-          beam.scale.set(1 + Math.sin(t * 20) * 0.35, 1, len);
-          magnetBeamMat.opacity = 0.35 + Math.sin(t * 12) * 0.12;
-        }
-      }
-      break;
-    }
-    case 'bumper': {
-      const spin = body.getObjectByName('spin');
-      if (spin) spin.rotation.set(t * 3, t * 4.3, 0);
-      const life = entity.life ?? 1;
-      body.visible = life > 0.2 || Math.sin(t * 30) > 0; // blinks just before it pops
-      break;
-    }
     case 'ricochet': {
       const spin = body.getObjectByName('spin');
       if (spin) spin.rotation.x = timeSeconds * 14 + entity.uid;
@@ -443,9 +285,6 @@ export function updateEntityMesh(obj: THREE.Object3D, entity: ItemEntity, timeSe
     }
   }
 }
-
-const _zAxis = new THREE.Vector3(0, 0, 1);
-const _v = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
 // Nova aura (invincibility shell around a kart)
@@ -512,6 +351,234 @@ export function buildNovaAura(): NovaAura {
       outerMat.dispose();
       sparkMat.dispose();
       sparkGeo.dispose();
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Rocket shell: the glowing capsule a kart is wrapped in while it is a Rocket
+// ---------------------------------------------------------------------------
+
+/** Shared (module-level) geometry and materials: every kart's shell uses the same ones, so a shell costs no memory beyond its Group. */
+const shellParts = (() => {
+  // Capsule along +Z (the direction of travel): radius 1.08 m, 2.3 m straight part, rounded ends = 4.5 m long in total.
+  const glass = new THREE.CapsuleGeometry(1.08, 2.3, 6, 18).rotateX(Math.PI / 2);
+  const glow = new THREE.CapsuleGeometry(1.2, 2.4, 6, 18).rotateX(Math.PI / 2);
+  // Two white bands round the barrel.
+  const band = new THREE.TorusGeometry(1.09, 0.07, 6, 28);
+  // A silver nose tip.
+  const nose = new THREE.SphereGeometry(0.4, 12, 8).scale(1, 1, 2).translate(0, 0, 0.2); // an egg: pointed along the flight direction
+  // Four swept fins at the tail in an X (so none sticks straight up in the chase camera's view): a flat shape extruded thin, spun round the axis.
+  // In the shape, x runs along the capsule (negative = toward the tail) and y points away from the axis.
+  const finShape = new THREE.Shape();
+  finShape.moveTo(0, 0);
+  finShape.lineTo(0, 0.7);
+  finShape.lineTo(-0.8, 1.2);
+  finShape.lineTo(-0.9, 0.4);
+  finShape.lineTo(-0.6, 0);
+  finShape.closePath();
+  const fin = new THREE.ExtrudeGeometry(finShape, { depth: 0.1, bevelEnabled: false }).translate(0, 0, -0.05);
+  const fins: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 4; i++) {
+    const g = fin.clone();
+    g.rotateY(Math.PI / 2); // x -> -Z (the tail), y stays outward
+    g.rotateZ(Math.PI / 4 + (i * Math.PI) / 2);
+    fins.push(g);
+  }
+  const finGeo = mergeGeometries(fins)!;
+  // Flame: cones pointing backwards (tip toward -Z), additive.
+  const flameOuter = new THREE.ConeGeometry(0.4, 1.1, 14, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -2.75);
+  const flameInner = new THREE.ConeGeometry(0.22, 0.7, 12, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -2.6);
+  return { glass, glow, band, nose, finGeo, flameOuter, flameInner };
+})();
+const shellMats = {
+  glass: new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff5fc8').multiplyScalar(1.2), transparent: true, opacity: 0.2, depthWrite: false }),
+  glow: new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff7ad9').multiplyScalar(2), transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide }),
+  trim: new THREE.MeshStandardMaterial({ color: '#f4f6fb', roughness: 0.35, metalness: 0.2, emissive: '#444a66' }),
+  fin: new THREE.MeshStandardMaterial({ color: '#6a3df0', roughness: 0.45, metalness: 0.1, emissive: '#2a1480' }),
+  flameOuter: new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff7a1a').multiplyScalar(2.2), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  flameInner: new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe98a').multiplyScalar(2.6), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+};
+
+export interface RocketShell {
+  /** Add as a child of the kart's root group. Hidden while inactive. */
+  object: THREE.Object3D;
+  /**
+   * `on` = the kart is a rocket now. The shell grows round the kart when it turns on and pops away when it ends
+   * (a short ease), so it is visible for a moment longer than `on`. `timeLeft` makes the flame sputter at the very end.
+   */
+  update(dt: number, timeSeconds: number, on: boolean, timeLeft: number): void;
+}
+
+/** The glowing capsule with fins and a flame trail that wraps the kart while it is a Rocket (about 4.5 m long, 2.2 m wide). */
+export function buildRocketShell(): RocketShell {
+  const root = new THREE.Group();
+  root.visible = false;
+  const body = new THREE.Group(); // centred round the kart's body and scaled for the grow/pop animation
+  body.position.set(0, 0.55, 0.15);
+  root.add(body);
+  const p = shellParts;
+  body.add(new THREE.Mesh(p.glass, shellMats.glass), new THREE.Mesh(p.glow, shellMats.glow));
+  for (const z of [0.6, -0.9]) {
+    const b = new THREE.Mesh(p.band, shellMats.trim);
+    b.position.z = z;
+    body.add(b);
+  }
+  const nose = new THREE.Mesh(p.nose, shellMats.trim);
+  nose.position.z = 2.15;
+  body.add(nose);
+  const fins = new THREE.Mesh(p.finGeo, shellMats.fin);
+  fins.position.z = -1.45;
+  body.add(fins);
+  const flame = new THREE.Group();
+  flame.add(new THREE.Mesh(p.flameOuter, shellMats.flameOuter), new THREE.Mesh(p.flameInner, shellMats.flameInner));
+  body.add(flame);
+  // The glass is see-through on purpose: the kart and driver are visible inside. Never cast shadows from the shell.
+  body.traverse((o) => {
+    o.castShadow = false;
+    o.receiveShadow = false;
+    o.frustumCulled = false;
+  });
+  let k = 0; // 0 = not shown, 1 = fully on
+  return {
+    object: root,
+    update(dt, t, on, timeLeft) {
+      k += ((on ? 1 : 0) - k) * (1 - Math.exp(-dt / (on ? 0.09 : 0.06)));
+      if (!on && k < 0.02) k = 0;
+      root.visible = k > 0.01;
+      if (!root.visible) return;
+      // Pop in with a slight overshoot, shrink away when it ends.
+      const s = k * (1 + 0.12 * Math.sin(Math.min(1, k) * Math.PI));
+      body.scale.set(s, s, s);
+      // The flame flickers (and sputters in the last half second).
+      const sputter = timeLeft < 0.5 && on ? 0.5 + 0.5 * Math.sin(t * 60) : 1;
+      const f = (0.85 + Math.sin(t * 47) * 0.12 + Math.sin(t * 31) * 0.08) * sputter;
+      flame.scale.set(1 + Math.sin(t * 53) * 0.06, 1 + Math.sin(t * 61) * 0.06, f);
+      shellMats.glow.opacity = 0.14 + Math.sin(t * 9) * 0.04;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Storm cloud: the dark cloud and lightning bolt over a kart that was just struck
+// ---------------------------------------------------------------------------
+
+// Each puff is shaded by height in its own vertex colours (dark belly, lighter top), and drawn unlit: scene lighting and
+// fog would wash a dark cloud out to the pale sky colour. During the strike the whole cloud flashes brighter.
+const cloudPuffGeo = (() => {
+  const g = new THREE.SphereGeometry(1, 14, 10);
+  const pos = g.getAttribute('position');
+  const col = new Float32Array(pos.count * 3);
+  const dark = new THREE.Color('#1a1c34');
+  const light = new THREE.Color('#4b4f7c');
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    c.copy(dark).lerp(light, Math.max(0, Math.min(1, (pos.getY(i) + 1) / 2)));
+    col.set([c.r, c.g, c.b], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+})();
+const cloudMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.97, fog: false });
+const boltMat = new THREE.MeshBasicMaterial({
+  color: new THREE.Color('#fff7b0').multiplyScalar(3), // above 1.0: blooms
+  transparent: true,
+  opacity: 1,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  fog: false,
+});
+/** Height of the cloud above the kart (m), and the number of zig-zag segments of the bolt. */
+export const CLOUD_HEIGHT = 5.2;
+const BOLT_SEGMENTS = 9;
+
+export interface StormCloud {
+  /** Add to the SCENE (not to the kart: it must not shrink with the kart). Hidden while inactive. */
+  object: THREE.Object3D;
+  /** Place over (x, y, z) (the kart). `zap` = seconds left of the strike (0 = no cloud), `zapTotal` = its full length. */
+  update(dt: number, x: number, y: number, z: number, zap: number, zapTotal: number): void;
+  dispose(): void;
+}
+
+export function buildStormCloud(): StormCloud {
+  const root = new THREE.Group();
+  root.visible = false;
+  // A fluffy flat-bottomed cloud from squashed spheres.
+  const cloud = new THREE.Group();
+  for (const [x, y, z, r] of [[0, 0, 0, 1.5], [-1.5, -0.15, 0.2, 1.1], [1.5, -0.1, -0.1, 1.15], [0.6, 0.55, 0.3, 1.0], [-0.7, 0.45, -0.3, 0.95], [0.1, -0.2, -0.9, 1.0], [0.1, -0.15, 0.95, 0.95]]) {
+    const m = new THREE.Mesh(cloudPuffGeo, cloudMat);
+    m.position.set(x, y, z);
+    m.scale.set(r, r * 0.66, r);
+    m.castShadow = false;
+    cloud.add(m);
+  }
+  cloud.position.y = CLOUD_HEIGHT;
+  root.add(cloud);
+  // Two crossed ribbons make the bolt visible from every side. Positions are rewritten a few times per second.
+  const boltGeo = new THREE.BufferGeometry();
+  const verts = new Float32Array(2 * BOLT_SEGMENTS * 2 * 3);
+  boltGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  const idx: number[] = [];
+  for (let s = 0; s < 2; s++) {
+    for (let i = 0; i < BOLT_SEGMENTS - 1; i++) {
+      const a = (s * BOLT_SEGMENTS + i) * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  boltGeo.setIndex(idx);
+  const bolt = new THREE.Mesh(boltGeo, boltMat);
+  bolt.frustumCulled = false;
+  root.add(bolt);
+  let boltClock = 0;
+  const rebuildBolt = () => {
+    const pos = boltGeo.getAttribute('position') as THREE.BufferAttribute;
+    let jx = 0;
+    let jz = 0;
+    for (let i = 0; i < BOLT_SEGMENTS; i++) {
+      const u = i / (BOLT_SEGMENTS - 1);
+      const y = CLOUD_HEIGHT - 0.6 - u * (CLOUD_HEIGHT - 0.6 - 0.4);
+      jx = i === BOLT_SEGMENTS - 1 ? 0 : jx * 0.5 + (Math.random() - 0.5) * 1.3 * (1 - u * 0.4);
+      jz = i === BOLT_SEGMENTS - 1 ? 0 : jz * 0.5 + (Math.random() - 0.5) * 1.3 * (1 - u * 0.4);
+      const w = 0.2 * (1 - u * 0.5);
+      // Ribbon 0 spreads along x, ribbon 1 along z.
+      pos.setXYZ(i * 2, jx - w, y, jz);
+      pos.setXYZ(i * 2 + 1, jx + w, y, jz);
+      pos.setXYZ((BOLT_SEGMENTS + i) * 2, jx, y, jz - w);
+      pos.setXYZ((BOLT_SEGMENTS + i) * 2 + 1, jx, y, jz + w);
+    }
+    pos.needsUpdate = true;
+  };
+  rebuildBolt();
+  return {
+    object: root,
+    update(dt, x, y, z, zap, zapTotal) {
+      root.visible = zap > 0;
+      if (!root.visible) return;
+      root.position.set(x, y, z);
+      const age = zapTotal - zap;
+      // The cloud swells in (0.2 s) and shrinks away over the last 0.3 s; it drifts and rumbles a little.
+      const grow = Math.min(1, age / 0.2) * Math.min(1, zap / 0.3);
+      const e = grow * grow * (3 - 2 * grow);
+      cloud.scale.setScalar(Math.max(0.001, e));
+      cloud.position.y = CLOUD_HEIGHT + (1 - e) * 1.5 + Math.sin(age * 9) * 0.06;
+      cloud.rotation.y = age * 0.6;
+      // The bolt strikes at 0.12 s and flickers for about 0.5 s (a new jagged shape every ~50 ms).
+      const striking = age > 0.12 && age < 0.65;
+      bolt.visible = striking;
+      if (striking) {
+        boltClock += dt;
+        if (boltClock > 0.05) {
+          boltClock = 0;
+          rebuildBolt();
+        }
+        boltMat.opacity = 0.55 + 0.45 * Math.abs(Math.sin(age * 70));
+      }
+      // The cloud lights up while the bolt flashes.
+      cloudMat.color.setScalar(striking ? 1.9 : 1);
+    },
+    dispose() {
+      boltGeo.dispose();
     },
   };
 }

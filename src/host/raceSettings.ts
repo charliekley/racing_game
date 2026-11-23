@@ -61,10 +61,9 @@ export function slotColor(slot: number, playerColor: number | undefined, fill: R
 }
 
 /**
- * The toast text a hit or bump earns the ATTACKER ("HIT NAME!" / "BUMPED NAME!"), or null when there is none:
+ * The toast text a hit earns the ATTACKER ("HIT NAME!"), or null when there is none:
  * bots do not get one, so it only says something when the victim is a person. Pure so it can be tested.
  */
-export function attackToast(kind: 'hit' | 'bumped', victimName: string, victimIsHuman: boolean): string | null {
-  if (!victimIsHuman) return null;
-  return kind === 'hit' ? `HIT ${victimName}!` : `BUMPED ${victimName}!`;
+export function attackToast(victimName: string, victimIsHuman: boolean): string | null {
+  return victimIsHuman ? `HIT ${victimName}!` : null;
 }

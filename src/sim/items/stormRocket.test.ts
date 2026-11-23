@@ -16,7 +16,7 @@ import { BotPack } from '../bots';
 import { botLoadoutFor } from '../classes';
 import { stepCannons } from '../cannon';
 import { ITEMS, KART, SIM_DT } from '../config';
-import { createKart, stepKart, stepSize, type KartState } from '../kart';
+import { createKart, stepSize, type KartState } from '../kart';
 import { Track } from '../track';
 import { World, type WorldEvent } from '../world';
 import { ItemSystem, type ItemEvent } from './items';

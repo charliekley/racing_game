@@ -73,4 +73,35 @@ describe('KartView effects', () => {
     for (let i = 0; i < 20; i++) view.update(kart, kart, 1, 1 / 60);
     expect(view.face.current).toBe('gritted');
   });
+
+  it('Storm: a shrunk kart is drawn small, a squashed one flat and wide, and the cloud shows only over a struck kart', () => {
+    const { scene, view, kart } = setup();
+    view.update(kart, kart, 1, 1 / 60);
+    expect(view.model.root.scale.x).toBeCloseTo(1);
+    kart.size = 0.38;
+    view.update(kart, kart, 1, 1 / 60);
+    expect(view.model.root.scale.x).toBeCloseTo(0.38);
+    // Squashed: after a moment the kart is much lower than wide.
+    kart.squashTime = 1;
+    for (let i = 0; i < 30; i++) view.update(kart, kart, 1, 1 / 60);
+    const sc = view.model.root.scale;
+    expect(sc.y).toBeLessThan(sc.x * 0.4);
+    // The cloud is a separate scene object (it must not shrink with the kart), visible only while the strike lasts.
+    const cloud = () => scene.children.find((o) => o.children.length === 2 && o.children[0].children.length === 7); // [puffs group, bolt]
+    expect(cloud()?.visible).toBe(false);
+    kart.zapTime = 0.8;
+    view.update(kart, kart, 1, 1 / 60);
+    expect(cloud()?.visible).toBe(true);
+  });
+
+  it('Rocket: the capsule wraps the kart while rocketTime runs and pops away afterwards', () => {
+    const { view, kart } = setup();
+    const shell = () => view.model.root.children.find((o) => o.children.length === 1 && o.children[0].children.length >= 6);
+    kart.rocketTime = 5;
+    for (let i = 0; i < 30; i++) view.update(kart, kart, 1, 1 / 60);
+    expect(shell()?.visible).toBe(true);
+    kart.rocketTime = 0;
+    for (let i = 0; i < 90; i++) view.update(kart, kart, 1, 1 / 60);
+    expect(shell()?.visible).toBe(false);
+  });
 });

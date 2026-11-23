@@ -451,7 +451,7 @@ function startDriving() {
   game.racers = racers; // RACERS: bots fill the grid up to this many karts
   game.knockout = seriesHost.series?.mode === 'knockout'; // Knockout: more laps, the last kart is out after every lap
   if (import.meta.env.DEV) (window as unknown as { __game?: Game }).__game = game; // debugging aid (dev server only)
-  // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, magnet, bumper, random) = endless supply of that item.
+  // Practice aid: /host/?give=nova (or dash, slick (the Peel), ricochet, seeker, jumble, storm, rocket, random) = endless supply of that item.
   const give = new URLSearchParams(location.search).get('give');
   game.devItem = give === 'random' || (ITEM_IDS as readonly string[]).includes(give ?? '') ? (give as ItemId | 'random') : null;
   game.start(players.slots.players.map((p) => p.index));

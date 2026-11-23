@@ -30,7 +30,7 @@ import { setKartDetail, type KartDetail } from '../render/kartModel';
 import { KartView } from '../render/kartView';
 import { reactionsForEvent, tailgateSide, type FaceContext } from '../render/kart/expression';
 import { CHARACTERS, DEFAULT_LOADOUT, KART_BODIES, sanitizeLoadout } from '../shared/characters';
-import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, buildItemBox } from '../render/itemMeshes';
+import { ItemMeshPool, animateItemBox, buildEntityMesh, buildHeldItemMesh, buildItemBox, buildRocketShell, buildStormCloud } from '../render/itemMeshes';
 import { splitLayout, toViewport, type Rect } from '../render/layout';
 import { CannonView } from '../render/cannonView';
 import { HazardViews } from '../render/hazards';
@@ -87,7 +87,20 @@ const HAPTICS = {
   cannonFire: [120, 30, 60],
   cannonLand: [35],
   wrongWay: [80, 60, 80],
+  /** Storm: a lightning strike (to every victim) and being squashed flat. */
+  zapped: [30, 20, 30, 20, 120],
+  squashed: [90, 30, 40],
+  /** Rocket: a kick at the start, then a rumble that lasts about as long as the flight (ITEMS.rocketTime). */
+  rocketStart: [40, 40, 80, 40, 160],
+  rocketEnd: [50],
 } as const;
+
+/** The rumble of a Rocket flight: the start kick, then short buzzes about every half second while it lasts (a vibration pattern, ms on/off). */
+const ROCKET_RUMBLE: readonly number[] = (() => {
+  const out: number[] = [...HAPTICS.rocketStart, 200];
+  for (let t = 0.5; t < ITEMS.rocketTime - 0.5; t += 0.5) out.push(45, 455);
+  return out;
+})();
 
 export interface GameCallbacks {
   /** Countdown finished, racing has begun. */
@@ -346,11 +359,18 @@ export class Game {
     const camera = this.views[0]?.chase.camera;
     if (!camera) return;
     const temp = new THREE.Group();
-    for (const kind of ['slick', 'ricochet', 'seeker', 'magnet', 'bumper'] as const) {
+    for (const kind of ['slick', 'ricochet', 'seeker'] as const) {
       temp.add(buildEntityMesh(kind));
       const held = buildHeldItemMesh(kind);
       if (held) temp.add(held);
     }
+    // The Rocket capsule and the Storm cloud + bolt (switched on once so their shaders compile too).
+    const shell = buildRocketShell();
+    shell.update(1, 0, true, 5);
+    temp.add(shell.object);
+    const cloud = buildStormCloud();
+    cloud.update(0.1, 0, 0, 0, 0.5, 1.1);
+    temp.add(cloud.object);
     this.scene.add(temp);
     const done = () => this.scene.remove(temp);
     this.pipeline.compileAsync(this.scene, camera).then(done, done);
@@ -613,7 +633,7 @@ export class Game {
         st.slot = slot;
         st.human = !this.isBot(slot);
         st.speed = k.speed;
-        st.boosting = k.boostTime > 0;
+        st.boosting = k.boostTime > 0 || k.rocketTime > 0; // (a rocket revs high)
         st.grounded = k.grounded;
         st.drift = k.driftDir !== 0 ? 1 + k.driftTier : 0;
         st.silent = !!k.flight || k.respawnTime > 0;
@@ -662,7 +682,7 @@ export class Game {
       const racer = race.racers.get(v.slot)!;
       // Tell the camera what the kart is doing: it kicks the FOV, widens in the air, orbits at the finish...
       const cs = this.camState;
-      cs.boosting = kart.boostTime > 0;
+      cs.boosting = kart.boostTime > 0 || kart.rocketTime > 0; // the FOV kick also tells you the Rocket is on
       cs.grounded = kart.grounded;
       cs.flightPhase = kart.flight?.phase ?? null;
       cs.finished = racer.finished;
@@ -903,7 +923,7 @@ export class Game {
         }
         break;
       case 'hit':
-        this.fx.hit(p.x, p.y, p.z);
+        if (e.by !== 'storm') this.fx.hit(p.x, p.y, p.z); // (a Storm strike has its own lightning burst, see `shrunk`)
         hud?.flash('hit');
         this.shake(e.slot, 0.8);
         break;
@@ -916,9 +936,18 @@ export class Game {
         this.fx.itemPop(p.x, p.y + 0.4, p.z);
         this.shake(e.slot, 0.2);
         break;
-      case 'bumped': // knocked aside by a Bumper orb
-        this.fx.bump(p.x, p.y, p.z);
-        this.shake(e.slot, 0.45);
+      case 'shrunk': // struck by a Storm
+        this.fx.zap(p.x, p.y, p.z);
+        hud?.flash('hit');
+        this.shake(e.slot, 0.7);
+        break;
+      case 'squashed': // a full-size kart drove over this shrunk one
+        this.fx.squash(p.x, p.y, p.z);
+        this.shake(e.slot, 0.3);
+        break;
+      case 'rocketEnd':
+        this.fx.rocketEnd(p.x, p.y, p.z);
+        this.shake(e.slot, 0.2);
         break;
       case 'itemBox':
         this.fx.pickup(p.x, p.y, p.z);
@@ -932,6 +961,13 @@ export class Game {
           hud?.flash('boost');
         } else if (e.id === 'nova') {
           this.fx.pickup(p.x, p.y, p.z);
+        } else if (e.id === 'rocket') {
+          this.fx.rocketStart(p.x, p.y, p.z, p.heading);
+          hud?.flash('boost');
+          this.shake(e.slot, 0.5);
+        } else if (e.id === 'storm') {
+          hud?.flash('item'); // the user's own screen blinks: the lightning is on its way to the others
+          this.shake(e.slot, 0.25);
         }
         break;
       case 'cannonFire':
@@ -1073,13 +1109,13 @@ export class Game {
           this.sendStatus();
           break;
         case 'itemUse':
-          this.haptic(e.slot, HAPTICS.itemUse);
+          this.haptic(e.slot, e.id === 'rocket' ? ROCKET_RUMBLE : HAPTICS.itemUse);
           this.sendStatus();
           break;
         case 'hit': {
           this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : HAPTICS.spunOut);
           this.players.sendTo(e.slot, { t: 'drift', tier: null });
-          if (e.attacker !== null && e.attacker !== e.slot) this.attackToast(e.attacker, 'hit', e.slot, 1.2);
+          if (e.attacker !== null && e.attacker !== e.slot) this.attackToast(e.attacker, e.slot, 1.2);
           this.sendStatus();
           break;
         }
@@ -1090,9 +1126,16 @@ export class Game {
         case 'blocked':
           this.haptic(e.slot, HAPTICS.itemUse);
           break;
-        case 'bumped':
-          this.haptic(e.slot, HAPTICS.novaHit);
-          if (e.attacker !== e.slot) this.attackToast(e.attacker, 'bumped', e.slot, 1.0);
+        case 'shrunk': // the Storm's victims buzz hard (their item is gone: the phone learns it from the status)
+          this.haptic(e.slot, HAPTICS.zapped);
+          this.players.sendTo(e.slot, { t: 'drift', tier: null });
+          this.sendStatus();
+          break;
+        case 'squashed':
+          this.haptic(e.slot, HAPTICS.squashed);
+          break;
+        case 'rocketEnd':
+          this.haptic(e.slot, HAPTICS.rocketEnd);
           break;
         case 'jumbled':
           this.haptic(e.slot, HAPTICS.spunOut);
@@ -1106,9 +1149,9 @@ export class Game {
     return (this.players.slots.slots[slot]?.name ?? (isFillBot(slot) ? fillBotName(slot) : `P${slot + 1}`)).toUpperCase();
   }
 
-  /** "HIT NAME!" / "BUMPED NAME!" for the attacker, only when the victim is a person (not a bot): see attackToast in raceSettings.ts. */
-  private attackToast(attacker: number, kind: 'hit' | 'bumped', victim: number, seconds: number): void {
-    const text = attackToast(kind, this.nameOf(victim), !this.isBot(victim));
+  /** "HIT NAME!" for the attacker, only when the victim is a person (not a bot): see attackToast in raceSettings.ts. */
+  private attackToast(attacker: number, victim: number, seconds: number): void {
+    const text = attackToast(this.nameOf(victim), !this.isBot(victim));
     if (text) this.toast(attacker, text, seconds);
   }
 

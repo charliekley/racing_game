@@ -59,7 +59,8 @@ function shine(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, 
 }
 
 // ---------------------------------------------------------------------------
-// dash: a flame with a lightning bolt on top (speed boost)
+// dash: a flame with two speed chevrons (">>" pointing up) on it. (It used to carry a lightning bolt; that
+// shape now belongs to the Storm, so the two can never be confused.)
 // ---------------------------------------------------------------------------
 const dash = unit((ctx, t) => {
   // The flame tip flickers a little.
@@ -89,13 +90,14 @@ const dash = unit((ctx, t) => {
   ctx.fillStyle = '#ffd60a';
   ctx.fill();
 
-  // Lightning bolt
-  polygon(ctx, [
-    [0.58, 0.2], [0.32, 0.56], [0.48, 0.56], [0.4, 0.86],
-    [0.7, 0.46], [0.54, 0.46], [0.66, 0.2],
-  ]);
-  fillOutline(ctx, '#fff3a0');
-  shine(ctx, 0.5, 0.33, 0.025, 0.07, 0.6);
+  // Two stacked chevrons pointing up: "go faster". The upper one pulses a little.
+  const pulse = Math.sin(t / 160) * 0.015;
+  for (const [y, fill] of [[0.4 - pulse, '#ffffff'], [0.6, '#fff3a0']] as const) {
+    polygon(ctx, [
+      [0.5, y - 0.14], [0.72, y + 0.04], [0.72, y + 0.15], [0.5, y - 0.03], [0.28, y + 0.15], [0.28, y + 0.04],
+    ]);
+    fillOutline(ctx, fill, 0.04);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -413,77 +415,150 @@ const unknown = unit((ctx) => {
 });
 
 // ---------------------------------------------------------------------------
-// magnet: red horseshoe with silver tips and pulsing field arcs
+// storm: a dark thundercloud with a blazing yellow lightning bolt and rain
 // ---------------------------------------------------------------------------
-const magnet = unit((ctx, t) => {
-  // Field arcs pulse outward from the open end.
-  const ph = (t / 900) % 1;
-  for (let i = 0; i < 2; i++) {
-    const p = (ph + i * 0.5) % 1;
-    ctx.globalAlpha = 1 - p;
-    ctx.lineWidth = 0.03;
-    ctx.strokeStyle = '#46c8ff';
-    ctx.beginPath();
-    ctx.arc(0.5, 0.78, 0.12 + p * 0.2, Math.PI * 1.2, Math.PI * 1.8);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  // The bend is a thick arc; the legs are short thick strokes.
-  const draw = (width: number, color: string) => {
-    ctx.lineCap = 'butt';
-    ctx.lineWidth = width;
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0.25, 0.7);
-    ctx.lineTo(0.25, 0.42);
-    ctx.arc(0.5, 0.42, 0.25, Math.PI, 0);
-    ctx.lineTo(0.75, 0.7);
-    ctx.stroke();
-  };
-  draw(0.27, OUTLINE);
-  draw(0.19, '#e8362e');
-  // Silver tips with an outline.
-  for (const x of [0.25, 0.75]) {
-    ctx.beginPath();
-    ctx.rect(x - 0.095, 0.62, 0.19, 0.17);
-    fillOutline(ctx, '#d8dde8');
-  }
-  shine(ctx, 0.36, 0.3, 0.05, 0.02, -0.7);
-});
+const storm = unit((ctx, t) => {
+  // The bolt flashes now and then (a short bright pulse every ~1.4 s).
+  const flash = Math.max(0, Math.sin(t / 220 + 1)) ** 6;
 
-// ---------------------------------------------------------------------------
-// bumper: orange studded orb with a circling arrow-trail
-// ---------------------------------------------------------------------------
-const bumper = unit((ctx, t) => {
-  const spin = t / 600;
-  // Studs around the orb.
-  for (let i = 0; i < 6; i++) {
-    const a = spin + (i / 6) * TAU;
-    ctx.beginPath();
-    ctx.arc(0.5 + Math.cos(a) * 0.33, 0.5 + Math.sin(a) * 0.33, 0.07, 0, TAU);
-    fillOutline(ctx, '#3a3d50', 0.035);
-  }
-  // Orb.
-  const grad = ctx.createRadialGradient(0.42, 0.4, 0.03, 0.5, 0.5, 0.26);
-  grad.addColorStop(0, '#ffd08a');
-  grad.addColorStop(1, '#ff6a12');
-  ctx.beginPath();
-  ctx.arc(0.5, 0.5, 0.25, 0, TAU);
-  fillOutline(ctx, grad);
-  shine(ctx, 0.41, 0.4, 0.07, 0.035, -0.7);
-  // A "knock" mark on the outside.
+  // Rain streaks behind the bolt.
+  ctx.strokeStyle = '#7fb4ff';
   ctx.lineWidth = 0.03;
-  ctx.strokeStyle = '#ffffff';
+  for (const [x, y] of [[0.2, 0.62], [0.3, 0.74], [0.76, 0.64], [0.84, 0.76], [0.14, 0.82]]) {
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 0.035, y + 0.09);
+    ctx.stroke();
+  }
+
+  // The cloud is a union of circles: outline them all first (thick), then fill them all, so only the outer edge is outlined.
+  const blobs: number[][] = [[0.3, 0.42, 0.17], [0.5, 0.32, 0.21], [0.7, 0.42, 0.17], [0.5, 0.46, 0.2]];
+  const cloud = (lw: number, fill: string | null) => {
+    for (const [x, y, r] of blobs) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      } else {
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = OUTLINE;
+        ctx.stroke();
+      }
+    }
+  };
+  cloud(LW * 2, null);
+  const g = ctx.createLinearGradient(0, 0.15, 0, 0.62);
+  g.addColorStop(0, '#6a6f95');
+  g.addColorStop(1, '#2e2f55');
+  cloud(0, g as unknown as string);
+  // A paler rim light on the top-left and a dark underside.
   ctx.beginPath();
-  ctx.arc(0.5, 0.5, 0.43, spin + 0.2, spin + 0.7);
+  ctx.arc(0.5, 0.32, 0.15, Math.PI * 1.05, Math.PI * 1.55);
+  ctx.lineWidth = 0.03;
+  ctx.strokeStyle = 'rgba(200,205,255,0.55)';
   ctx.stroke();
+
+  // The bolt (glow first when it flashes).
+  const bolt = [[0.56, 0.5], [0.34, 0.8], [0.48, 0.8], [0.4, 0.99], [0.7, 0.66], [0.56, 0.66], [0.68, 0.5]];
+  if (flash > 0.05) {
+    ctx.save();
+    ctx.globalAlpha = flash * 0.7;
+    ctx.lineWidth = 0.16;
+    ctx.strokeStyle = '#fff6a8';
+    polygon(ctx, bolt);
+    ctx.stroke();
+    ctx.restore();
+  }
+  polygon(ctx, bolt);
+  fillOutline(ctx, flash > 0.3 ? '#ffffff' : '#ffe52e', 0.045);
 });
 
-export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble, magnet, bumper };
+// ---------------------------------------------------------------------------
+// rocket: a fat magenta capsule with a round window, three fins and a big flame
+// ---------------------------------------------------------------------------
+const rocket = unit((ctx, t) => {
+  const flick = 1 + Math.sin(t / 55) * 0.12 + Math.sin(t / 37) * 0.07;
+
+  // Speed lines in the lower right.
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 0.035;
+  for (const [x1, y1, x2, y2] of [[0.86, 0.5, 0.97, 0.5], [0.78, 0.72, 0.9, 0.72], [0.5, 0.88, 0.5, 0.98]]) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  // Drawn pointing along +x, then rotated to fly up and to the right.
+  ctx.save();
+  ctx.translate(0.5, 0.5);
+  ctx.rotate(-Math.PI / 4);
+
+  // Flame: orange outer, yellow inner, flickering length.
+  const L = 0.3 * flick;
+  ctx.beginPath();
+  ctx.moveTo(-0.22, -0.1);
+  ctx.quadraticCurveTo(-0.22 - L * 0.7, -0.12, -0.22 - L, 0);
+  ctx.quadraticCurveTo(-0.22 - L * 0.7, 0.12, -0.22, 0.1);
+  ctx.closePath();
+  fillOutline(ctx, '#ff7a1a', 0.035);
+  ctx.beginPath();
+  ctx.moveTo(-0.22, -0.055);
+  ctx.quadraticCurveTo(-0.22 - L * 0.45, -0.06, -0.22 - L * 0.62, 0);
+  ctx.quadraticCurveTo(-0.22 - L * 0.45, 0.06, -0.22, 0.055);
+  ctx.closePath();
+  ctx.fillStyle = '#ffe14a';
+  ctx.fill();
+
+  // Fins: two swept side fins and one small centre fin (seen edge-on as a short stub).
+  for (const sy of [-1, 1]) {
+    polygon(ctx, [[-0.06, sy * 0.15], [-0.26, sy * 0.33], [-0.26, sy * 0.15], [-0.2, sy * 0.1]]);
+    fillOutline(ctx, '#6a3df0', 0.035);
+  }
+
+  // Capsule body: fat, rounded at both ends, magenta with a lighter belly.
+  ctx.beginPath();
+  ctx.moveTo(-0.22, -0.15);
+  ctx.lineTo(0.05, -0.17);
+  ctx.quadraticCurveTo(0.3, -0.16, 0.36, 0);
+  ctx.quadraticCurveTo(0.3, 0.16, 0.05, 0.17);
+  ctx.lineTo(-0.22, 0.15);
+  ctx.quadraticCurveTo(-0.27, 0, -0.22, -0.15);
+  ctx.closePath();
+  const body = ctx.createLinearGradient(0, -0.17, 0, 0.17);
+  body.addColorStop(0, '#ff7ad9');
+  body.addColorStop(0.5, '#e2269f');
+  body.addColorStop(1, '#a8127a');
+  fillOutline(ctx, body, 0.04);
+
+  // Silver nose cap.
+  ctx.beginPath();
+  ctx.moveTo(0.17, -0.168);
+  ctx.quadraticCurveTo(0.3, -0.15, 0.36, 0);
+  ctx.quadraticCurveTo(0.3, 0.15, 0.17, 0.168);
+  ctx.quadraticCurveTo(0.22, 0, 0.17, -0.168);
+  ctx.closePath();
+  fillOutline(ctx, '#e8edf5', 0.03);
+
+  // White band and the round window (glass with a highlight).
+  ctx.beginPath();
+  ctx.rect(-0.14, -0.163, 0.05, 0.326);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0.03, 0, 0.075, 0, TAU);
+  fillOutline(ctx, '#46c8ff', 0.035);
+  shine(ctx, 0.01, -0.025, 0.025, 0.014, -0.6);
+  shine(ctx, -0.02, -0.11, 0.07, 0.012);
+  ctx.restore();
+});
+
+export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble, storm, rocket };
 
 /** Icons that move over time, so the host view must keep redrawing them. */
 export function isIconAnimated(id: string): boolean {
-  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble' || id === 'magnet' || id === 'bumper';
+  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble' || id === 'storm' || id === 'rocket';
 }
 
 /** Draw `id` (any string; unknown ids get a "?"), plus a "×N" badge if count > 1. Clears nothing. */

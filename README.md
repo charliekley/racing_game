@@ -4,7 +4,7 @@ A browser-based, 4-player split-screen kart racer. The **laptop/TV runs the game
 in a browser, and **each player's phone becomes a tilt steering wheel** through a
 web page. There's no app to install. All names, art and sounds are original.
 
-> **Status: Milestone 6 of 7.** Item boxes and seven items are in (see "Items"). Drifting with blue/orange mini-turbos, ramp
+> **Status: Milestone 6 of 7.** Item boxes and eight items are in (see "Items"). Drifting with blue/orange mini-turbos, ramp
 > tricks, a water jump and a respawn drone are in. Phones connect with a room code + QR code and
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
@@ -160,7 +160,7 @@ You can slide your thumb between GAS and BRAKE without lifting it.
 **Items:** drive through the rainbow **item boxes** (rows of three; they come back
 5 s later). A roulette spins for about 1.6 s on the phone and the TV, then you
 get an item. **The further back you are, the better your items** (leaders mostly
-get Peels, Ricochets and Bumpers and never the strongest ones). You can only hold one
+get Peels and Ricochets and never the strongest ones). You can only hold one
 at a time. On the phone the item's icon appears in the **ITEM button** itself.
 
 | Item | What it does |
@@ -168,11 +168,11 @@ at a time. On the phone the item's icon appears in the **ITEM button** itself.
 | **Dash** (single or pack of 3) | Instant speed boost. The pack gives three boosts, one per tap. |
 | **Peel** (internal id `slick`) | A 3-D fruit peel that lies on the road (it follows banking, hills and ramps) and spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
 | **Ricochet** | A fast shot that bounces off walls a few times. **Tap** to fire forward, or hold **BRAKE** while you let go to fire **backward**. Hold ITEM to drag it behind you first. |
-| **Seeker** | A homing shot that chases the racer directly ahead of you. If you're in the lead it just flies straight. |
+| **Seeker** | A homing shot that **follows the road** to the racer directly ahead of you (round corners and hairpins, and over jumps, ravines and cannon gaps through the air), then homes in when it is close. If you're in the lead it follows the road and hits whoever it meets. |
 | **Nova** | 7 s of invincibility: faster, ignores grass, immune to hits, and bumping a rival spins them out. |
 | **Jumble** | Sprays ink on the **two racers just ahead of you**: their steering is flipped left/right for 4.5 s and an ink splat covers part of a human's screen. Computer drivers have to re-learn the controls (they veer, over-correct, wobble and lift; easy bots suffer most, hard bots least) and can run wide. **Rare, and only for karts well behind** (nothing in the front half of the field); Nova blocks it. |
-| **Magnet** | For 3.5 s you are towed toward the kart ahead (within 40 m): a boost that stops when you catch up and never takes you much faster than that kart. A comeback item (never in the lead); a spin-out cancels it. A beam shows who you are tugging toward. |
-| **Bumper** | An orange studded orb circles your kart for 7 s. Any other kart that touches it is shoved sideways and loses about a quarter of its speed (no spin-out); it also swallows shots. It pops after 3 bumps or blocked shots. Nova karts shrug it off. Good for the leader, to keep rivals off your tail. |
+| **Storm** (lightning) | A dark cloud and a bolt strike **every racer ahead of you at once**: they drop their item, spin out and shrink to a tiny size (slower, lighter, easy to bump into barriers). The one furthest back grows back first (almost at once), the leader last (about 10 s): a great equaliser. A full-size kart that drives over a tiny one flattens it. Rockets and Nova karts are immune; karts behind you are not affected. **Rare, and only for karts well back.** |
+| **Rocket** | Your kart becomes a rocket: a glowing capsule that is driven **automatically** along the track at very high speed for 7 s (steering is taken over, it follows the road over jumps, ravines and cannons). It is invincible, nothing can hit it and it knocks other karts aside (they spin out). At the end you get a small boost and a short grace. **Only for karts far back, never for the leaders.** |
 
 Getting hit spins you out for about 1.3 s: no steering, most of your speed and
 any boost lost, and Android buzzes. A hit while dragging an item loses it (a
@@ -352,7 +352,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 ## 6. Milestone 6 test checklist
 
 1. **Practice mode:** open `/host/?drive=2&give=nova` (or `dash`, `slick` (the Peel),
-   `ricochet`, `seeker`, `jumble`, `magnet`, `bumper`, `random`). Everyone has an endless supply of that item
+   `ricochet`, `seeker`, `jumble`, `storm`, `rocket`, `random`). Everyone has an endless supply of that item
    so you can try it without hunting boxes. The icon shows in the box at the top
    of each player's view. Use **E** (the keyboard player's ITEM key).
 2. **Boxes:** in a normal race (`/host/?drive=2`), look for rows of three rainbow
@@ -371,7 +371,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
 7. **Phones:** the roulette animates on the phone, then the item's icon shows in
    the middle (with ×3 for a Dash pack). Tap ITEM (left side, top button) to use
    it. Android buzzes when you get an item, use one, or get hit. The lobby's **Test item** button cycles every icon on a phone.
-8. Computer drivers use items too: watch for them dropping peels, firing shots and circling with bumper orbs.
+8. Computer drivers use items too: watch for them dropping peels, firing shots, and the back markers using Rockets and Storms.
 
 ## 7. Milestone 5 test checklist
 

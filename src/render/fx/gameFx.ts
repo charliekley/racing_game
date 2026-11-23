@@ -38,6 +38,7 @@ interface KartFx {
   smokeAcc: number;
   flameAcc: number;
   starAcc: number;
+  rocketAcc: number;
   lastTier: number;
 }
 
@@ -127,7 +128,7 @@ export class GameFx {
   kartTick(slot: number, view: KartView, cur: KartState, dt: number): void {
     let f = this.perKart.get(slot);
     if (!f) {
-      f = { skidValid: [false, false], skidX: [0, 0], skidZ: [0, 0], smokeAcc: 0, flameAcc: 0, starAcc: 0, lastTier: 0 };
+      f = { skidValid: [false, false], skidX: [0, 0], skidZ: [0, 0], smokeAcc: 0, flameAcc: 0, starAcc: 0, rocketAcc: 0, lastTier: 0 };
       this.perKart.set(slot, f);
     }
     const p = view.pose;
@@ -208,6 +209,25 @@ export class GameFx {
       // Soft streaks left in the air behind the kart (the "speed trail").
       for (let i = this.n(1.2); i > 0; i--) {
         this.glow.emit(p.x - fx * 1.2 + rand(-0.5, 0.5), p.y + rand(0.2, 0.9), p.z - fz * 1.2 + rand(-0.5, 0.5), -fx * 2, 0, -fz * 2, rand(0.3, 0.5), 0.22, 0.02, 0xffb347, 0.45, 2);
+      }
+    }
+
+    // --- Rocket: a roaring exhaust trail (orange / yellow flame, sparks and a smoke line) behind the capsule -------
+    if (cur.rocketTime > 0) {
+      f.rocketAcc += 150 * dt;
+      const k = Math.floor(f.rocketAcc);
+      f.rocketAcc -= k;
+      const tx = p.x - fx * 2.5; // (the chase camera is 3.9 m behind the kart: keep the flame this side of it)
+      const tz = p.z - fz * 2.5;
+      const ty = p.y + 0.6;
+      for (let i = this.n(k); i > 0; i--) {
+        this.glow.emit(tx + rand(-0.35, 0.35), ty + rand(-0.35, 0.35), tz + rand(-0.35, 0.35), -fx * rand(2, 7) + rand(-1.2, 1.2), rand(-0.6, 0.6), -fz * rand(2, 7) + rand(-1.2, 1.2), rand(0.3, 0.6), rand(0.25, 0.55), 0.06, Math.random() < 0.45 ? 0xffe98a : Math.random() < 0.5 ? 0xff9a2e : 0xff5ac8, 0.9, 1.5);
+      }
+      for (let i = this.n(1.4); i > 0; i--) {
+        this.smoke.emit(tx - fx * 0.6 + rand(-0.4, 0.4), ty + rand(-0.3, 0.3), tz - fz * 0.6 + rand(-0.4, 0.4), -fx * 1.5, rand(0, 0.8), -fz * 1.5, rand(0.5, 0.9), 0.35, 1.4, 0xe0dce8, 0.35, 1.2, -0.3);
+      }
+      for (let i = this.n(0.6); i > 0; i--) {
+        this.stars.emit(tx + rand(-0.5, 0.5), ty + rand(-0.4, 0.4), tz + rand(-0.5, 0.5), -fx * rand(1, 4) + rand(-2, 2), rand(-1, 2), -fz * rand(1, 4) + rand(-2, 2), rand(0.35, 0.6), 0.45, 0.1, 0xfff0b0, 0.95, 0.5);
       }
     }
 
@@ -319,6 +339,66 @@ export class GameFx {
     for (let i = this.n(8); i > 0; i--) {
       const a = Math.random() * 6.28;
       this.stars.emit(x, y + 1.2, z, Math.cos(a) * rand(2, 4), rand(2, 5), Math.sin(a) * rand(2, 4), rand(0.5, 0.9), 0.55, 0.15, 0xffe14a, 1, 0.5, 8);
+    }
+  }
+
+  /** A kart turns into a Rocket: an ignition burst of flame and smoke at the tail, and a ring of sparks round the capsule. */
+  rocketStart(x: number, y: number, z: number, heading: number): void {
+    const bx = -Math.sin(heading);
+    const bz = -Math.cos(heading);
+    for (let i = this.n(28); i > 0; i--) {
+      this.glow.emit(x + bx * 2.5, y + rand(0.2, 1), z + bz * 2.5, bx * rand(6, 16) + rand(-3, 3), rand(-0.5, 2), bz * rand(6, 16) + rand(-3, 3), rand(0.3, 0.6), rand(0.5, 1.0), 0.05, Math.random() < 0.5 ? 0xffe98a : 0xff7a1a, 0.95, 2);
+    }
+    for (let i = this.n(14); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.smoke.emit(x + bx * 2, y + 0.4, z + bz * 2, Math.cos(a) * 4, rand(0.3, 2), Math.sin(a) * 4, rand(0.7, 1.2), 0.9, 2.8, 0xe6e2ee, 0.6, 1.5, -0.4);
+    }
+    for (let i = this.n(16); i > 0; i--) {
+      const a = (i / 16) * 6.28;
+      this.stars.emit(x, y + 0.8, z, Math.cos(a) * rand(4, 7), rand(0.5, 3), Math.sin(a) * rand(4, 7), rand(0.4, 0.7), 0.6, 0.15, 0xff9ae6, 1, 0.8);
+    }
+  }
+
+  /** The Rocket ends: the capsule pops into sparks. */
+  rocketEnd(x: number, y: number, z: number): void {
+    for (let i = this.n(26); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      const sp = rand(3, 9);
+      this.glow.emit(x, y + 0.8, z, Math.cos(a) * sp, rand(1, 6), Math.sin(a) * sp, rand(0.4, 0.8), rand(0.3, 0.6), 0.05, Math.random() < 0.5 ? 0xff7ad9 : 0xffe98a, 1, 1.2, 9);
+    }
+    for (let i = this.n(8); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.stars.emit(x, y + 1.2, z, Math.cos(a) * rand(2, 5), rand(2, 6), Math.sin(a) * rand(2, 5), rand(0.5, 0.9), 0.55, 0.15, 0xffffff, 1, 0.6, 8);
+    }
+  }
+
+  /** Lightning strikes a kart: a white-yellow flash, sparks flying out and up, and a few stars. */
+  zap(x: number, y: number, z: number): void {
+    this.glow.emit(x, y + 0.9, z, 0, 0, 0, 0.35, 2.4, 6, 0xfff7b0, 0.95);
+    for (let i = this.n(34); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      const sp = rand(2, 9);
+      this.glow.emit(x, y + 0.8, z, Math.cos(a) * sp, rand(1, 8), Math.sin(a) * sp, rand(0.3, 0.7), rand(0.2, 0.45), 0.04, Math.random() < 0.6 ? 0xfff27a : 0x9ad4ff, 1, 1.5, 10);
+    }
+    for (let i = this.n(10); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.stars.emit(x, y + 1.0, z, Math.cos(a) * rand(1, 4), rand(2, 6), Math.sin(a) * rand(1, 4), rand(0.5, 0.9), 0.5, 0.15, 0xffffff, 1, 0.6, 8);
+    }
+    for (let i = this.n(8); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.smoke.emit(x, y + 0.6, z, Math.cos(a) * 2.5, rand(0.5, 2), Math.sin(a) * 2.5, rand(0.7, 1.2), 0.5, 1.8, 0x2f3150, 0.5, 1.5, -0.3);
+    }
+  }
+
+  /** A kart is flattened: a ring of dust and a few stars at ground level. */
+  squash(x: number, y: number, z: number): void {
+    for (let i = this.n(14); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.smoke.emit(x, y + 0.1, z, Math.cos(a) * rand(2, 5), rand(0.2, 1), Math.sin(a) * rand(2, 5), rand(0.4, 0.8), 0.45, 1.6, 0xd8d2c0, 0.6, 1.5, -0.5);
+    }
+    for (let i = this.n(6); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.stars.emit(x, y + 0.4, z, Math.cos(a) * rand(2, 4), rand(2, 4), Math.sin(a) * rand(2, 4), rand(0.4, 0.7), 0.4, 0.1, 0xffe14a, 1, 1, 9);
     }
   }
 

@@ -58,11 +58,9 @@ describe('colours for 12 karts', () => {
 });
 
 describe('toasts only for people', () => {
-  it('HIT / BUMPED toasts name the victim only when the victim is a person', () => {
-    expect(attackToast('hit', 'ANNA', true)).toBe('HIT ANNA!');
-    expect(attackToast('bumped', 'ANNA', true)).toBe('BUMPED ANNA!');
-    expect(attackToast('hit', 'BOT 1', false)).toBeNull();
-    expect(attackToast('bumped', 'BOT 7', false)).toBeNull();
+  it('HIT toasts name the victim only when the victim is a person', () => {
+    expect(attackToast('ANNA', true)).toBe('HIT ANNA!');
+    expect(attackToast('BOT 1', false)).toBeNull();
   });
 });
 
