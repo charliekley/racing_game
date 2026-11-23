@@ -1,5 +1,5 @@
 /**
- * The eight drivers. Each is built as three rigid pieces (torso, head, arm) so
+ * The twelve drivers. Each is built as three rigid pieces (torso, head, arm) so
  * the animation code can lean the torso, turn the head and aim the arms
  * without any skinning. Every piece is ONE vertex-coloured geometry that uses
  * the shared "detail" material.
@@ -28,6 +28,7 @@ export interface DriverGeometries {
 
 const EYE_WHITE = '#fbfbf6';
 const EYE_DARK = '#1b1a22';
+const PENGUIN_WHITE = '#f7f9ff';
 
 /** Small helper bundle so species code reads like a description of the character. */
 export class Piece {
@@ -422,6 +423,132 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     }),
     arm: (c) => ({ sleeve: c.P, hand: c.P }),
   },
+
+  // --- PENGUIN ----------------------------------------------------------------------
+  penguin: {
+    torso(p, c) {
+      baseBody(p, { body: c.P, belly: PENGUIN_WHITE, shoes: c.S, w: 1.0 });
+      // Short pointed tail wedge behind the seat.
+      p.cone([0, 0.12, -0.17], 0.07, 0.17, c.P, [-1.75, 0, 0]);
+    },
+    head(p, c) {
+      p.e(HEAD_C, [0.3, 0.27, 0.27], c.P);
+      // White face mask that wraps under the eyes, orange cheek dabs, flat orange beak (two halves) and a crest of feathers.
+      p.e([0, 0.25, 0.165], [0.235, 0.2, 0.15], PENGUIN_WHITE);
+      p.ep([0.2, 0.2, 0.2], [0.05, 0.035, 0.03], c.S, SURF.matte, [0, 0.6, 0], true);
+      p.e([0, 0.245, 0.335], [0.07, 0.03, 0.1], c.S, SURF.gloss, [0.12, 0, 0]);
+      p.e([0, 0.205, 0.32], [0.058, 0.024, 0.085], shade(c.S, 0.8), SURF.gloss, [0.1, 0, 0]);
+      p.cone([0, 0.5, 0.0], 0.04, 0.12, c.P, [-0.3, 0, 0]);
+      p.cone([0.045, 0.49, 0.0], 0.035, 0.1, c.P, [-0.25, 0, -0.45]);
+      p.cone([-0.045, 0.49, 0.0], 0.035, 0.1, c.P, [-0.25, 0, 0.45]);
+    },
+    face: (c) => {
+      const mask = ellipsoidZ([0, 0.25, 0.165], [0.235, 0.2, 0.15]);
+      const head = ellipsoidZ(HEAD_C, [0.3, 0.27, 0.27]);
+      const surf = (x: number, y: number) => Math.max(mask(x, y), head(x, y));
+      return {
+        eye: { x: 0.105, y: 0.34, z: 0.245, r: 0.078 },
+        white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.55, lid: PENGUIN_WHITE,
+        brow: { color: c.P, maxY: 0.5, surfZ: surf },
+        mouth: { y: 0.14, w: 0.06, color: shade(c.S, 0.55), inside: '#7a2a1c', surfZ: surf },
+      };
+    },
+    arm: (c) => ({ sleeve: c.P, hand: c.P }),
+  },
+
+  // --- OWL --------------------------------------------------------------------------
+  owl: {
+    torso(p, c) {
+      baseBody(p, { body: c.P, belly: c.S, shoes: '#e8a23a', w: 1.02 });
+      // Scalloped chest feathers (little dark crescents on the belly) and a fan of tail feathers.
+      for (const [x, y] of [[-0.05, 0.3], [0.05, 0.3], [0, 0.22], [-0.07, 0.15], [0.07, 0.15]] as const) {
+        const z = 0.12 + 0.105 * Math.sqrt(Math.max(0, 1 - (x / 0.143) ** 2 - ((y - 0.2) / 0.173) ** 2));
+        p.e([x, y, z + 0.004], [0.034, 0.02, 0.01], shade(c.P, 0.8), SURF.matte, [0.3, 0, 0], true);
+      }
+      p.cone([0, 0.16, -0.16], 0.055, 0.2, c.D, [-1.9, 0, 0]);
+      p.cone([0.06, 0.17, -0.15], 0.05, 0.17, c.P, [-1.9, 0, -0.45]);
+      p.cone([-0.06, 0.17, -0.15], 0.05, 0.17, c.P, [-1.9, 0, 0.45]);
+    },
+    head(p, c) {
+      p.e(HEAD_C, [0.34, 0.27, 0.27], c.P);
+      // Two big cream facial discs, pointed ear tufts, a small hooked beak.
+      p.ep([0.125, 0.31, 0.2], [0.18, 0.16, 0.12], c.S);
+      p.cone([0.19, 0.46, 0.0], 0.065, 0.2, c.P, [0.1, 0, -0.45], true);
+      p.cone([0.19, 0.465, 0.02], 0.04, 0.13, c.D, [0.15, 0, -0.45], true);
+      p.cone([0, 0.3, 0.3], 0.045, 0.1, '#f0a020', [Math.PI / 2 + 0.45, 0, 0], false, SURF.gloss);
+      // Brow feather ridge.
+      p.ep([0.1, 0.45, 0.12], [0.09, 0.025, 0.05], c.D, SURF.fur, [0.5, 0, 0.2], true);
+    },
+    face: (c) => {
+      const disc = ellipsoidZ([0.125, 0.31, 0.2], [0.18, 0.16, 0.12]);
+      const head = ellipsoidZ(HEAD_C, [0.34, 0.27, 0.27]);
+      const surf = (x: number, y: number) => Math.max(disc(x, y), head(x, y));
+      return {
+        eye: { x: 0.125, y: 0.32, z: 0.285, r: 0.09 },
+        white: '#fff7e0', iris: '#f4b21c', pupil: EYE_DARK, pupilK: 0.48, lid: c.S,
+        brow: { color: c.D, thick: 0.18, maxY: 0.46, surfZ: surf },
+        mouth: { y: 0.15, w: 0.05, color: shade(c.P, 0.55), inside: '#5a2418', surfZ: head },
+      };
+    },
+    arm: (c) => ({ sleeve: c.P, hand: c.D }),
+  },
+
+  // --- RHINO ------------------------------------------------------------------------
+  rhino: {
+    torso(p, c) {
+      baseBody(p, { body: c.P, belly: c.L, shoes: c.D, w: 1.12, round: 1.08 });
+      // Armour-plate folds across the back and a short tail with a tuft.
+      for (const [y, z] of [[0.3, -0.17], [0.2, -0.2]] as const) p.e([0, y, z], [0.17, 0.02, 0.04], c.D, SURF.fur, [-0.7, 0, 0], true);
+      p.b.part(sweep([[0, 0.12, -0.2], [0, 0.1, -0.3], [0, 0.17, -0.34]], 0.022, 10, 8), {}, c.D, SURF.fur);
+      p.e([0, 0.18, -0.35], 0.035, shade(c.D, 0.6), SURF.fur, [0, 0, 0], true);
+    },
+    head(p, c) {
+      p.e(HEAD_C, [0.33, 0.27, 0.3], c.P);
+      // Broad snout, nostrils, big front horn and a small second one, small round ears.
+      p.e([0, 0.19, 0.28], [0.19, 0.13, 0.17], c.L, SURF.fur);
+      p.ep([0.08, 0.235, 0.42], [0.018, 0.012, 0.012], '#3a4254', SURF.matte, [0, 0, 0], true);
+      p.cone([0, 0.3, 0.36], 0.08, 0.2, c.S, [0.75, 0, 0], false, SURF.gloss, 0.9);
+      p.cone([0, 0.42, 0.22], 0.05, 0.12, c.S, [0.45, 0, 0], false, SURF.gloss, 0.9);
+      p.cone([0.2, 0.47, -0.04], 0.07, 0.14, c.P, [0.1, 0, -0.5], true);
+      p.cone([0.2, 0.47, -0.02], 0.04, 0.1, c.D, [0.15, 0, -0.5], true, SURF.matte);
+      p.ep([0.22, 0.2, 0.2], [0.06, 0.04, 0.03], '#e58f9f', SURF.matte, [0, 0.6, 0], true);
+    },
+    face: (c) => ({
+      eye: { x: 0.165, y: 0.35, z: 0.22, r: 0.055 },
+      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.62, lid: c.P,
+      brow: { color: c.D, thick: 0.24, maxY: 0.5, surfZ: ellipsoidZ(HEAD_C, [0.33, 0.27, 0.3]) },
+      mouth: { y: 0.14, w: 0.085, color: shade(c.D, 0.55), inside: '#4a1a24', surfZ: ellipsoidZ([0, 0.19, 0.28], [0.19, 0.13, 0.17]) },
+    }),
+    arm: (c) => ({ sleeve: c.P, hand: c.D }),
+  },
+
+  // --- ELEPHANT ---------------------------------------------------------------------
+  elephant: {
+    torso(p, c) {
+      baseBody(p, { body: c.P, belly: c.L, shoes: c.D, w: 1.1, round: 1.08 });
+      // Little tuft-tailed tail.
+      p.e([0, 0.14, -0.2], [0.05, 0.07, 0.05], c.P, SURF.fur);
+      p.e([0, 0.09, -0.23], 0.035, c.D, SURF.fur, [0, 0, 0], true);
+    },
+    head(p, c) {
+      p.e(HEAD_C, [0.32, 0.29, 0.28], c.P);
+      // Big floppy ears with pink insides, flaring out sideways.
+      p.ep([0.3, 0.33, 0.0], [0.05, 0.17, 0.15], c.P, SURF.fur, [0, -0.15, -0.15]);
+      p.ep([0.315, 0.33, 0.02], [0.04, 0.13, 0.11], c.S, SURF.matte, [0, -0.15, -0.15], true);
+      // Trunk: hangs from the face and curls up at the tip, with two small ivory tusks beside it.
+      p.b.part(sweep([[0, 0.3, 0.25], [0, 0.2, 0.34], [0, 0.15, 0.4], [0, 0.15, 0.44], [0, 0.2, 0.46]], (t) => 0.082 - 0.035 * t, 22, 10), {}, c.P, SURF.fur);
+      for (const sx of [1, -1]) p.cone([0.1 * sx, 0.14, 0.28], 0.032, 0.13, '#fff4dc', [1.9, 0, -0.35 * sx], false, SURF.gloss);
+      p.ep([0.04, 0.23, 0.44], [0.012, 0.012, 0.008], shade(c.P, 0.6), SURF.matte, [0, 0, 0], true);
+      p.cone([0, 0.52, 0.0], 0.05, 0.09, c.D, [0.2, 0, 0]); // small head tuft
+    },
+    face: (c) => ({
+      eye: { x: 0.14, y: 0.37, z: 0.225, r: 0.062 },
+      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.62, lid: c.P,
+      brow: { color: c.D, maxY: 0.52, surfZ: ellipsoidZ(HEAD_C, [0.32, 0.29, 0.28]) },
+      mouth: { y: 0.075, w: 0.07, color: shade(c.D, 0.6), inside: '#4a1a24', surfZ: ellipsoidZ(HEAD_C, [0.32, 0.29, 0.28]) },
+    }),
+    arm: (c) => ({ sleeve: c.P, hand: c.P }),
+  },
 };
 
 /** Build the arm piece (right arm, rest hand at (0, 0, ARM_LEN)): upper arm, bent elbow, forearm, hand. */
@@ -445,7 +572,7 @@ function buildArm(sleeve: string, hand: string, surf: Surf, glove: boolean): THR
  * stay readable from the chase camera and in 4-way split screen). The model scales the head pivot by this.
  */
 export const HEAD_SCALE: Record<Species, number> = {
-  chick: 1.42, cat: 1.4, frog: 1.32, astronaut: 1.2, robot: 1.24, fox: 1.4, bear: 1.34, dino: 1.34,
+  chick: 1.42, cat: 1.4, frog: 1.32, astronaut: 1.2, robot: 1.24, fox: 1.4, bear: 1.34, dino: 1.34, penguin: 1.4, owl: 1.3, rhino: 1.28, elephant: 1.2,
 };
 
 /**

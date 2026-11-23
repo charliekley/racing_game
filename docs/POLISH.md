@@ -25,7 +25,7 @@ to a few lines, and say so in your final report.
 
 ## Shared data (already on main)
 
-`src/shared/characters.ts`: `CHARACTERS` (8 drivers: weight class, stat points, `look`),
+`src/shared/characters.ts`: `CHARACTERS` (12 drivers: weight class, stat points, `look`),
 `KART_BODIES` (4 bodies, same order as `KART_STYLES`), `Loadout { character, kart }`,
 `sanitizeLoadout`, `loadoutStats`. Indices go over the network; only ever append.
 
@@ -39,7 +39,7 @@ to a few lines, and say so in your final report.
 |---|---|---|
 | **audio** | `src/audio/**` (new) | Thin wiring only in `src/host/game.ts` / `src/host/main.ts` |
 | **classes** | `src/sim/classes.ts` (new), `src/sim/kart.ts`, `collision.ts`, `world.ts`, `autopilot.ts`, `src/shared/protocol.ts`, `src/host/playerSlots.ts`, `playerManager.ts`, `lobbyView.ts`, `src/controller/**` | Loadout over the network, per-kart physics, phone picker |
-| **kart-models** | `src/render/kartModel.ts`, `kartView.ts`, `src/dev/kartPreview.ts` | Smooth karts + 8 drivers |
+| **kart-models** | `src/render/kartModel.ts`, `kartView.ts`, `src/dev/kartPreview.ts` | Smooth karts + 12 drivers |
 | **render-pipeline** | `src/render/scene.ts`, `textures.ts`, `src/render/post/**` (new) | Lighting, tone mapping, materials, post effects; small render-loop edits in `game.ts` |
 | **environment** | `src/render/scenery.ts`, `terrainView.ts`, `trackView.ts`, `branchView.ts`, `rampView.ts` | Smooth scenery, road/terrain/water look |
 | **game-feel** | `src/render/effects.ts`, `chaseCamera.ts`, `itemMeshes.ts`, `cannonView.ts`, `src/host/viewHud.ts`, `inkOverlay.ts`, host CSS/HTML | Particles, camera, HUD, results |
@@ -91,7 +91,7 @@ to a few lines, and say so in your final report.
 
 ## Driver clearance pass (heads vs kart parts)
 
-The bigger heads clipped into roll cages, seats and engines. Now guarded by `src/render/kart/clearance.test.ts`: every one of the 8 characters on every one of the 4 bodies is posed at rest, at the extremes of the rig (steer + lean, look back, boost, drift, celebrate, spun out, trick spin) and through the 8 pick animations, and no head, torso (tails, backpack), arm or leg may overlap a kart part by more than 2 cm (`CLEARANCE_TOLERANCE`). The measuring code is `kart/clearance.ts` (surface samples + signed distance) and `kart/clearanceCheck.ts` (poses and which contacts are allowed: the driver may sit in the hull and seat, the hands may hold the wheel). Kart builders label parts with `b.tag = 'hull' | 'seat' | 'column' | 'frame'` (only the test reads it).
+The bigger heads clipped into roll cages, seats and engines. Now guarded by `src/render/kart/clearance.test.ts`: every one of the 12 characters on every one of the 4 bodies is posed at rest, at the extremes of the rig (steer + lean, look back, boost, drift, celebrate, spun out, trick spin) and through the 8 pick animations, and no head, torso (tails, backpack), arm or leg may overlap a kart part by more than 2 cm (`CLEARANCE_TOLERANCE`). The measuring code is `kart/clearance.ts` (surface samples + signed distance) and `kart/clearanceCheck.ts` (poses and which contacts are allowed: the driver may sit in the hull and seat, the hands may hold the wheel). Kart builders label parts with `b.tag = 'hull' | 'seat' | 'column' | 'frame'` (only the test reads it).
 Changing a head, tail, cage or seat? Run `npx vitest run src/render/kart/clearance.test.ts`; the failure names the combo, pose, parts and depth. `CLR_OUT=report.txt CLR_STYLE=1` writes a report of all overlaps over 6 mm.
 Body-specific room is in `StyleLayout` (bodies.ts): `ceiling` (cage roof: pick hops stop below it, no somersault/stretch), `leanScale` and `twistScale` (less lean/torso twist where a cage or engine is close). The selection stage frames each model from its own measured head height and kart bounding sphere (`Entry.frame`).
 

@@ -62,6 +62,10 @@ describe('statBars', () => {
   });
 });
 
+/** Minimum colour distance (CIE76 delta E; about 2.3 is just noticeable, 25+ is clearly another colour) between two characters' body paints, and over the whole paint job. */
+const MIN_BODY_DE = 28;
+const MIN_PAINT_DE = 25;
+
 describe('kart palettes', () => {
   const HEX = /^#[0-9a-f]{6}$/i;
   it('every character has a valid palette and the lookup wraps', () => {
@@ -77,8 +81,34 @@ describe('kart palettes', () => {
     expect(new Set(CHARACTERS.map((c) => c.palette.body.toLowerCase())).size).toBe(CHARACTERS.length);
     for (const c of CHARACTERS) expect(c.palette.trim.toLowerCase()).not.toBe(c.palette.body.toLowerCase());
   });
+  it('every pair of characters has clearly different kart paints (colour distance, CIE76 delta E)', () => {
+    const lab = (hex: string): [number, number, number] => {
+      const lin = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      const [r, g, b] = lin;
+      const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+      const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+      const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+      const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+      return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+    };
+    const dE = (a: string, b: string) => Math.hypot(...lab(a).map((v, i) => v - lab(b)[i]));
+    const bad: string[] = [];
+    for (let i = 0; i < CHARACTERS.length; i++)
+      for (let j = i + 1; j < CHARACTERS.length; j++) {
+        const a = CHARACTERS[i].palette;
+        const b = CHARACTERS[j].palette;
+        const body = dE(a.body, b.body);
+        // The whole paint job: body counts double (it is most of the kart), trim, accent and wheels once.
+        const whole = (2 * body + dE(a.trim, b.trim) + dE(a.accent, b.accent) + dE(a.wheels, b.wheels)) / 5;
+        if (body < MIN_BODY_DE || whole < MIN_PAINT_DE) bad.push(`${CHARACTERS[i].name} / ${CHARACTERS[j].name}: body dE ${body.toFixed(1)}, paint dE ${whole.toFixed(1)}`);
+      }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
   it('keeps the older fields where they were', () => {
-    expect(CHARACTERS.map((c) => c.id)).toEqual(['pip', 'mochi', 'fizz', 'juno', 'bolt', 'sable', 'bruno', 'rex']);
+    expect(CHARACTERS.map((c) => c.id)).toEqual(['pip', 'mochi', 'fizz', 'juno', 'bolt', 'sable', 'bruno', 'rex', 'chip', 'otto', 'rocco', 'mabel']);
   });
 });
 

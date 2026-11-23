@@ -316,7 +316,7 @@ interface BrowseActions {
  * One browsing screen (character or kart). Pieces (the CSS places them, see `.sf-browse`):
  *  hero  : the highlighted driver's head / kart, big, with arrows (and swipe)
  *  info  : name, weight class, blurb, six stat bars
- *  strip : EVERY choice as a small picture in a grid (8 drivers or 4 karts), tap to jump
+ *  strip : EVERY choice as a small picture in a grid (12 drivers or 4 karts), tap to jump
  *  foot  : BACK and the big confirm button
  */
 class BrowseView {
@@ -376,7 +376,7 @@ class BrowseView {
       this.bars.set(key, segs);
     }
 
-    // The strip: eight little portraits, or four kart pictures with their names. Tapping one jumps there.
+    // The strip: twelve little portraits, or four kart pictures with their names. Tapping one jumps there.
     const strip = el.querySelector('.sf-strip') as HTMLElement;
     const count = what === 'character' ? CHARACTERS.length : KART_BODIES.length;
     for (let i = 0; i < count; i++) {

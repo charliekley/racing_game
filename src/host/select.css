@@ -188,7 +188,7 @@
 .segs i.lost { background: rgba(255, 90, 95, 0.55); }
 
 .q-grid { display: none; gap: calc(var(--u) * 1); }
-.quad[data-stage='character'] .q-grid.chars { display: grid; grid-template-columns: repeat(4, 1fr); }
+.quad[data-stage='character'] .q-grid.chars { display: grid; grid-template-columns: repeat(6, 1fr); }
 .quad[data-stage='kart'] .q-grid.karts { display: grid; grid-template-columns: repeat(4, 1fr); }
 .tile {
   aspect-ratio: 1.15;

@@ -35,7 +35,7 @@ export type WeightClass = 'light' | 'medium' | 'heavy';
 /** How the driver looks. The renderer (kartModel.ts) builds the model from this. */
 export interface DriverLook {
   /** What kind of creature: decides the head shape, ears, snout and so on. */
-  species: 'chick' | 'cat' | 'frog' | 'astronaut' | 'robot' | 'fox' | 'bear' | 'dino';
+  species: 'chick' | 'cat' | 'frog' | 'astronaut' | 'robot' | 'fox' | 'bear' | 'dino' | 'penguin' | 'owl' | 'rhino' | 'elephant';
   /** Main body/fur/suit colour. */
   primary: string;
   /** Second colour (belly, visor, markings). */
@@ -85,7 +85,11 @@ export const CHARACTERS: readonly CharacterDef[] = [
   { id: 'bolt', name: 'Bolt', blurb: 'Robot with a quick launch', weightClass: 'medium', stats: { ...MEDIUM, accel: 4, offroad: 2 }, look: { species: 'robot', primary: '#b9c4d0', secondary: '#ffcf33', scale: 1.0 }, palette: { body: '#8b97a7', trim: '#ffcf33', accent: '#35e3cb', wheels: '#ffcf33' } },
   { id: 'sable', name: 'Sable', blurb: 'Sly fox, sharp in corners', weightClass: 'medium', stats: { ...MEDIUM, handling: 4, drift: 4, offroad: 2 }, look: { species: 'fox', primary: '#e8742c', secondary: '#fff4e0', scale: 0.96 }, palette: { body: '#d8431d', trim: '#fff0d6', accent: '#2b2d4a', wheels: '#fff0d6' } },
   { id: 'bruno', name: 'Bruno', blurb: 'Big bear, big bumps', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, handling: 3, drift: 3 }, look: { species: 'bear', primary: '#8a5a3c', secondary: '#e6c9a0', scale: 1.16 }, palette: { body: '#7b4b2b', trim: '#e8b74e', accent: '#d9443b', wheels: '#e8b74e' } },
-  { id: 'rex', name: 'Rex', blurb: 'Dino, flat-out top speed', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, weight: 4, handling: 3, accel: 3, drift: 2 }, look: { species: 'dino', primary: '#3fae8f', secondary: '#f2e56b', scale: 1.12 }, palette: { body: '#6a3fc2', trim: '#b8f24b', accent: '#ff8a3a', wheels: '#b8f24b' } },
+  { id: 'rex', name: 'Rex', blurb: 'Dino, flat-out top speed', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, weight: 4, handling: 3, accel: 3, drift: 2 }, look: { species: 'dino', primary: '#3fae8f', secondary: '#f2e56b', scale: 1.12 }, palette: { body: '#8a3fd8', trim: '#b8f24b', accent: '#ff8a3a', wheels: '#b8f24b' } },
+  { id: 'chip', name: 'Chip', blurb: 'Penguin, flying start', weightClass: 'light', stats: { ...LIGHT, speed: 2, accel: 5, handling: 3, weight: 2, drift: 3 }, look: { species: 'penguin', primary: '#2b3a67', secondary: '#ff9a2b', scale: 0.85 }, palette: { body: '#17b8d4', trim: '#ff8f1f', accent: '#ffffff', wheels: '#12306b' } },
+  { id: 'otto', name: 'Otto', blurb: 'Wise owl, fast but wide-drifting', weightClass: 'medium', stats: { ...MEDIUM, speed: 4, drift: 2 }, look: { species: 'owl', primary: '#c08a54', secondary: '#ffe8b0', scale: 0.98 }, palette: { body: '#c5176f', trim: '#ffd23f', accent: '#2b1a5a', wheels: '#ffd23f' } },
+  { id: 'rocco', name: 'Rocco', blurb: 'Rhino, shoves and charges', weightClass: 'heavy', stats: { ...HEAVY, speed: 4, accel: 3, drift: 1, offroad: 3 }, look: { species: 'rhino', primary: '#8fa0b8', secondary: '#efe4cc', scale: 1.14 }, palette: { body: '#3a4256', trim: '#ff5a3c', accent: '#ffd23f', wheels: '#ff5a3c' } },
+  { id: 'mabel', name: 'Mabel', blurb: 'Elephant, steady and unshovable', weightClass: 'heavy', stats: { ...HEAVY, speed: 3, accel: 2, handling: 3, drift: 3, offroad: 3 }, look: { species: 'elephant', primary: '#a9a6d8', secondary: '#ffd0da', scale: 1.14 }, palette: { body: '#b79cf0', trim: '#ffffff', accent: '#ff5f8a', wheels: '#5b3fa8' } },
 ];
 
 export interface KartBodyDef {
