@@ -261,6 +261,8 @@ export interface TrackDef {
   /** Chasms in the MAIN road: no ground from `at` for `length` metres (like a ramp's void gap, but without the ramp). */
   chasms?: { at: number; length: number }[];
   shortcuts?: ShortcutDef[];
+  /** Metres between rows of item boxes (default ITEMS.rowSpacing). Mushroom Valley uses a shorter spacing so every crossing has a row on both sides. */
+  itemRowSpacing?: number;
   /** Timed dangers and moving parts (geysers, drawbridges...). Their state depends only on the race clock; see src/sim/hazards/. */
   hazards?: HazardDef[];
 }

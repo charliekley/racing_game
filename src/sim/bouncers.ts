@@ -221,6 +221,10 @@ export class Bouncers {
     if (dist > 1) k.heading = Math.atan2(dx, dz); // (right above the target the bearing is meaningless)
     k.yawRate = 0;
     if (f.left > BOUNCE.settle) k.speed = Math.min(60, dist / f.left);
+    // Over a chasm there is no ground, so nothing else updates the kart's "where am I on the road" hint. On a long flight
+    // the hint would fall further behind than the track search window, and the landing would be looked up on the wrong
+    // part of the road. Follow the kart ourselves, every tick.
+    k.trackIndex = this.track.project(k.pos.x, k.pos.z, k.trackIndex).index;
   }
 
   /** Is this kart in the air after a bounce? (Renderer and audio may ask.) */

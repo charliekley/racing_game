@@ -338,7 +338,7 @@ export class Track implements Ground {
    * the start line, jumps, water and boost pads.
    */
   private placeItemBoxes(): void {
-    const rows = Math.max(3, Math.round(this.length / ITEMS.rowSpacing));
+    const rows = Math.max(3, Math.round(this.length / (this.def.itemRowSpacing ?? ITEMS.rowSpacing)));
     const clear = (s: number): boolean => {
       if (this.deltaS(0, s) > -45 && this.deltaS(0, s) < 40) return false; // start/finish area
       for (const r of this.ramps) if (this.deltaS(r.s0 - 25, s) >= 0 && this.deltaS(s, r.s1 + 20) >= 0) return false;

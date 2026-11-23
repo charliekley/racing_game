@@ -69,20 +69,20 @@ describe('mushroom caps in the world', () => {
     return { kinds, air };
   }
 
-  it('the orange chain of gorge one carries a kart across at every speed, even a slow one', () => {
+  it('the huge cap of the Sky Leap carries a kart across in ONE bounce at every speed, even a slow one', () => {
     const end = track.sAt(at('g1b')) + 6;
     for (const speed of [4, 12, 20, 28, 37]) {
       const w = setup('g1a', 14, speed);
       const r = run(w, 9);
-      expect(r.kinds.filter((k) => k === 'bounce').length, `speed ${speed}`).toBe(3);
+      expect(r.kinds.filter((k) => k === 'bounce').length, `speed ${speed}`).toBe(1);
       expect(r.kinds, `speed ${speed}`).not.toContain('respawn');
       const s = track.project(w.k.pos.x, w.k.pos.z, w.k.trackIndex).s;
       expect(track.deltaS(end, s), `speed ${speed}`).toBeGreaterThan(0); // on the far road and driving on
-      expect(w.k.pos.y).toBeGreaterThan(track.pointAt(end).y - 1);
+      expect(w.k.pos.y).toBeGreaterThan(track.project(w.k.pos.x, w.k.pos.z, w.k.trackIndex).y - 1); // on the road, not under it
     }
   });
 
-  it('a kart entering a cap off to one side, or at an angle, still lands on the chain', () => {
+  it('a kart entering a cap off to one side, or at an angle, still lands on the cap', () => {
     const end = track.sAt(at('g1b')) + 6;
     for (const [lane, turn] of [[-5, 0.0], [5, 0.0], [-4, 0.15], [4, -0.15]]) {
       const w = setup('g1a', 14, 24);
@@ -165,8 +165,8 @@ describe('mushroom caps in the world', () => {
       expect(hit?.height).toBeCloseTo(cap.y, 5);
       expect(hit?.surface).toBe('road');
     }
-    const gap = b.caps[0]; // first orange cap of gorge one: 14 m to the side, the corridor has no ground
-    const p = track.pointAt(track.sAt(at('g1a')) + 6, 11);
+    const gap = b.caps[0]; // the huge orange cap of the Sky Leap: 12 m to the side the corridor has no ground
+    const p = track.pointAt(track.sAt(at('g1a')) + 7, 12);
     expect(Math.hypot(p.x - gap.x, p.z - gap.z)).toBeGreaterThan(gap.radius);
     expect(wrapped.sample(p.x, p.z)).toBeNull();
   });
