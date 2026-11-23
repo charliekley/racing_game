@@ -141,16 +141,17 @@ for (let k = 0; k < 9; k++) {
   add({ kind: 'green', radius: 10, at: at('caveIn'), ds: 5 + k * 14, offset: off, dy: -0.3 });
 }
 // THE CAVE, second route (the dirt shortcut): orange caps on the branch's own line, in world coordinates.
-export const ORANGE_ROUTE: { x: number; z: number; y: number }[] = [
-  { x: 46, z: 314, y: 52.2 },
-  { x: 34, z: 272, y: 51.8 },
-  { x: 36, z: 230, y: 51.3 },
-  { x: 34, z: 190, y: 50.8 },
+export const ORANGE_ROUTE: { x: number; y: number; z: number }[] = [
+  { x: 52, z: 326, y: 53.2 },
+  { x: 34, z: 292, y: 52.2 },
+  { x: 28, z: 258, y: 51.8 },
+  { x: 28, z: 224, y: 51.5 },
+  { x: 30, z: 192, y: 51.2 },
 ];
 {
   const first = caps.length;
   ORANGE_ROUTE.forEach((c, k) => {
-    add({ kind: 'orange', radius: 7.5, x: c.x, z: c.z, y: c.y, to: k < ORANGE_ROUTE.length - 1 ? first + k + 1 : { x: 48, z: 158 } });
+    add({ kind: 'orange', radius: 7.5, x: c.x, z: c.z, y: c.y, to: k < ORANGE_ROUTE.length - 1 ? first + k + 1 : { x: 44, z: 162 } });
   });
 }
 
@@ -206,11 +207,11 @@ export const mushroomValley: TrackDef = {
       { x: -110, z: 440, radius: 140, height: 90 },
       { x: 235, z: 265, radius: 62, height: 36 }, // a ridge in the middle of the loop
       // The cave's pit: three overlapping holes (the main road and the shortcut cross over them).
-      { x: 52, z: 269, radius: 44, height: -50 },
-      { x: 52, z: 232, radius: 44, height: -50 },
-      { x: 52, z: 209, radius: 38, height: -50 },
+      { x: 46, z: 269, radius: 46, height: -60 },
+      { x: 46, z: 232, radius: 46, height: -60 },
+      { x: 46, z: 209, radius: 40, height: -60 },
     ],
-    blend: 18,
+    blend: 10,
   },
   // THE ORANGE ROUTE: a dirt path that leaves the road at the cave's mouth, runs beside the chasm and rejoins it
   // after the exit. Its middle is held at the cave's height (third number), far above the pit, and the orange caps
@@ -224,7 +225,8 @@ export const mushroomValley: TrackDef = {
         [ORANGE_ROUTE[1].x, ORANGE_ROUTE[1].z, ORANGE_ROUTE[1].y],
         [ORANGE_ROUTE[2].x, ORANGE_ROUTE[2].z, ORANGE_ROUTE[2].y],
         [ORANGE_ROUTE[3].x, ORANGE_ROUTE[3].z, ORANGE_ROUTE[3].y],
-        [48, 158],
+        [ORANGE_ROUTE[4].x, ORANGE_ROUTE[4].z, ORANGE_ROUTE[4].y],
+        [44, 162],
       ],
       width: 10,
       hold: true,
