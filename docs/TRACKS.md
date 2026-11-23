@@ -348,8 +348,9 @@ before and after it.
 ### Fun rules of thumb
 
 * Bounces are **big and floaty**: the arc of a hop is chosen by `CapDef.air` (time in the air) so the apex is 5-10 m; a trick in
-  the air pays out the usual boost on landing, which makes the orange shortcuts as quick as the green main roads (a lap of
-  the main road and of both shortcuts differ by less than 7 %, the test checks it).
+  the air pays out the usual boost on landing. The orange shortcut hops are flown at about 42 m/s (`SHORTCUT_SPEED`, flat 2-4 m arcs) on a
+  full-speed hard-packed branch (`ShortcutDef.surface: 'road'`), so flown well (and tricked) the orange route is about 1.0 s (Twin Spans) /
+  0.9 s (cave) quicker than the green crossing (a bot flying it; `airControl.test.ts`), and slower when flown badly.
 * Two **risk / reward** choices every lap (Twin Spans and the cave) plus the one forced leap (Sky Leap) and the green bridge
   (Stepping Stones). Bots pick shortcuts by `shortcutBias`, all four bias slots have been run.
 * The first cap of a shortcut is only about 20 m from the road's edge, so a bot (or a player) has to commit at the fork.
@@ -376,8 +377,13 @@ after kart physics each tick.
 * **Arc** (`bounceArc`): from the kart's own position to the cap's target (the next cap, or a point on the far road / dirt):
   time in the air `T` = `CapDef.air` if given, else `clamp(distance / 25 m/s, 1.3 s, 2.1 s)`; horizontal speed `D / T`, launch
   speed `vy = (dy + g T^2 / 2) / T`. Apex limit in the tests: 11 m; speed limit 32 m/s.
-* **Guided flight**: while in the air after a bounce the kart's heading points at the target and its speed is (distance left) /
-  (time left), so steering cannot make it miss; it lands on the target at ANY entry speed. The kart's "which road am I on" hint
+* **Air control, no guidance (since the skill pass)**: the arc is aimed at the target, but the kart keeps part of how it arrived:
+  launch velocity = ideal + `carryLateral` 0.9 (sideways / angle error) and `carryForward` 0.8 (too slow / too fast vs `refSpeed` 28 m/s, or vs
+  the previous hop's ideal velocity on a chain) of the entry error (each capped at `carryMax` 14 m/s), and `keepOffset` 0.5 of the offset from the
+  cap's centre. In the air steering pushes the kart sideways (`airLateralAccel` 24 m/s^2, capped at 12 m/s) and gas / brake nudge it forward / back
+  (8 m/s^2, cap 7 m/s); `World.tick` feeds `stepKart` zero steering during a flight so only this applies. A good entry lands without input; a bad
+  angle, off-centre or slow entry drifts off the 8-8.5 m cap and into the abyss unless corrected. Bots fly with `Bouncers.pilot` (predicts the landing
+  and steers / pedals; easy bots aim 1.5 m to one side). Old rule, for reference: heading and speed were forced at the target every tick. The kart's "which road am I on" hint
   (`trackIndex`) is refreshed every tick of the flight (over a chasm nothing else updates it; on a 60 m flight it would
   otherwise fall behind the road search window and the landing would be looked up on the wrong part of the road).
 * **Tricks**: the bounce sets `trickable`, so the normal trick in the air pays out the usual boost on landing.
@@ -431,3 +437,17 @@ the chasm are left out of the road blend, so the course is a ridge between broad
 cave hill is a mesa: only the ground outside the shell (44 m left / 74 m right of the road) is carved. `ceiling` stops lone spires
 (ground may rise at most 6 m + 0.45 m per metre beyond 20 m above the nearest road); `valleyKeep` discs hold the pillars under the Twin
 Spans shortcut ledges. The renderer draws no side walls along an open gap (only the ends).
+
+### Mushroom Valley: flush bridges, clear branch gaps, descent (skill pass)
+
+* **Green bridges are the road**: a green cap's ground is exactly the main road's own height line (centre line + banking, `Bouncers.groundTop`),
+  so the first / last cap meets the road with no step (a 3 cm step already trips the kart's crest-launch rule); the drawn cap is flatter
+  (`GREEN_DROOP` 1.2 %) and tilted with the road (`Cap.gx / gz`, sheared in `mushroom.ts`). `airControl.test.ts` drives every green bridge at 20 and
+  30 m/s: at most 2 ticks off the ground, never more than 0.3 m above the surface.
+* **Branch gaps**: the trail fences stop `BRANCH_GAP` (1.6 control points) short of each end of both orange branches (render and collision both
+  come from `walls`). `src/sim/gateways.ts` lays out two stone pillars with orange mushroom caps across each path end plus an orange-capped arrow
+  signpost before each fork (render in `branchView.ts`, solid circles in `sceneryPlan.ts`). The cave vault was centred on the wrong side of the
+  road (`offset` is in the track's lateral axis, opposite to `local()`): it is now centred between the road and the orange route (valley `inner`
+  swapped to match), so the orange route runs under the arch with clear openings at both ends.
+* **Descent**: the 360 m of r=200 near-straight after the cave is now S-bends of radius 80-110 m (34 / 26 / 22 degrees) with a small hump kicker
+  (`ramps`), the lap still closes (final bend r 62 m).
