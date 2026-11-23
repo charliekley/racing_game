@@ -97,6 +97,7 @@ describe('soundsForEvent', () => {
   it('snowball and drawbridge hits have their own sounds (not the lava sizzle)', () => {
     expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'roller' })).toEqual(['hitSnow']);
     expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'drawbridge' })).toEqual(['hitWater']);
+    expect(ids({ kind: 'hazardHit', slot: 0, hazard: 1, type: 'beetle' })).toEqual(['hitBeetle']);
     expect(ids({ kind: 'hazardHit', slot: 2, hazard: 1, type: 'roller' })).toEqual([]); // bots hit: silent
   });
 

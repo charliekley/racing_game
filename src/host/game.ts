@@ -616,6 +616,9 @@ export class Game {
       this.hazardViews.update(race.time - (1 - alpha) * SIM_DT, focus);
     }
 
+    // Leaf piles (Autumn Speedway) scatter under every kart, bots included.
+    this.trackView.updateKarts(sdt, this.world.karts.values());
+
     // AUDIO: engine / drift-squeal / roulette loops follow every kart (bots included, quieter).
     if (this.audio) {
       // PERF: the state objects are reused every frame (one per view) instead of building new ones.
@@ -687,6 +690,7 @@ export class Game {
       cs.flightPhase = kart.flight?.phase ?? null;
       cs.finished = racer.finished;
       cs.driftDir = kart.driftDir;
+      v.chase.slopePitch = this.track.def.scenery.treetop ? 0.5 : 0; // Autumn Speedway only: look down the plunge
       v.chase.update(v.kart.pose, sdt, cs, ground); // sdt: during a photo finish the camera holds (slow motion)
       if (!sharedShadow) {
         // Aim the shadow box at the middle of what this camera sees (a bit ahead of the kart).

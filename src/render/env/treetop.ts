@@ -27,8 +27,9 @@ import { BRIDGE_DECK } from '../../sim/bridgePillars';
 import { CURB_WIDTH, Track, type TrackSample } from '../../sim/track';
 import type { GiantTreeItem, SceneryPlan } from '../../track/sceneryPlan';
 import { seededRandom } from '../textures';
-import { blobGeo, latheGeo, matrix, merge, paint, tubeGeo, type ColorFn } from './geo';
+import { blobGeo, fromArrays, latheGeo, matrix, merge, paint, tubeGeo, type ColorFn } from './geo';
 import { ENV_TIME, propMaterial, watchQuality } from './materials';
+import { leafPileSites } from './leafBurst';
 import { fbm3, noise3, smoothstep } from './noise';
 
 /** True if the track uses the treetop look. */
@@ -67,16 +68,32 @@ function barkColor(footY: number, seed: number): ColorFn {
   };
 }
 
-/** Leaf colouring for one crown: darker deep inside and underneath, bright on top, noisy patches of colour. */
+/** A warm, dull brown that bright leaf colours are pulled toward a little, so the crowns are never candy-bright. */
+const LEAF_MUTE = new THREE.Color('#8a5a30');
+
+/**
+ * Leaf colouring for one crown (or one lump of it): darker deep inside and UNDERNEATH (faces that look down),
+ * brighter on top, with big patches of colour plus finer speckle, and a little pull toward a dull brown.
+ */
 function leafColor(cx: number, cy: number, cz: number, rad: number, palette: [THREE.Color, THREE.Color], seed: number): ColorFn {
   return (p, n) => {
     const up = THREE.MathUtils.clamp((p.y - cy) / rad * 0.6 + 0.5, 0, 1);
     const out = THREE.MathUtils.clamp(Math.hypot(p.x - cx, p.z - cz) / rad, 0, 1);
     const patch = fbm3(p.x * 0.09, p.y * 0.09, p.z * 0.09, seed);
-    _c.copy(palette[0]).lerp(palette[1], THREE.MathUtils.clamp(up * 0.6 + out * 0.25 + (patch - 0.5) * 1.4 + Math.max(0, n.y) * 0.2, 0, 1));
-    _c.multiplyScalar(0.62 + 0.45 * up);
+    const speck = noise3(p.x * 0.55, p.y * 0.55, p.z * 0.55, seed + 7); // finer clumps of leaves
+    _c.copy(palette[0]).lerp(palette[1], THREE.MathUtils.clamp(up * 0.5 + out * 0.2 + (patch - 0.5) * 1.3 + (speck - 0.5) * 0.45 + Math.max(0, n.y) * 0.2, 0, 1));
+    _c.lerp(LEAF_MUTE, 0.16);
+    const under = smoothstep(0.15, -0.7, n.y); // 1 on faces that look straight down
+    _c.multiplyScalar((0.55 + 0.42 * up) * (1 - 0.4 * under));
     return _c;
   };
+}
+
+/** A tree's own crown palette: its base palette with a small random shift of hue and lightness (no two crowns alike). */
+function crownPalette(base: [THREE.Color, THREE.Color], rnd: () => number): [THREE.Color, THREE.Color] {
+  const dh = (rnd() - 0.5) * 0.04;
+  const dl = (rnd() - 0.5) * 0.08;
+  return [base[0].clone().offsetHSL(dh, 0, dl), base[1].clone().offsetHSL(dh, -0.04, dl)];
 }
 
 // ---------------------------------------------------------------------------
@@ -121,12 +138,12 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   const foot = t.y;
   const top = t.y + t.height;
   const r = t.radius;
-  const seg = detail ? 18 : 10;
+  const seg = detail ? 18 : 8;
 
   // Trunk: a surface of revolution. Wide root flare at the foot, then almost straight (never wider than the
   // collider radius above the flare), tapering into the crown. Bark ridges come from the angle modifier.
   const prof: [number, number][] = [];
-  const rings = detail ? 14 : 8;
+  const rings = detail ? 14 : 6;
   for (let i = 0; i <= rings; i++) {
     const f = i / rings;
     const y = foot - 2 + (top - foot + 2) * f;
@@ -180,27 +197,43 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
     limbEnds.push(p2);
   }
 
-  // Crown: a big central mass plus clusters at the limb ends and a ring of smaller puffs. Flattened a little.
-  const palette = CROWNS[t.seed % CROWNS.length];
+  // Crown: a big central mass plus clusters at the limb ends and a ring of smaller puffs, flattened a little.
+  // Each crown gets its own palette (a shifted copy of one of CROWNS); the lumps at the limb ends are tinted toward a
+  // neighbouring palette, so one tree shows a few shades (a red tree with orange lumps...), not one flat colour.
+  const base = CROWNS[t.seed % CROWNS.length];
+  const palette = crownPalette(base, rnd);
+  const other = CROWNS[(t.seed + 1 + Math.floor(rnd() * 3)) % CROWNS.length];
   const color = leafColor(t.x, crownY, t.z, t.crown, palette, t.seed % 53);
-  const blobDetail = detail ? 2 : 1;
   const sway = (p: THREE.Vector3) => THREE.MathUtils.clamp((p.y - crownY + t.crown) / t.crown, 0, 1) * 2.5;
-  const blob = (x: number, y: number, z: number, rad: number, sy: number, dd = blobDetail) => {
+  const blob = (x: number, y: number, z: number, rad: number, sy: number, dd: number, fn: ColorFn = color) => {
     // Shrink a leaf cluster that would hang into a road, or leave it out.
     while (rad > t.crown * 0.12 && road.hits(x, z, rad * 1.1, y - rad * sy * 1.1, y + rad * sy * 1.1)) rad *= 0.75;
     if (road.hits(x, z, rad * 1.1, y - rad * sy * 1.1, y + rad * sy * 1.1)) return;
     const g = blobGeo(dd, Math.floor(rnd() * 1000), 0.22, 1.6, noise3);
     g.applyMatrix4(matrix(x, y, z, rad, rad * sy, rad, rnd() * 6.28));
-    parts.push(paint(g, color, sway));
+    parts.push(paint(g, fn, sway));
   };
-  blob(t.x, crownY + t.crown * 0.15, t.z, t.crown * 0.62, 0.62);
-  for (const e of limbEnds) blob(e.x, e.y + t.crown * 0.08, e.z, t.crown * (0.36 + rnd() * 0.12), 0.7);
-  // (The smaller puffs round the edge are always the cheap model: they are small on screen.)
-  const puffs = detail ? 6 : 3;
+  // Triangle budget (this start area is the busiest on the track): near trees keep one smooth central mass, the
+  // clusters round it are cheaper; far trees (hidden in haze) use the cheapest clusters.
+  blob(t.x, crownY + t.crown * 0.15, t.z, t.crown * 0.62, 0.62, detail ? 2 : 1);
+  for (const e of limbEnds) {
+    const tint = leafColor(e.x, e.y, e.z, t.crown * 0.4, [palette[0].clone().lerp(other[0], 0.45), palette[1].clone().lerp(other[1], 0.4)], (t.seed + 5) % 53);
+    blob(e.x, e.y + t.crown * 0.08, e.z, t.crown * (0.36 + rnd() * 0.12), 0.7, detail ? 1 : 0, tint);
+  }
+  const puffs = detail ? 5 : 2;
   for (let k = 0; k < puffs; k++) {
     const a = rnd() * Math.PI * 2;
     const d = t.crown * (0.5 + rnd() * 0.45);
-    blob(t.x + Math.cos(a) * d, crownY + (rnd() - 0.3) * t.crown * 0.5, t.z + Math.sin(a) * d, t.crown * (0.22 + rnd() * 0.14), 0.75, 1);
+    blob(t.x + Math.cos(a) * d, crownY + (rnd() - 0.3) * t.crown * 0.5, t.z + Math.sin(a) * d, t.crown * (0.22 + rnd() * 0.14), 0.75, detail ? 1 : 0);
+  }
+  if (detail) {
+    // Clustered lumps on top of the crown: small low-poly blobs break up the big round outline.
+    const lump = leafColor(t.x, crownY + t.crown * 0.4, t.z, t.crown * 0.5, [palette[0].clone().lerp(other[0], 0.25), palette[1].clone().lerp(other[1], 0.3)], (t.seed + 9) % 53);
+    for (let k = 0; k < 4; k++) {
+      const a = rnd() * Math.PI * 2;
+      const d = t.crown * (0.15 + rnd() * 0.4);
+      blob(t.x + Math.cos(a) * d, crownY + t.crown * (0.42 + rnd() * 0.18), t.z + Math.sin(a) * d, t.crown * (0.2 + rnd() * 0.1), 0.8, 0, lump);
+    }
   }
   return merge(parts);
 }
@@ -228,6 +261,7 @@ export function buildGiantTrees(track: Track, plan: SceneryPlan): THREE.Object3D
   const out: THREE.Object3D[] = [];
   for (const { near, geos } of groups.values()) {
     const mesh = new THREE.Mesh(merge(geos), material);
+    mesh.name = near ? 'giantTreesNear' : 'giantTreesFar';
     mesh.castShadow = near;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false; // static: lets the fog culler pick it up (env/fogCull.ts)
@@ -296,31 +330,48 @@ function bridgeRuns(track: Track, rope: boolean): TrackSample[][] {
 }
 
 /**
- * A thick bark log under every plank road on a bridge: the "branch" the road is built on. Its top touches
- * the underside of the deck. Thicker where the road is high above the floor. One merged mesh.
+ * A thick bark log under every plank road on a bridge: the "branch" the road is built on. Its top sits just under
+ * the deck. Thicker where the road is high above the floor, knobbly (the thickness wanders), darker on the
+ * underside, with short cut-off side stubs every ~24 m so it reads as a real branch, not a pipe. The log carries
+ * the road; the posts of `addLogPier` (terrainView.ts) only prop it up.
  */
 export function buildBranchLogs(track: Track): THREE.Object3D[] {
   const parts: THREE.BufferGeometry[] = [];
   const hw = track.def.width / 2;
+  const bark = barkColor(-100, 11);
+  // Same bark, darker on faces that look down (the shaded underside of the branch).
+  const logColor: ColorFn = (p, n) => bark(p, n).multiplyScalar(0.72 + 0.28 * smoothstep(-0.8, 0.4, n.y));
+  const stubWood: ColorFn = (p, n) => bark(p, n).multiplyScalar(0.85);
+  const cut = new THREE.Color('#8a6a48'); // the sawn end of a stub (pale heartwood)
   for (const run of bridgeRuns(track, false)) {
     const step = 3; // every 3rd sample (~6 m) is plenty for a smooth log
     const path: THREE.Vector3[] = [];
     const radii: number[] = [];
+    const stubs: { at: THREE.Vector3; R: number; rx: number; rz: number; side: number }[] = [];
     for (let i = 0; i < run.length; i += step) {
       const p = run[i];
       const ground = track.terrain.height(p.x, p.z);
       const above = p.y - ground;
-      const R = THREE.MathUtils.clamp(1.4 + above * 0.03, 1.4, 3.2) * Math.min(1, above / 6);
+      const R = THREE.MathUtils.clamp(1.7 + above * 0.045, 1.7, 3.6) * Math.min(1, above / 6) * (1 + 0.07 * Math.sin(i * 0.9 + 1.3));
       const lift = Track.bankLift(p.bank, hw, 0);
-      path.push(new THREE.Vector3(p.x, p.y + lift - BRIDGE_DECK - R * 0.55, p.z));
+      const c = new THREE.Vector3(p.x, p.y + lift - BRIDGE_DECK - R * 0.7, p.z);
+      path.push(c);
       radii.push(Math.max(0.2, R));
+      if ((i / step) % 4 === 2 && above > 8) stubs.push({ at: c, R, rx: p.rx, rz: p.rz, side: (i / step) % 8 === 2 ? 1 : -1 });
     }
     if (path.length < 2) continue;
     // Taper the ends so the log grows out of / back into the ground or a trunk.
     radii[0] *= 0.6;
     radii[radii.length - 1] *= 0.6;
-    const g = tubeGeo(path, radii, 10);
-    parts.push(paint(g, barkColor(-100, 11)));
+    parts.push(paint(tubeGeo(path, radii, 10), logColor));
+    // Side stubs: a short thick twig leaving the log sideways and a little downward, ending in a pale sawn face.
+    for (const st of stubs) {
+      const out = st.R + 2.4;
+      const off = (d: number, dy: number) => st.at.clone().add(new THREE.Vector3(st.rx * st.side * d, dy, st.rz * st.side * d));
+      const e = off(out, -st.R * 0.45 - 1.1);
+      parts.push(paint(tubeGeo([off(st.R * 0.6, -st.R * 0.3), off(st.R + 1.0, -st.R * 0.5 - 0.5), e], [0.5, 0.42, 0.34], 6), stubWood));
+      parts.push(paint(blobGeo(0, 3, 0, 1, noise3).applyMatrix4(matrix(e.x, e.y, e.z, 0.36)), () => cut));
+    }
   }
   if (parts.length === 0) return [];
   const mesh = new THREE.Mesh(merge(parts), propMaterial(0.92));
@@ -364,41 +415,73 @@ export function buildTrunkBrackets(track: Track, plan: SceneryPlan): THREE.Objec
 }
 
 /**
- * Rope bridges: wooden posts at both edges every few metres, two hand ropes sagging between the posts,
- * thin hangers down to the deck and a rope along the deck edge. Decoration only (the bridge has no walls).
+ * Rope bridges. Drawn parts (decoration only: the bridge has no walls, the deck you drive on is the road):
+ *  - wooden posts at both edges every ~8 m (taller, thicker anchor posts with a lashing at the two ends),
+ *  - hand ropes per side that SAG between the posts (a parabola per span) and the edge rope,
+ *  - thin hangers from the upper rope to the deck edge,
+ *  - two thick main cables under the deck edges and a log cross tie every 8 m, so the deck is visibly slung in ropes.
+ * The deck itself dips in the middle because the road's control points do (the physics follows the same curve),
+ * and every rope is placed from the same deck height, so karts and ropes always agree.
+ * The ropes and hangers carry a `sway` weight, so the wind material moves them gently (env/materials.ts).
  */
 export function buildRopeBridges(track: Track): THREE.Object3D[] {
   const parts: THREE.BufferGeometry[] = [];
   const half = track.def.width / 2 + CURB_WIDTH + 0.1;
-  const rope = new THREE.Color('#c9a46a');
   const post = new THREE.Color('#6a4428');
-  const ropeColor: ColorFn = (p) => _c.copy(rope).multiplyScalar(0.8 + 0.25 * noise3(p.x * 2, p.y * 2, p.z * 2, 3));
+  const strandLight = new THREE.Color('#c8a468');
+  const strandDark = new THREE.Color('#7e5c32');
+  // Twisted rope: diagonal light and dark strands along the rope, plus slow dirt variation.
+  const ropeColor: ColorFn = (p) => {
+    const strand = 0.5 + 0.5 * Math.sin((p.x + p.z) * 19 + p.y * 14);
+    return _c.copy(strandDark).lerp(strandLight, strand * 0.85).multiplyScalar(0.8 + 0.3 * noise3(p.x * 0.6, p.y * 0.6, p.z * 0.6, 3));
+  };
   const postColor: ColorFn = (p) => _c.copy(post).multiplyScalar(0.75 + 0.35 * noise3(p.x * 3, p.y, p.z * 3, 5));
   const hw = track.def.width / 2;
   const deckY = (p: TrackSample, d: number) => p.y + Track.bankLift(p.bank, hw, d) + track.rampHeight(p.s);
+  const every = 4; // a post every 4 samples (~8 m)
+  const SAG = 0.42; // how far a hand rope hangs between two posts (m)
+  /** 0 at a post, 1 in the middle of a span: the parabola of a sagging rope. */
+  const span = (i: number) => {
+    const k = (i % every) / every;
+    return 4 * k * (1 - k);
+  };
   for (const run of bridgeRuns(track, true)) {
-    const every = 4; // a post every 4 samples (~8 m)
+    const last = run.length - 1;
     for (const side of [-1, 1]) {
-      const at = (p: TrackSample, h: number) => new THREE.Vector3(p.x + p.rx * side * half, deckY(p, side * half) + h, p.z + p.rz * side * half);
-      // Posts.
-      for (let i = 0; i < run.length; i += every) parts.push(paint(tubeGeo([at(run[i], -0.6), at(run[i], 1.6)], [0.16, 0.13], 6), postColor));
+      const at = (p: TrackSample, h: number, lat = half) => new THREE.Vector3(p.x + p.rx * side * lat, deckY(p, side * lat) + h, p.z + p.rz * side * lat);
+      // Posts: the two end posts are the anchors (taller and thicker, with a rope lashing).
+      for (let i = 0; i <= last; i += every) {
+        const anchor = i === 0 || i + every > last;
+        parts.push(paint(tubeGeo([at(run[i], -0.7), at(run[i], anchor ? 2.4 : 1.6)], anchor ? [0.3, 0.24] : [0.16, 0.13], 7), postColor));
+        if (anchor) for (const h of [0.9, 1.2, 1.5]) parts.push(paint(tubeGeo([at(run[i], h, half - 0.3), at(run[i], h, half + 0.3)], [0.2, 0.2], 6), ropeColor)); // lashing
+      }
       // Hand ropes (two heights) and the edge rope, sagging between posts.
       for (const h of [0.05, 0.75, 1.35]) {
         const path: THREE.Vector3[] = [];
-        for (let i = 0; i < run.length; i++) {
-          const k = i % every;
-          const sag = h > 0.1 ? Math.sin((k / every) * Math.PI) * 0.28 : 0;
-          path.push(at(run[i], h - sag));
-        }
-        parts.push(paint(tubeGeo(path, path.map(() => (h > 0.1 ? 0.06 : 0.09)), 5), ropeColor));
+        for (let i = 0; i <= last; i++) path.push(at(run[i], h - (h > 0.1 ? span(i) * SAG : 0)));
+        parts.push(paint(tubeGeo(path, path.map(() => (h > 0.1 ? 0.07 : 0.1)), 6), ropeColor, () => (h > 0.1 ? 1.5 : 0.4)));
       }
       // Hangers between the upper rope and the deck edge (every sample: reads as netting from a distance).
-      for (let i = 1; i < run.length; i++) {
+      for (let i = 1; i < last; i++) {
         if (i % every === 0) continue;
-        const k = i % every;
-        const sag = Math.sin((k / every) * Math.PI) * 0.28;
-        parts.push(paint(tubeGeo([at(run[i], 0.05), at(run[i], 1.35 - sag)], [0.025, 0.025], 3), ropeColor));
+        const bottom = at(run[i], 0.05);
+        parts.push(paint(tubeGeo([bottom, at(run[i], 1.35 - span(i) * SAG)], [0.03, 0.03], 3), ropeColor, (q) => THREE.MathUtils.clamp((q.y - bottom.y) / 1.3, 0, 1) * 1.5));
       }
+      // Under the deck: a thick main cable along the edge, hanging a little between the cross ties.
+      const lat = hw - 0.4;
+      const cable: THREE.Vector3[] = [];
+      for (let i = 0; i <= last; i++) {
+        const p = run[i];
+        cable.push(new THREE.Vector3(p.x + p.rx * side * lat, deckY(p, side * lat) - 0.95 - span(i) * 0.25, p.z + p.rz * side * lat));
+      }
+      parts.push(paint(tubeGeo(cable, cable.map(() => 0.14), 6), ropeColor, () => 0.8));
+    }
+    // Log cross ties under the deck every 8 m.
+    for (let i = 0; i <= last; i += every) {
+      const p = run[i];
+      const l = new THREE.Vector3(p.x - p.rx * hw, deckY(p, -hw) - 0.8, p.z - p.rz * hw);
+      const r = new THREE.Vector3(p.x + p.rx * hw, deckY(p, hw) - 0.8, p.z + p.rz * hw);
+      parts.push(paint(tubeGeo([l, r], [0.2, 0.2], 6), postColor));
     }
   }
   if (parts.length === 0) return [];
@@ -408,36 +491,72 @@ export function buildRopeBridges(track: Track): THREE.Object3D[] {
 }
 
 /**
- * Shortcut paths (the root-ridge shortcut): two bark roots run along both edges of the narrow dirt path, so
- * it reads as driving along the top of a giant root, and the edge you must not cross is easy to see.
+ * Shortcut paths (the root-ridge shortcut): the path runs along the top of a GIANT ROOT, drawn as real bark:
+ *  - a BARK SKIN: strips of grooved bark plates hugging both flanks of the ridge (so the ridge is one big root),
+ *  - two raised bark roots along both edges of the path: the edge you must not cross is easy to see.
  * Looks only (the drop beside the path is the real danger: fall and you respawn).
  */
 export function buildShortcutRoots(track: Track): THREE.Object3D[] {
   const parts: THREE.BufferGeometry[] = [];
+  const bark = barkColor(-100, 23);
+  const rootColor: ColorFn = (p, n) => bark(p, n).multiplyScalar(0.8 + 0.25 * smoothstep(-0.8, 0.6, n.y));
   for (const b of track.branches) {
     const S = b.samples;
     // Leave the first and last 18 m alone: there the path joins the main road.
     const skip = Math.ceil(18 / b.spacing);
+    // The BARK SKIN: on both flanks of the ridge a strip of bark plates hugs the ground, from the path edge outward and
+    // down the slope. The plates have long ridges running ALONG the path (like the grooves of a real bark), so the
+    // whole ridge reads as one huge fallen log / giant root, not as a bare mound. Sampled every 2 m along and every
+    // 0.8 m across; it fades into the ground at its outer edge.
+    for (const side of [-1, 1]) {
+      const pos: number[] = [];
+      const idx: number[] = [];
+      const COLS = 11;
+      const rows = Math.floor((S.length - 2 * skip) / 1);
+      for (let r = 0; r < rows; r++) {
+        const p = S[skip + r];
+        for (let c = 0; c < COLS; c++) {
+          const d = p.width / 2 + 0.2 + c * 0.8;
+          const x = p.x + p.rx * side * d;
+          const z = p.z + p.rz * side * d;
+          const fade = smoothstep(COLS - 1, COLS - 4, c); // 1 near the path, 0 at the outer edge
+          const groove = 0.22 * Math.max(0, Math.sin(c * 1.9 + side)) + 0.12 * noise3(r * 0.2, c * 0.9, side, 6); // ridges along the path
+          pos.push(x, track.terrain.height(x, z) + 1.1 + groove * fade - (1 - fade) * 0.9, z);
+        }
+      }
+      for (let r = 0; r < rows - 1; r++) {
+        for (let c = 0; c < COLS - 1; c++) {
+          const a0 = r * COLS + c;
+          const b0 = (r + 1) * COLS + c;
+          if (side > 0) idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
+          else idx.push(a0, a0 + 1, b0, a0 + 1, b0 + 1, b0);
+        }
+      }
+      parts.push(paint(fromArrays(pos, idx), (q, n) => rootColor(q, n).multiplyScalar(0.9)));
+    }
     for (const side of [-1, 1]) {
       const path: THREE.Vector3[] = [];
       const radii: number[] = [];
       for (let i = skip; i < S.length - skip; i += 2) {
         const p = S[i];
-        const d = side * (p.width / 2 + 0.9);
+        const d = side * (p.width / 2 + 0.7 + 0.25 * Math.sin(i * 0.23 + side)); // the edge root wiggles in and out
         const x = p.x + p.rx * d;
         const z = p.z + p.rz * d;
         const ground = track.terrain.height(x, z);
-        const r = 0.9 + 0.35 * Math.sin(i * 0.37 + side); // knobbly: the thickness wanders
-        path.push(new THREE.Vector3(x, Math.max(ground, track.terrain.height(p.x, p.z) - 0.4) + r * 0.35, z));
+        const r = 1.15 + 0.4 * Math.sin(i * 0.37 + side); // knobbly: the thickness wanders
+        path.push(new THREE.Vector3(x, Math.max(ground, track.terrain.height(p.x, p.z) - 0.4) + r * 0.3, z));
         radii.push(r);
       }
-      if (path.length < 2) continue;
-      radii[0] = radii[radii.length - 1] = 0.2;
-      parts.push(paint(tubeGeo(path, radii, 7), barkColor(-100, 23)));
+      if (path.length >= 2) {
+        radii[0] = radii[radii.length - 1] = 0.2;
+        parts.push(paint(tubeGeo(path, radii, 8), rootColor));
+      }
     }
   }
   if (parts.length === 0) return [];
-  const mesh = new THREE.Mesh(merge(parts), propMaterial(0.92));
+  const material = propMaterial(0.92);
+  material.side = THREE.DoubleSide; // the bark skin's winding depends on the side of the path: draw both faces
+  const mesh = new THREE.Mesh(merge(parts), material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return [mesh];
@@ -456,7 +575,7 @@ const LEAF_DROP = 34;
  * column (a pure function of the clock ENV_TIME, so nothing is updated in JavaScript).
  * `count` is the number of leaves (fewer on Low quality).
  */
-export function buildFallingLeaves(track: Track, count = 2600): THREE.Mesh {
+export function buildFallingLeaves(track: Track, count = 2000): THREE.Mesh {
   const rnd = seededRandom(4242);
   // One leaf: a small diamond with a bent middle (4 triangles), 0.35 m long.
   const base = new THREE.BufferGeometry();
@@ -531,15 +650,12 @@ export function buildFallingLeaves(track: Track, count = 2600): THREE.Mesh {
 
 /** Soft heaps of leaves (from `treetop.leafPiles`), merged into one mesh. No collider: you drive through them. */
 export function buildLeafPiles(track: Track): THREE.Object3D[] {
-  const piles = track.def.scenery.treetop?.leafPiles ?? [];
-  if (piles.length === 0) return [];
+  const sites = leafPileSites(track);
+  if (sites.length === 0) return [];
   const rnd = seededRandom(777);
   const parts: THREE.BufferGeometry[] = [];
-  for (const pile of piles) {
-    const s = track.sAt(pile.at);
-    const p = track.pointAt(s, (pile.offset * track.def.width) / 2);
-    const ground = track.sample(p.x, p.z, p.index)?.height ?? p.y;
-    const size = pile.size ?? 2.2;
+  for (const { x, y: ground, z, size } of sites) {
+    const p = { x, z };
     // Fallen leaves: browner and duller than the leaves still on the trees, with the odd bright patch.
     const palette: [THREE.Color, THREE.Color] = [new THREE.Color('#6a3414'), new THREE.Color(['#d8822a', '#e0a03a', '#c8602a'][Math.floor(rnd() * 3)])];
     for (let k = 0; k < 4; k++) {

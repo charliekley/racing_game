@@ -22,6 +22,8 @@ export const SOUND_IDS = [
   'useStorm', 'useRocket', 'zap', 'squash',
   // Hazard hits with their own character (snowball, water). Only ever append to this list.
   'hitSnow', 'hitWater',
+  // Acorn beetle bump (Autumn Speedway). Only ever append to this list.
+  'hitBeetle',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -174,13 +176,15 @@ export function hazardSound(type: string, fire: boolean): SoundId | null {
   }
 }
 
-/** The sound a hazard makes when it HITS a kart: snow thud for the snowball, splash for the drawbridge (falling in the water), sizzle (lava) otherwise. */
+/** The sound a hazard makes when it HITS a kart: snow thud for the snowball, splash for the drawbridge (falling in the water), a hard-shell thud for the acorn beetle, sizzle (lava) otherwise. */
 export function hazardHitSound(type: string): SoundId {
   switch (type) {
     case 'roller':
       return 'hitSnow';
     case 'drawbridge':
       return 'hitWater';
+    case 'beetle':
+      return 'hitBeetle'; // a hard shell: a dull wooden thud and a short rattle
     default:
       return 'hazardHit'; // geyser (lava); gusts only push, they never raise a hit
   }

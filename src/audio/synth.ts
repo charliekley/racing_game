@@ -458,6 +458,15 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     for (const [off, f] of [[0.18, 1500], [0.28, 1900], [0.4, 1300]]) tone(e, t + off, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.08, gain: 0.12 * g });
     return 0.6;
   },
+  hitBeetle: (e, t, g) => {
+    // Bounced off a big hard shell: a low wooden "thok" (short pitch drop), a knock one octave up, a dry click of
+    // shell on bumper and a quick rattle of the little legs / wobbling shell. No sizzle, no whistle.
+    tone(e, t, { type: 'sine', f0: 190, f1: 70, dur: 0.22, gain: 0.6 * g });
+    tone(e, t, { type: 'triangle', f0: 380, f1: 210, dur: 0.1, gain: 0.25 * g, cutoff: 1800 });
+    noiseBurst(e, t, { dur: 0.05, gain: 0.3 * g, f0: 2400, q: 3, a: 0.002 });
+    for (const [off, f] of [[0.09, 1500], [0.14, 1900], [0.2, 1300], [0.25, 1700]]) noiseBurst(e, t + off, { dur: 0.03, gain: 0.1 * g, f0: f, q: 4 });
+    return 0.4;
+  },
 };
 
 // --- Music voices ------------------------------------------------------------

@@ -19,6 +19,7 @@ import { fluidMaterial } from './env/fluids';
 import { merge, paint, scratch, tubeGeo } from './env/geo';
 import { FogCuller } from './env/fogCull';
 import { mergeStaticMeshes } from './env/mergeStatic';
+import { LeafBurstView, leafPileSites, type BurstKart } from './env/leafBurst';
 import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, buildLanterns, isTreetop, plankTexture } from './env/treetop';
 import { planScenery } from '../track/sceneryPlan';
 
@@ -353,6 +354,12 @@ export class TrackView {
       for (const o of buildGiantTrees(track, planScenery(track))) scenery.add(o);
       for (const o of [...buildBranchLogs(track), ...buildRopeBridges(track), ...buildLeafPiles(track), ...buildShortcutRoots(track), ...buildTrunkBrackets(track, planScenery(track)), ...buildLanterns(planScenery(track))]) this.group.add(o);
       this.group.add(buildFallingLeaves(track));
+      // Leaves kicked up when karts drive through the leaf piles (render only).
+      const sites = leafPileSites(track);
+      if (sites.length > 0) {
+        this.leafBursts = new LeafBurstView(sites);
+        this.group.add(this.leafBursts.mesh);
+      }
     }
     this.group.add(scenery);
     this.sceneryCull = new FogCuller(scenery);
@@ -360,6 +367,14 @@ export class TrackView {
     // PERF: the road ribbons (one per stretch between gaps, per kerb side...) share a few materials; merge the
     // big ones so each material costs one draw call per view instead of several (see env/mergeStatic.ts).
     mergeStaticMeshes(this.group);
+  }
+
+  /** Treetop tracks: the leaves that fly up when a kart drives through a leaf pile (null elsewhere). */
+  private leafBursts: LeafBurstView | null = null;
+
+  /** Per-frame update that needs the karts (leaf piles scatter under them). `dt` in seconds. No-op on other tracks. */
+  updateKarts(dt: number, karts: Iterable<BurstKart>): void {
+    this.leafBursts?.update(dt, karts);
   }
 
   /** Animate (boost arrows and glow, water, lava, flags and foliage through the shared clock). */

@@ -54,13 +54,20 @@ export class ChaseCamera {
   private shakeTime = 0;
   private orbitAngle = 0;
   private orbiting = false;
+  /**
+   * Extra look-down on steep descents, 0 = off (the default: every track but Autumn Speedway). With 0.5 the camera
+   * tips down by about half of the road's grade ahead, so a 30 % plunge reads as steep instead of the camera staring
+   * horizontally over the edge. Set by the game per track.
+   */
+  slopePitch = 0;
+  private slopeBlend = 0; // smoothed grade of the road ahead (rise per metre, negative = downhill)
   /** Lets other effects (speed lines) read how strongly the camera is "pushing". 0..1 */
   speedFx = 0;
 
   /** Jump straight to the target next update (e.g. after a respawn). */
   snap(): void {
     this.initialized = false;
-    this.boostBlend = this.airBlend = this.cannonBlend = 0;
+    this.boostBlend = this.airBlend = this.cannonBlend = this.slopeBlend = 0;
     this.orbiting = false;
   }
 
@@ -149,6 +156,15 @@ export class ChaseCamera {
       lookX = k.x + kfx * ahead - kfz * side;
       lookZ = k.z + kfz * ahead + kfx * side;
       lookY = k.y + 1.0;
+      if (this.slopePitch > 0 && groundAt && state.grounded) {
+        // Grade of the road 12 m ahead, eased slowly (so bumps and crests don't nod the camera), clamped to a steep drop / mild climb.
+        const g = groundAt(k.x + kfx * 12, k.z + kfz * 12);
+        const grade = g === null ? 0 : THREE.MathUtils.clamp((g - k.y) / 12, -0.5, 0.15);
+        this.slopeBlend = ease(grade, this.slopeBlend, 0.45);
+      } else {
+        this.slopeBlend = ease(0, this.slopeBlend, 0.45);
+      }
+      lookY += this.slopeBlend * 9 * this.slopePitch;
     }
 
     if (!this.initialized) {

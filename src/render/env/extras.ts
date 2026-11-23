@@ -45,7 +45,10 @@ function spot(ctx: ExtrasContext, clear: number, r: number, maxDist = 220): [num
 
 export function addExtras(ctx: ExtrasContext): THREE.Object3D[] {
   const out: THREE.Object3D[] = [];
+  // Treetop tracks (Autumn Speedway): no hot-air balloons above a forest; the hazy giant trees are the horizon.
+  if (ctx.track.def.scenery.treetop) return out;
   switch (ctx.style) {
+
     case 'harbour':
       cranes(ctx);
       balloons(ctx, 3);

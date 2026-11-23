@@ -19,7 +19,7 @@
  * polygon is then triangulated, and its cut side becomes the top of a rock wall.
  */
 import * as THREE from 'three';
-import { BRIDGE_DECK, bridgePiers, PILLAR_RADIUS, type BridgePier } from '../sim/bridgePillars';
+import { BRIDGE_DECK, bridgePiers, PILLAR_RADIUS, PILLAR_SPACING, type BridgePier } from '../sim/bridgePillars';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
 import { concreteMaps, grassMaps, rockMaps } from './textures';
@@ -96,6 +96,11 @@ const smooth = (t: number) => {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
 };
+
+// Treetop (Autumn Speedway) forest floor colours: damp moss, brown leaf litter, root bark.
+const TREE_MOSS = new THREE.Color('#4a4e22');
+const TREE_LITTER = new THREE.Color('#8a4a1e');
+const TREE_BARK = new THREE.Color('#4e3626');
 
 /** Colours of a theme's ground, rock, and so on. */
 interface Palette {
@@ -430,6 +435,7 @@ export class TerrainView {
     };
 
     const c = new THREE.Color();
+    const treeFeatures = track.def.scenery.treetop ? track.def.terrain?.features : undefined;
     /** Colour at a point: grass -> rock by slope, height tints, snow/ash, soft blend into the road shoulders. */
     const colorAt = (x: number, y: number, z: number, slope: number): THREE.Color => {
       const n1 = fbm3(x * 0.02, 0, z * 0.02, 12, 3);
@@ -447,6 +453,27 @@ export class TerrainView {
         // Ash drifts darker in hollows; faint hot cracks high up on the cone.
         const crack = smoothstep(0.8, 0.93, ridged3(x * 0.03, y * 0.02, z * 0.03, 22, 3)) * smoothstep(12, 30, y) * rockAmt;
         c.lerp(new THREE.Color(2.2, 0.55, 0.12), crack * 0.5);
+      }
+      if (treeFeatures) {
+        // Treetop forest floor: hollows (negative features) are damp, mossy and dark with brown leaf litter in patches;
+        // the narrow mounds of the root ridge are bark brown with moss on the gentle parts.
+        let hollow = 0;
+        let ridge = 0;
+        for (const f of treeFeatures) {
+          const d = Math.hypot(x - f.x, z - f.z);
+          if (f.height < 0) hollow = Math.max(hollow, smooth((f.radius * 1.15 - d) / (f.radius * 0.8)));
+          else ridge = Math.max(ridge, smooth((f.radius * 2.0 - d) / (f.radius * 1.3)));
+        }
+        if (hollow > 0) {
+          c.lerp(TREE_MOSS, hollow * (0.35 + 0.35 * n2));
+          const litter = smoothstep(0.52, 0.7, noise3(x * 0.18, 0, z * 0.18, 17)); // patches of brown leaf litter
+          c.lerp(TREE_LITTER, hollow * litter * 0.6);
+          c.multiplyScalar(1 - 0.22 * hollow); // darker, damper
+        }
+        if (ridge > 0) {
+          c.lerp(TREE_BARK, ridge * 0.8);
+          c.lerp(TREE_MOSS, ridge * smoothstep(0.35, 0.0, slope) * 0.3 * n2);
+        }
       }
       // Blend into the road shoulders so there is no hard seam.
       const dist = track.terrain.roadDistance(x, z);
@@ -765,7 +792,9 @@ export class TerrainView {
 
     }
     // Piers: the same list the simulation turns into colliders (sim/bridgePillars.ts).
-    for (const pier of bridgePiers(track)) this.addPillar(solids, pier);
+    const piers = bridgePiers(track);
+    for (const pier of piers) this.addPillar(solids, pier);
+    if (wooden) this.addLogBraces(solids, piers);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -817,7 +846,7 @@ export class TerrainView {
   private addLogPier(out: THREE.BufferGeometry[], pier: BridgePier): void {
     const { sample: p, ground, deckBottom } = pier;
     const h = deckBottom - ground;
-    const R = PILLAR_RADIUS * 0.9;
+    const R = PILLAR_RADIUS * 0.95;
     const bark = new THREE.Color('#4e3220');
     const prof: [number, number][] = [];
     for (let i = 0; i <= 8; i++) {
@@ -828,6 +857,43 @@ export class TerrainView {
       scratch.copy(bark).multiplyScalar((0.7 + 0.3 * THREE.MathUtils.clamp((q.y - ground) / Math.max(1, h), 0, 1)) * (0.8 + 0.4 * noise3(q.x * 2, q.y * 0.3, q.z * 2, 9)));
     const geo = latheGeo(prof, 10, (a, t) => 1 + 0.08 * Math.sin(a * 5 + t * 4));
     out.push(paint(geo, color).applyMatrix4(matrix(p.x, 0, p.z, 1, 1, 1, p.heading)));
+  }
+
+  /**
+   * Treetop tracks: cross-bracing between the log posts, so the high road stands on a timber trestle and not on
+   * stilts. Per post: a saddle (two short arms up into the branch log) and two knee braces along the road; between
+   * two neighbouring posts: an X of diagonal beams. Looks only (the posts' colliders are unchanged).
+   */
+  private addLogBraces(out: THREE.BufferGeometry[], piers: BridgePier[]): void {
+    const bark = new THREE.Color('#44291a');
+    const wood = (q: THREE.Vector3) => scratch.copy(bark).multiplyScalar(0.8 + 0.4 * noise3(q.x * 1.5, q.y * 0.5, q.z * 1.5, 13));
+    const beam = (a: THREE.Vector3, b: THREE.Vector3, r: number) => out.push(paint(tubeGeo([a, b], [r, r * 0.9], 6), wood));
+    piers.forEach((pier, i) => {
+      const { sample: p, ground, deckBottom, abutment } = pier;
+      const h = deckBottom - ground;
+      if (abutment || h < 5) return;
+      const tx = Math.sin(p.heading); // road direction (heading 0 = +z)
+      const tz = Math.cos(p.heading);
+      const rx = tz;
+      const rz = -tx;
+      const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+      // Saddle: arms from the post top out to both sides of the log above it.
+      for (const side of [-1, 1]) beam(V(p.x, deckBottom - h * 0.16, p.z), V(p.x + rx * side * 2.3, deckBottom - 0.4, p.z + rz * side * 2.3), 0.34);
+      // Knee braces along the road: from the post at 60 % height up to the log, 4.5 m ahead and behind.
+      for (const dir of [-1, 1]) beam(V(p.x, ground + h * 0.58, p.z), V(p.x + tx * dir * 4.5, deckBottom - 0.5, p.z + tz * dir * 4.5), 0.3);
+      // X braces to the next post of the same bridge.
+      const q = piers[i + 1];
+      if (!q || q.abutment || q.deckBottom - q.ground < 5) return;
+      const gap = Math.hypot(q.sample.x - p.x, q.sample.z - p.z);
+      if (gap > PILLAR_SPACING * 1.6) return;
+      const lo = (pp: BridgePier) => ground0(pp, 0.22);
+      const hi = (pp: BridgePier) => ground0(pp, 0.72);
+      beam(lo(pier), hi(q), 0.26);
+      beam(lo(q), hi(pier), 0.26);
+    });
+    function ground0(pp: BridgePier, f: number): THREE.Vector3 {
+      return new THREE.Vector3(pp.sample.x, pp.ground + (pp.deckBottom - pp.ground) * f, pp.sample.z);
+    }
   }
 
   // -------------------------------------------------------------------------
