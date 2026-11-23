@@ -32,9 +32,9 @@ import type { Track } from './track';
 /** The bounce rules (all in one place so tests and the renderer agree). */
 export const BOUNCE = {
   /** Wanted horizontal speed (m/s) of a bounce arc: the time in the air is chosen as distance / speed. */
-  speed: 27,
+  speed: 25,
   /** Shortest and longest time in the air (s). */
-  airMin: 1.15,
+  airMin: 1.3,
   airMax: 2.1,
   /** A kart touches a cap when it is within this much above its top (m)... */
   touchAbove: 0.15,

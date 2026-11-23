@@ -24,6 +24,8 @@ export const SOUND_IDS = [
   'hitSnow', 'hitWater',
   // Acorn beetle bump (Autumn Speedway). Only ever append to this list.
   'hitBeetle',
+  // Mushroom trampoline (Mushroom Valley). Only ever append to this list.
+  'bounce',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -122,6 +124,8 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [cue('squash')];
     case 'itemDestroyed':
       return [{ id: 'itemDestroyed', gain: 0.6, rate: 1 }];
+    case 'bounce':
+      return [cue('bounce')];
     case 'cannonFire':
       return [cue('cannonFire')];
     case 'cannonLand':

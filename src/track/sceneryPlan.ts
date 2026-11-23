@@ -326,7 +326,8 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
   const def = track.def;
   const rnd = planRandom(def.scenery.seed);
   const biome = biomeFor(def.theme);
-  const rules = BIOME_RULES[biome];
+  // Mushroom Valley is a pine-covered mountain: mostly pines, more rocks.
+  const rules = def.scenery.mushroom ? { ...BIOME_RULES[biome], trees: { pine: 0.75, round: 0.12, poplar: 0.13 }, rockDensity: 0.7 } : BIOME_RULES[biome];
   const site = new Site(track);
   const seed = () => Math.floor(rnd() * 4294967296);
 

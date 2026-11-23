@@ -179,7 +179,7 @@ export const mushroomValley: TrackDef = {
   checkpoints: 18,
   scenery: {
     seed: 61,
-    trees: 150,
+    trees: 320,
     buildings: 0,
     mushroom: {
       gorges: [
@@ -193,10 +193,18 @@ export const mushroomValley: TrackDef = {
   theme: { grass: '#5f8a3e', offroad: '#9a8a5c', sky: '#8fb8e8', horizon: '#dcebf5', mood: 'bright' },
   terrain: {
     seed: 17,
-    hills: { amplitude: 5, wavelength: 110 },
+    hills: { amplitude: 7, wavelength: 100 },
     features: [
       // The mountain: a big bump the roads climb, so the land stays near road level all round.
       { x: 150, z: 160, radius: 380, height: 52 },
+      // Peaks and ridges round the course (all well clear of the roads).
+      { x: -200, z: 130, radius: 140, height: 95 },
+      { x: 150, z: -190, radius: 150, height: 80 },
+      { x: 500, z: 120, radius: 150, height: 100 },
+      { x: 500, z: 380, radius: 140, height: 90 },
+      { x: 200, z: 570, radius: 160, height: 100 },
+      { x: -110, z: 440, radius: 140, height: 90 },
+      { x: 235, z: 265, radius: 62, height: 36 }, // a ridge in the middle of the loop
       // The cave's pit: three overlapping holes (the main road and the shortcut cross over them).
       { x: 52, z: 269, radius: 44, height: -50 },
       { x: 52, z: 232, radius: 44, height: -50 },

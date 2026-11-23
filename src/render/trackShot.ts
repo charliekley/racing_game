@@ -38,6 +38,8 @@ const DEFAULT_VIEW: ShotView = { at: 0, ahead: 40, back: 90, side: 65, up: 62, f
 const VIEWS: Record<string, Partial<ShotView>> = {
   // The spiral round the Great Trunk, seen from outside (the trunk's centre is to the right of the road there).
   'Autumn Speedway': { at: 0.47, ahead: 0, back: -10, side: -175, up: 55, fov: 40 },
+  // The orange mushroom chain across the first gorge, seen from the side (the camera stands to the right of the road).
+  'Mushroom Valley': { at: 0.522, ahead: 0, back: 20, side: 80, up: 38, fov: 42 },
 };
 
 export class TrackShooter {
