@@ -319,79 +319,105 @@ scenery plan, class balance).
 
 ## Mushroom Valley (6th track): what is implemented
 
-An original **mountain course over misty gorges**. Giant mushrooms rise out of the chasms: **orange caps are
-trampolines** (touch one and you are thrown along a big arc), **green caps are solid ground** (platforms and
-bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.87 km, bots lap in about 70 s
-(Autumn Speedway: 67 s); max grade 7 % up / 10 % down (far gentler than Autumn Speedway, 25 / 34 %).
+An original **mountain trail over misty gorges**. Giant mushrooms rise out of the chasms: **orange caps are
+trampolines** (touch one and you are thrown along a big floaty arc), **green caps are solid ground** (platforms and
+bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.97 km, bots lap in about 68-77 s
+(Autumn Speedway: 67 s); climbs up to 16 % (the switchback legs), descents up to 11 %, height range 47 m.
 
-### Layout (`src/track/tracks/mushroomValley.ts`, north = +z, anticlockwise lap)
+### Layout (`src/track/tracks/mushroomValley.ts`, anticlockwise-ish lap, start line at the foot of the mountain)
+
+The route is written with a small **turtle** (`line(len, dy)`, `turn(r, deg, dy)`, `wiggle`, `mark(name)`): every bend is an
+exact circle arc, so the turning radius is known (>= 28 m everywhere: the bots never brake for a bend, which keeps the three
+weight classes within the balance limits), and the mountain is re-shaped by changing a few numbers. The last turn's radius is
+computed so that the lap closes exactly (the file throws if it cannot). Caps and shortcuts are placed with `local(name, ds,
+lat)` ("so many metres along the road from a named point, so many metres to the right"), which follows the road round its bends.
 
 | # | Section | Height | What happens |
 |---|---|---|---|
-| 1 | Meadow | 30-34 m | start line, S-bends along the south edge |
-| 2 | Zig-zag | 34-52 m | two wide hairpins (radius 40) and a corner north up the east slope; boost pad |
-| 3 | Gorge one | 55 m | cliff road with guard rails, then an 80 m chasm: the ONLY way across is a chain of **three orange caps** |
-| 4 | Gorge two | 57 m | ridge road, boost pad, a 54 m chasm crossed on a snaking path of **five overlapping green caps** |
-| 5 | The cave | 57 -> 50 m | a hairpin south into a rock hill with a big glowing cave; a 126 m chasm full of mushrooms with **two routes** (below) |
-| 6 | Descent | 50 -> 30 m | boost pad out of the cave, flowing pine-covered run back to the meadow |
+| 1 | Foothills | 30-32 m | start line, three bends, boost pad |
+| 2 | Switchbacks | 32-77 m | three hairpins (r 30) up the east face, legs of 14-15 % between them, the fence on the outside of every bend |
+| 3 | **Sky Leap** | 77 -> 74 m | ridge road with a boost pad, then a 50 m gorge with ONE huge orange cap (r 11): a single 1.8 s bounce, apex 10 m, lands on the far road |
+| 4 | **Stepping Stones** | 71 -> 69 m | the ridge winds on; a 62 m gorge crossed on a snaking path of five green caps (r 9.5) |
+| 5 | **Twin Spans** (choice 1) | 67 -> 64 m | down the west face to an 84 m gorge. Main road: seven overlapping green caps. Shortcut (left, `shortcuts[0]`): three orange caps held over a pit, hop, hop, land |
+| 6 | **The cave** (choice 2) | 63 -> 61 m | a long bend into a glowing cave; 126 m chasm with an S-bend inside. Main road: nine green caps. Shortcut (right, `shortcuts[1]`): four orange caps (hops of 40 m, 1.4 s) |
+| 7 | Descent | 59 -> 30 m | boost pad, a left up the mountain side, two sweeping S-bends (the 11 % chute), a final right that closes the lap |
 
-All bends are `arc()` circle arcs (radius >= 28 m, so the bots never brake for them: that is what keeps the three
-weight classes within 2 % on this track). Caps are placed with `at` + `ds` (metres along) + `offset` on the main road,
-so they follow the road wherever it bends.
+Item rows come every 175 m (`TrackDef.itemRowSpacing`, default 260 m for other tracks), so every chasm has a row of boxes
+before and after it.
 
-### The two routes through the cave
+### Fun rules of thumb
 
-* **Main road (route 0)**: nine overlapping green caps (radius 10 m, necks about 14 m wide) along the road line, snaking
-  +-3 m. 126 m, drive straight across; edges drop away.
-* **Orange route (`shortcuts[0]`, route 1)**: a dirt path that leaves the main road before the cave, runs along the
-  west edge of the chasm and rejoins after the exit. Its middle is HELD at the cave's height (`ShortcutDef.hold: true`:
-  the third number of each `[x, z, height]` point), far above the pit, and **five orange caps** are the only ground
-  there; the last one throws you onto the dirt past the pit. About the same time as the main road (the test allows
-  6 %); the orange route is a little longer but its hops are faster than driving (a trick on the last hop pays
-  out a boost on the dirt), the risk is hitting the first cap and the extra dirt at both ends (dirt is slower).
-* Bots take either (`shortcutBias`); both routes give race progress (the branch maps onto the main road's `s`), minimap
-  lines and seeker/rocket paths exactly as the Autumn Speedway shortcut does.
+* Bounces are **big and floaty**: the arc of a hop is chosen by `CapDef.air` (time in the air) so the apex is 5-10 m; a trick in
+  the air pays out the usual boost on landing, which makes the orange shortcuts as quick as the green main roads (a lap of
+  the main road and of both shortcuts differ by less than 7 %, the test checks it).
+* Two **risk / reward** choices every lap (Twin Spans and the cave) plus the one forced leap (Sky Leap) and the green bridge
+  (Stepping Stones). Bots pick shortcuts by `shortcutBias`, all four bias slots have been run.
+* The first cap of a shortcut is only about 20 m from the road's edge, so a bot (or a player) has to commit at the fork.
+
+### The two shortcuts and the cave routes
+
+* **Main road**: green caps, drive straight across; edges drop away.
+* **Shortcuts** (`shortcuts[]`): a dirt path that leaves the main road before the chasm, runs beside it and rejoins after it.
+  Its middle is HELD at the chasm's height (`ShortcutDef.hold: true`: the third number of each `[x, z, height]` point), far
+  above the pit (negative terrain features under the path), and the orange caps are the only ground there; the last cap throws
+  you onto the dirt past the pit. Both routes give race progress (the branch maps onto the main road's `s`), minimap lines and
+  seeker/rocket paths exactly as the Autumn Speedway shortcut does.
 
 ### Bouncy caps (sim: `src/sim/bouncers.ts`, test `bouncers.test.ts`)
 
 A cap is `CapDef` (`types.ts`): a circle (centre, `radius`, top height) with `kind: 'orange' | 'green'`. In the world:
-`Bouncers.wrapGround` makes every cap ground (flush with the road: `max(base ground, cap top)`, surface 'road'), and
-`Bouncers.step` runs right after kart physics each tick.
+`Bouncers.wrapGround` makes every cap ground (`max(base ground, cap surface)`, surface 'road'), and `Bouncers.step` runs right
+after kart physics each tick.
 
-* **Touch rule**: the kart is inside the disc, no more than `BOUNCE.touchAbove` (0.15 m) above the top and no more than
-  `touchBelow` (0.6 m) below it, and grounded or falling. (A kart that falls past the side never triggers it.)
-* **Arc** (`bounceArc`): from the kart's own position (x, y, z) to the cap's target (the next cap, or a point on the far
-  road / dirt): time in the air `T = clamp(distance / BOUNCE.speed, airMin, airMax)` with `speed 25 m/s`, `airMin 1.3 s`,
-  `airMax 2.1 s`; horizontal speed `D / T`, launch speed `vy = (dy + g T^2 / 2) / T` (g = the kart's own gravity, 28).
-  A 38 m hop is 1.5 s with a 7 m apex; the 3 gorge-one hops are 31-37 m. Apex limit in the tests: 11 m.
-* **Guided flight**: while in the air after a bounce the kart's heading points at the target and its speed is
-  (distance left) / (time left), so steering cannot make it miss; it lands on the target at ANY entry speed (the tests
-  cross at 4, 12, 20, 28 and 37 m/s, off-centre and at an angle). The kart's speed after landing is the arc's speed.
-* **Tricks**: the bounce sets `trickable`, so the normal trick (jump + trick button) in the air pays out the usual
-  boost on landing (on the next cap it simply carries over the chain; on the road / dirt it is a real boost).
-* **Event**: `{ kind: 'bounce', slot, cap }` (audio `bounce` = a springy "boing", mapping in `audio/mapping.ts`).
-* Rocket and seeker shots follow the race line over chasms as before (they hold their height over a void gap; the caps
-  are ground for the rocket and equal to the road height there).
-* `TrackDef.chasms` = a void gap in the MAIN road with no ramp (`track.ts` adds it to `gaps`: the road mesh stops, the
-  terrain is cut out and rock walls show, see `terrainView.ts`). `ShortcutDef.hold` and `Branch.pinned` (shortcuts.ts,
-  `branchView.ts`) are the other two small sim additions.
+* **Domed surface**: the cap is highest in the middle (`y`) and sinks by `CAP_DROOP` (6 %) of its radius at the rim:
+  `height(r) = y - 0.06 r^2 / radius`. The renderer draws the same dome. Overlapping caps: the highest surface wins.
+* **Touch rule**: the kart is inside the disc, no more than `BOUNCE.touchAbove` (0.15 m) above the surface and no more than
+  `touchBelow` (0.6 m) below it, and grounded or falling.
+* **Arc** (`bounceArc`): from the kart's own position to the cap's target (the next cap, or a point on the far road / dirt):
+  time in the air `T` = `CapDef.air` if given, else `clamp(distance / 25 m/s, 1.3 s, 2.1 s)`; horizontal speed `D / T`, launch
+  speed `vy = (dy + g T^2 / 2) / T`. Apex limit in the tests: 11 m; speed limit 32 m/s.
+* **Guided flight**: while in the air after a bounce the kart's heading points at the target and its speed is (distance left) /
+  (time left), so steering cannot make it miss; it lands on the target at ANY entry speed. The kart's "which road am I on" hint
+  (`trackIndex`) is refreshed every tick of the flight (over a chasm nothing else updates it; on a 60 m flight it would
+  otherwise fall behind the road search window and the landing would be looked up on the wrong part of the road).
+* **Tricks**: the bounce sets `trickable`, so the normal trick in the air pays out the usual boost on landing.
+* **Event**: `{ kind: 'bounce', slot, cap }` (audio `bounce` = a springy "boing"; a short double buzz on the phone, `HAPTICS.bounce`).
+* `TrackDef.chasms` = a void gap in the MAIN road with no ramp (`track.ts` adds it to `gaps`). `TrackDef.itemRowSpacing`
+  (optional) sets the metres between item-box rows.
 
 ### Look (`src/render/env/mushroom.ts`, gated by `scenery.mushroom`)
 
-* **Caps**: lathe-built flat-topped caps (what you see is the flat physics surface) with a rounded shoulder, cream gills,
-  cream spots painted in vertex colours; thick stalks fading into the mist. Green caps and ALL stalks are merged into one
-  mesh; the orange caps are ONE instanced mesh, each with its own matrix: when a kart is thrown off one it squashes and
-  rings back (`wobbleScale`: squash 34 %, 2.7 Hz, decays in about 1.5 s; render-only, driven from `TrackView.updateKarts`).
-* **Mist**: three soft cloud layers (canvas texture, no files) stacked under every gorge and the cave pit: one merged mesh.
-* **Cave**: a rock vault swept over the cave's stretch (dark mottled inside, grassy hill outside, narrower mouths), the
-  glowing little mushrooms (instanced, HDR colours so the bloom picks them up, a slow pulse).
-* The scenery plan gives this track mostly pines and rocks (`planScenery`), the terrain has peaks round the course, and the
-  pit under the cave is `terrain.features` (negative bumps); the road blend is 10 m so the pit is deep right beside the road.
-* Perf: 85-146 draw calls and 160-230 k triangles on Low (Autumn Speedway: 64-171 calls, 100-360 k).
+* **Road**: a packed-earth **mountain trail** (`trailTexture`: tan earth, two wheel ruts, small stones, no lane lines), rough
+  stone edges (`rockMaps`), a low stone wall topped with wooden posts and two ropes as the barrier (`STONE_WALL_PROFILE`);
+  the verges under the cave's roof are dark rock. All of that is `if (mushroom)` in `trackView.ts`; the other tracks keep
+  asphalt, kerbs and jersey walls.
+* **Caps**: big domed caps (radius 8-11 m), a thick rolled rim, a bowl-shaped underside with radial gill stripes, round cream
+  spots (little discs lying on the dome), thick stalks with a ruffled skirt ring that fade into the mist. Green caps and ALL
+  stalks are merged into static meshes (one per ~150 m of road, so the far ones are culled); the orange caps are ONE instanced
+  mesh, each with its own matrix: when a kart is thrown off one it squashes and rings back (`wobbleScale`: squash 34 %,
+  2.7 Hz; render-only, driven from `TrackView.updateKarts`). **Orange caps have a glowing yellow-orange rim** (a second
+  instanced mesh with HDR colours that pulses): bouncy = glowing, solid = plain green.
+* **Mist**: four soft cloud layers (a tiling canvas texture, no files) under every gorge and the cave pit: one merged mesh.
+  The clouds **drift**: a per-layer `drift` attribute and three lines of GLSL (`onBeforeCompile`) scroll the texture
+  coordinates by `drift x time`, each layer its own direction and speed; the quad's own edges fade out.
+* **Cave**: a dark rock vault over the cave stretch (darker inside, grassy hill outside), the terrain and the road verges under
+  it are painted dark rock (`caveFootprint`), ~110 stalactites (instanced cones), glowing mushrooms on the roof and standing
+  beside the road, and soft additive **light pools** in teal/violet/pink on the floor (no real lights: cheap).
+* **Gorge walls**: `TerrainView` draws the gorge walls with a rock-coloured top edge and tapers the wall bumps to zero at the
+  corners (`WallSink.wall(..., taper)`), so two walls meet exactly (a bump pushed along two directions used to leave a thin
+  pale slit at the corner). No hot-air balloons on this track (`extras.ts`).
+* **Mountain**: the terrain is a sum of bumps fitted to the road (`massif()` in the track file: one bump per ~30 m of road, its
+  height solved so that the natural ground lies 2 m below the road), a broad foothill under the whole course and a ring of
+  peaks (`FOOTHILLS`). There are no `cliffs` (a cliff cuts the ground away on a whole side, in a wedge reaching to the
+  horizon): the mountain's own steep flanks fall away outside the rope-fence walls. The pits under the shortcuts and the cave
+  are negative bumps (`pit()`); the gorge walls come from `chasms`.
+* Perf (Low quality, `renderer.info`, one frame): 100-205 draw calls, 195-290 k triangles (Autumn Speedway: see the report).
 
 ### Tests
 
-`mushroomValley.test.ts`: length and slopes, three gorges with caps, caps of the right colour in each, every arc's apex and
-speed, caps on road level and inside the corridor, both cave routes (no respawn, similar time), bots of every difficulty
-finish 3 laps and really bounce, 12 hard bots too. `bouncers.test.ts`: arc maths, crossing at every speed, off-centre
-and angled entries, guided flights, tricks, solid green caps, both routes, no bounce from below, caps are ground.
+`mushroomValley.test.ts`: length and slopes (climb up to 20 %, a height range over 40 m), a real mountain road (>= 8 tight corners),
+four chasms with the right caps in each, every arc's apex (<= 11 m, one over 8 m) and speed, landing on solid ground at the
+height the arc was worked out for, caps 6-12 m wide inside the corridor, two choices per lap (both shortcuts really driven, same
+time within 7 %, lap 55-80 s, no respawns), item rows either side of every crossing, bots of every difficulty finish 3 laps and
+really bounce, 12 hard bots too. `bouncers.test.ts`: arc maths, crossing at every speed, off-centre and angled entries, guided
+flights, tricks, solid green caps, no bounce from below, caps are ground.
