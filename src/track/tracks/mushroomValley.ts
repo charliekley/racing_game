@@ -320,7 +320,7 @@ function massif(radius: number, below: number, extra: { x: number; z: number; y:
  * road: the nearest is over 150 m away), so the mountain stands in mountain country, not on a flat plain.
  */
 const FOOTHILLS: Bump[] = [
-  { x: 0, z: -60, radius: 620, height: 26 },
+  { x: 0, z: -60, radius: 620, height: 6 }, // (low: the cloud sea hides the valleys, the course stands high above)
   { x: 470, z: -40, radius: 190, height: 70 },
   { x: 450, z: 230, radius: 170, height: 85 },
   { x: 150, z: 480, radius: 190, height: 80 },
@@ -342,6 +342,15 @@ const pit = (p: { x: number; z: number }, radius: number, depth = 110) => ({ x: 
 
 /** The cave pit: holes along the cave's chasm, wide enough for both routes (the main road and the right-hand shortcut). */
 const cavePits = [0, 1, 2].map((k) => pit(local('caveIn', 30 + k * 40, CAVE_SIDE), 42, 130));
+/**
+ * The flanks of the two single-road gorges: a pit on each side, well clear of the road (its edge stays beyond the
+ * shoulders), so the mountain falls away in broken slopes beside the chasm and the opening looks wide, not like a slot.
+ */
+const flankPits = [
+  { name: 'g1a', ds: G1 / 2, r: 30 },
+  { name: 'g2a', ds: G2 / 2, r: 34 },
+].flatMap((g) => [-1, 1].map((side) => pit(local(g.name, g.ds, side * (g.r + 15)), g.r, 55)));
+
 /** The pit under the Twin Spans shortcut (the main gorge is cut by the chasm itself). */
 const g3Pits = [0, 1].map((k) => pit(local('g3a', 28 + k * 34, G3_SIDE), 40, 130));
 
@@ -406,6 +415,7 @@ export const mushroomValley: TrackDef = {
       // The pits of the gorges with a shortcut (the walls of the main gorges are cut by `chasms`).
       ...cavePits,
       ...g3Pits,
+      ...flankPits,
     ],
     blend: 10,
   },

@@ -154,6 +154,8 @@ function paletteFor(track: Track, style: ReturnType<typeof styleFor>): Palette {
   return p;
 }
 
+const ABYSS = new THREE.Color('#232a45');
+
 /** Accumulates rock walls (indexed, then welded and smoothed at build time). */
 class WallSink {
   private pos: number[] = [];
@@ -192,14 +194,27 @@ class WallSink {
         // `taper` (Mushroom Valley's gorges): no bump at the two ends of the wall, so neighbouring walls meet exactly
         // at the corner (a bump pushed along two different directions would leave a thin slit there).
         const k = smoothstep(0.0, 0.12, t) * (taper ? Math.min(1, Math.min(i, n - 1 - i) / 1.5) : 1);
-        const bump = (fbm3(top[i].x * 0.16, y * 0.14, top[i].z * 0.16, 3, 3) - 0.5) * 3.2 * bulge * k + (ridged3(top[i].x * 0.4, y * 0.35, top[i].z * 0.4, 8, 2) - 0.5) * 0.9 * k;
+        let bump = (fbm3(top[i].x * 0.16, y * 0.14, top[i].z * 0.16, 3, 3) - 0.5) * 3.2 * bulge * k + (ridged3(top[i].x * 0.4, y * 0.35, top[i].z * 0.4, 8, 2) - 0.5) * 0.9 * k;
+        if (taper) {
+          // Mushroom Valley's gorges: broken rock LEDGES. Going down, the face steps out into the void a few times (a
+          // shelf, then a short steep drop) and the chasm narrows to a dark V, instead of a plain vertical box wall.
+          // The steps fade out toward the two ends of the wall (about 5 samples), so the corners still meet.
+          const s = (top[i].y - y) / 6;
+          const stair = Math.min(11, 3.2 * (Math.floor(s) + smoothstep(0.65, 1, s - Math.floor(s))));
+          bump += stair * (0.65 + 0.7 * noise3(top[i].x * 0.05, 3, top[i].z * 0.05, 6)) * Math.min(1, Math.min(i, n - 1 - i) / 5);
+        }
         const x = top[i].x + out[i].x * bump;
         const z = top[i].z + out[i].z * bump;
         this.pos.push(x, y, z);
         // Colour: grass lip -> banded rock -> dark depths.
         const band = noise3(x * 0.05, y * 0.6, z * 0.05, 5);
         const rockC = scratch.copy(this.pal.rockDark).lerp(this.pal.rock, THREE.MathUtils.clamp(0.25 + band * 0.9 + (fbm3(x * 0.3, y * 0.3, z * 0.3, 9) - 0.5), 0, 1));
-        rockC.multiplyScalar(1 - 0.55 * smoothstep(0.35, 1.0, t) * (depth === 'floor' ? 0.7 : 0.4));
+        rockC.multiplyScalar(1 - (taper ? 0.8 : 0.55) * smoothstep(taper ? 0.12 : 0.35, 1.0, t) * (depth === 'floor' ? 0.7 : 0.4));
+        if (taper) {
+          // Strata (pale and dark rock bands) and a cool violet-blue toward the depths, so the chasm darkens into an abyss.
+          rockC.multiplyScalar(0.72 + 0.4 * (0.5 + 0.5 * Math.sin(y * 0.55 + band * 6)));
+          rockC.lerp(ABYSS, smoothstep(0.08, 0.6, t) * 0.7);
+        }
         rockC.lerp(lip[i], 1 - smoothstep(0.0, 0.1, t));
         this.col.push(rockC.r, rockC.g, rockC.b);
         this.uv.push((x + z) / 14, y / 14);

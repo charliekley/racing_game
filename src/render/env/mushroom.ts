@@ -22,7 +22,7 @@ import * as THREE from 'three';
 import { Bouncers, CAP_DROOP, type Cap } from '../../sim/bouncers';
 import { Track } from '../../sim/track';
 import { seededRandom } from '../textures';
-import { fromArrays, latheGeo, matrix, merge, paint, placed, type ColorFn } from './geo';
+import { fromArrays, latheGeo, matrix, merge, paint, placed, tubeGeo, type ColorFn } from './geo';
 import { ENV_TIME } from './materials';
 import { fbm3, noise3, smoothstep } from './noise';
 
@@ -106,11 +106,14 @@ export function trailTexture(): THREE.CanvasTexture {
 // Colours
 // ---------------------------------------------------------------------------
 
-const ORANGE = new THREE.Color('#ff7a1a');
-const ORANGE_RIM = new THREE.Color('#d9480f');
-const GREEN = new THREE.Color('#3fb54a');
-const GREEN_RIM = new THREE.Color('#1f7a3a');
-const CREAM = new THREE.Color('#fff3d2');
+// Cap paints: a lighter, slightly sunlit crown (`*_TOP`), the body colour and a deep rim, so the domes read as round.
+const ORANGE_TOP = new THREE.Color('#f07a1c');
+const ORANGE = new THREE.Color('#d9570f');
+const ORANGE_RIM = new THREE.Color('#8f2a08');
+const GREEN_TOP = new THREE.Color('#3f9a4a');
+const GREEN = new THREE.Color('#2a7a3a');
+const GREEN_RIM = new THREE.Color('#123f26');
+const CREAM = new THREE.Color('#f6e8c4');
 const GILL = new THREE.Color('#f3d9a6');
 const STALK = new THREE.Color('#f1e4c4');
 const STALK_SHADE = new THREE.Color('#c9b58c');
@@ -149,18 +152,24 @@ function capGeo(kind: 'orange' | 'green', seed: number): THREE.BufferGeometry {
   // Cream spots on the top: a few big, a few small, from the seed (the same cap always looks the same).
   const rnd = seededRandom(seed);
   const spots: { x: number; z: number; r: number }[] = [];
-  for (let i = 0; i < 13; i++) {
+  // Many small spots (a few medium ones among them), kept apart from each other so they never merge into big blobs.
+  for (let tries = 0; spots.length < 44 && tries < 500; tries++) {
     const a = rnd() * Math.PI * 2;
-    const d = Math.sqrt(rnd()) * 0.78;
-    spots.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 0.085 + rnd() * rnd() * 0.15 });
+    const d = Math.sqrt(rnd()) * 0.84;
+    const r = 0.022 + rnd() * rnd() * 0.05;
+    const x = Math.cos(a) * d;
+    const z = Math.sin(a) * d;
+    if (spots.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.04)) continue;
+    spots.push({ x, z, r });
   }
   const base = kind === 'orange' ? ORANGE : GREEN;
+  const top = kind === 'orange' ? ORANGE_TOP : GREEN_TOP;
   const rim = kind === 'orange' ? ORANGE_RIM : GREEN_RIM;
   // Each spot: a small fan of triangles whose corners sit exactly on the dome (height = domeY) plus a hair.
   const disc: THREE.BufferGeometry[] = spots.map((sp) => {
     const pos: number[] = [sp.x, domeY(Math.hypot(sp.x, sp.z)) + 0.012, sp.z];
     const idx: number[] = [];
-    const N = 14;
+    const N = 12;
     for (let k = 0; k < N; k++) {
       const a = (k / N) * Math.PI * 2;
       const x = sp.x + Math.cos(a) * sp.r;
@@ -178,11 +187,14 @@ function capGeo(kind: 'orange' | 'green', seed: number): THREE.BufferGeometry {
       _c.copy(GILL).lerp(GILL_DARK, 0.2 + 0.5 * stripe * smoothstep(0.1, 0.9, r));
       return _c.multiplyScalar(0.55 + 0.45 * smoothstep(0.1, 0.95, r));
     }
-    // Top and rolled rim: bright in the middle, deeper toward the rim.
-    _c.copy(base).lerp(rim, smoothstep(0.5, 1.05, r) * 0.9);
-    const blotch = noise3(p.x * 3, 0, p.z * 3, seed) * 0.14 - 0.07;
+    // Top and rolled rim: a lighter crown fading through the body colour to a dark rim, with a soft sheen off-centre
+    // (a pale highlight toward the upper left, like sun on a glossy dome) and the rolled rim shaded by its normal.
+    _c.copy(top).lerp(base, smoothstep(0.1, 0.65, r)).lerp(rim, smoothstep(0.62, 1.08, r));
+    const sheen = Math.exp(-(Math.pow(p.x + 0.28, 2) + Math.pow(p.z + 0.2, 2)) / 0.05);
+    _c.lerp(CREAM, sheen * 0.16);
+    const blotch = noise3(p.x * 3, 0, p.z * 3, seed) * 0.1 - 0.05;
     _c.offsetHSL(0, 0, blotch);
-    return _c;
+    return _c.multiplyScalar(0.62 + 0.38 * smoothstep(0.35, 0.95, n.y));
   };
   return merge([paint(geo, color), ...disc]);
 }
@@ -240,7 +252,7 @@ function stalkGeo(cap: Cap, mistY: number): THREE.BufferGeometry {
  * A soft cloud texture: fuzzy white blobs drawn on a canvas. It TILES (every blob near an edge is drawn again on the
  * opposite side), so the mist can scroll forever without a seam.
  */
-function mistTexture(): THREE.CanvasTexture {
+function mistTexture(tile = 2.5): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -268,7 +280,7 @@ function mistTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2.5, 2.5);
+  tex.repeat.set(tile, tile);
   return tex;
 }
 
@@ -281,6 +293,15 @@ function mistQuad(cx: number, y: number, cz: number, w: number, d: number, rot: 
   return g;
 }
 
+/** Options of `buildMist`: number of layers, spacing, per-layer opacity, darkening of the deepest layer, texture tiling. */
+interface MistOptions {
+  layers?: number;
+  gap?: number;
+  alphas?: number[];
+  dark?: number;
+  tile?: number;
+}
+
 /**
  * Every gorge and the cave pit get a stack of soft cloud layers well below the road, so the chasms look bottomless and
  * cloudy. The terrain hides the parts that lie under solid ground; only what is inside a chasm shows.
@@ -290,26 +311,30 @@ function mistQuad(cx: number, y: number, cz: number, w: number, d: number, rot: 
  * the quad (it tiles, so it never runs out). A second varying fades the quad's own edges, so the sliding clouds never
  * show the edge of the plane.
  */
-function buildMist(areas: { x: number; z: number; w: number; d: number; rot: number; y: number }[]): THREE.Mesh {
+function buildMist(areas: { x: number; z: number; w: number; d: number; rot: number; y: number }[], opt: MistOptions = {}): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
   const rnd = seededRandom(404);
-  const LAYERS = 4;
+  const LAYERS = opt.layers ?? 5;
+  const gap = opt.gap ?? 15;
   for (const a of areas) {
     // Bottom layers first (they are drawn first): the deepest is the thickest, the top one wispy.
     for (let layer = 0; layer < LAYERS; layer++) {
-      const y = a.y - 6 - layer * 11;
-      const grow = 1 + 0.12 * layer;
+      const y = a.y - 8 - layer * gap;
+      const grow = 1 + 0.14 * layer;
       const g = mistQuad(a.x + (rnd() - 0.5) * 8, y, a.z + (rnd() - 0.5) * 8, a.w * grow, a.d * grow, a.rot + (rnd() - 0.5) * 0.4);
       const pos = g.getAttribute('position');
       // Per-layer opacity in the vertex alpha: the bottom layer is nearly solid, the top one thin.
       const col = new Float32Array(pos.count * 4);
-      const k = [0.45, 0.65, 0.85, 1.0][layer];
+      const k = opt.alphas ? opt.alphas[layer] : [0.4, 0.55, 0.75, 0.9, 1.0][layer];
+      // Depth gradient: the top layer is bright cloud, each one below is darker and bluer (an abyss, not a white floor).
+      const depth = (opt.dark ?? 1) * (layer / Math.max(1, LAYERS - 1));
+      const shade = [1 - 0.62 * depth, 1 - 0.55 * depth, 1 - 0.3 * depth];
       // Each layer drifts its own way (a slow one, a faster one, a crossing one).
       const ang = rnd() * Math.PI * 2;
-      const speed = 0.006 + 0.005 * (LAYERS - layer) + rnd() * 0.004;
+      const speed = 0.005 + 0.004 * (LAYERS - layer) + rnd() * 0.004;
       const drift = new Float32Array(pos.count * 2);
       for (let i = 0; i < pos.count; i++) {
-        col.set([1, 1, 1, k], i * 4);
+        col.set([shade[0], shade[1], shade[2], k], i * 4);
         drift.set([Math.cos(ang) * speed, Math.sin(ang) * speed], i * 2);
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 4));
@@ -318,7 +343,7 @@ function buildMist(areas: { x: number; z: number; w: number; d: number; rot: num
     }
   }
   const geo = merge(parts);
-  const mat = new THREE.MeshBasicMaterial({ map: mistTexture(), color: MIST, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.95 });
+  const mat = new THREE.MeshBasicMaterial({ map: mistTexture(opt.tile), color: MIST, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.95 });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = ENV_TIME;
     shader.vertexShader = shader.vertexShader
@@ -330,6 +355,57 @@ function buildMist(areas: { x: number; z: number; w: number; d: number; rot: num
   };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 2;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// The backdrop: a ring of far snowy ranges
+// ---------------------------------------------------------------------------
+
+const PEAK_ROCK = new THREE.Color('#6d7b93');
+const PEAK_SNOW = new THREE.Color('#f4f8ff');
+
+/**
+ * Two rings of faraway mountains round the course (one merged mesh, a few hundred triangles). Each peak is a lumpy cone
+ * with a snowy top whose colours are BAKED: lit faces vs shaded faces from the normal, and a haze that grows toward the
+ * base and with distance (blending into the sky's horizon colour), so they read as distant ranges. The material ignores
+ * the scene fog (its start/end are far closer than these mountains) and uses its own baked haze instead.
+ */
+function buildFarPeaks(cx: number, cz: number, horizon: THREE.Color): THREE.Mesh {
+  const rnd = seededRandom(515);
+  const parts: THREE.BufferGeometry[] = [];
+  const sun = new THREE.Vector3(0.5, 0.6, 0.35).normalize();
+  const ring = (count: number, radius: number, height: number, haze: number, phase: number) => {
+    for (let i = 0; i < count; i++) {
+      const a = phase + ((i + (rnd() - 0.5) * 0.5) / count) * Math.PI * 2;
+      const h = height * (0.55 + 0.7 * rnd());
+      const w = h * (0.9 + 0.5 * rnd());
+      // A cone-ish lathe with lumpy flanks: rings from the base up to the summit.
+      const profile: [number, number][] = [];
+      for (let k = 0; k <= 7; k++) {
+        const t = k / 7;
+        profile.push([w * Math.pow(1 - t, 0.85) * (1 + 0.12 * Math.sin(k * 2.3 + i)), -60 + (h + 60) * t]);
+      }
+      profile[7][0] = 0.5;
+      const g = latheGeo(profile, 9, (ang, t) => 1 + 0.28 * (noise3(Math.cos(ang) * 2 + i, t * 3, Math.sin(ang) * 2, 5 + i) - 0.5));
+      const placedGeo = placed(g, matrix(cx + Math.cos(a) * radius, 0, cz + Math.sin(a) * radius, 1, 1, 1, rnd() * 6.28));
+      parts.push(
+        paint(placedGeo, (p, n) => {
+          const t = (p.y + 60) / (h + 60);
+          const snow = smoothstep(0.5, 0.66, t + (noise3(p.x * 0.02, p.y * 0.03, p.z * 0.02, 8) - 0.5) * 0.25);
+          _c.copy(PEAK_ROCK).lerp(PEAK_SNOW, snow);
+          // Baked sun: faces toward the light are bright, the others a cool shade.
+          _c.multiplyScalar(0.62 + 0.55 * Math.max(0, n.dot(sun)) + 0.12 * snow);
+          // Atmospheric perspective: hazier lower down and for the outer ring.
+          return _c.lerp(horizon, Math.min(0.92, haze + (1 - t) * 0.4));
+        }),
+      );
+    }
+  };
+  ring(11, 1100, 330, 0.38, 0.2);
+  ring(13, 1500, 520, 0.58, 0.55);
+  const mesh = new THREE.Mesh(merge(parts), new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
   mesh.frustumCulled = false;
   return mesh;
 }
@@ -351,6 +427,7 @@ interface Section {
 
 const ROCK = new THREE.Color('#7b7168');
 const ROCK_DARK = new THREE.Color('#34303a');
+const ROCK_WARM = new THREE.Color('#7d6b58');
 const GRASS = new THREE.Color('#5f8f3e');
 
 /** Where the vault stands: sections along the cave's stretch of main road (a little longer at both ends). */
@@ -395,32 +472,41 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   const m = track.def.scenery.mushroom!.cave;
   const { sections, centreOffset } = caveSections(track);
   const N = sections.length;
-  const M = 22; // vertices across the arch
+  const M = 22; // vertices across the arch itself
+  const K = M + 2; // ...plus one more at each foot, far below: the hill's flanks run down into the abyss (no floating shell)
   const pos: number[] = [];
   const idx: number[] = [];
   const surface: { x: number; y: number; z: number; nx: number; ny: number; nz: number }[] = [];
   const rnd = seededRandom(77);
+  /** The arch of one section (index into `sections`), as world points: the sunken foot, the arch itself, the other foot. */
+  const archPoint = (sec: Section, i: number, j: number, half: number, roof: number) => {
+    const jj = Math.min(Math.max(j, 0), M - 1);
+    const th = (jj / (M - 1)) * Math.PI; // 0 = left foot, PI = right foot
+    const lat = centreOffset - Math.cos(th) * half;
+    // A flattened arch: steep at the feet, broad at the top.
+    const up = Math.pow(Math.sin(th), 0.7) * roof;
+    const bump = 1 + 0.13 * (fbm3(i * 0.35, jj * 0.45, 2.7, 9, 3) - 0.5) * 2;
+    // The two extra columns drop straight down from the feet, with a lumpy outward lean so the flank is not a plain wall.
+    const sink = j < 0 || j >= M ? 80 + 14 * fbm3(i * 0.3, j, 5.1, 3, 2) : 0;
+    const lean = sink ? (j < 0 ? -1 : 1) * 0.1 * sink : 0;
+    return new THREE.Vector3(sec.x + sec.rx * (lat * bump + lean), sec.y - 14 + (up + 14 * Math.sin(th)) * bump - sink, sec.z + sec.rz * (lat * bump + lean));
+  };
+  const ends: THREE.Vector3[][] = [[], []];
   sections.forEach((sec, i) => {
     // Portals: the vault is lower and narrower at both ends, like a cave mouth.
     const mouth = smoothstep(0, 0.16, Math.min(sec.u, 1 - sec.u));
     const half = m.halfWidth * (0.62 + 0.38 * mouth);
     const roof = m.roof * (0.45 + 0.55 * mouth);
-    for (let j = 0; j < M; j++) {
-      const th = (j / (M - 1)) * Math.PI; // 0 = left foot, PI = right foot
-      const lat = centreOffset - Math.cos(th) * half;
-      // A flattened arch: steep at the feet, broad at the top.
-      const up = Math.pow(Math.sin(th), 0.7) * roof;
-      const bump = 1 + 0.13 * (fbm3(i * 0.35, j * 0.45, 2.7, 9, 3) - 0.5) * 2;
-      const x = sec.x + sec.rx * lat * bump;
-      const z = sec.z + sec.rz * lat * bump;
-      const y = sec.y - 14 + (up + 14 * Math.sin(th)) * bump;
-      pos.push(x, y, z);
+    for (let j = -1; j <= M; j++) {
+      const v = archPoint(sec, i, j, half, roof);
+      pos.push(v.x, v.y, v.z);
+      if (j >= 0 && j < M && (i === 0 || i === sections.length - 1)) ends[i === 0 ? 0 : 1].push(v);
     }
   });
   for (let i = 0; i < N - 1; i++) {
-    for (let j = 0; j < M - 1; j++) {
-      const a = i * M + j;
-      idx.push(a, a + M, a + 1, a + 1, a + M, a + M + 1);
+    for (let j = 0; j < K - 1; j++) {
+      const a = i * K + j;
+      idx.push(a, a + K, a + 1, a + 1, a + K, a + K + 1);
     }
   }
   const g = new THREE.BufferGeometry();
@@ -428,11 +514,11 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   g.setIndex(idx);
   g.computeVertexNormals();
   // Two skins: the INSIDE of the vault is dark mottled rock with strata (what you see while driving through it); the
-  // OUTSIDE (a hair larger) is a grassy hill on top, rock lower down. One shell can only have one colour per
-  // vertex, hence two meshes. Which side faces out depends on the triangle winding, so test one top vertex.
+  // OUTSIDE (a hair larger) is a rocky hillside: banded cliff rock with only a little scrubby moss. One shell can only
+  // have one colour per vertex, hence two meshes. Which side faces out depends on the triangle winding, so test one top vertex.
   const nor = g.getAttribute('normal');
   const p = g.getAttribute('position');
-  const topVertex = Math.floor(N / 2) * M + Math.floor(M / 2);
+  const topVertex = Math.floor(N / 2) * K + Math.floor(K / 2);
   const outward = nor.getY(topVertex) > 0 ? 1 : -1;
   const base = (k: number) => {
     const n = fbm3(p.getX(k) * 0.07, p.getY(k) * 0.07, p.getZ(k) * 0.07, 3, 3);
@@ -446,8 +532,14 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   for (let k = 0; k < p.count; k++) {
     const { n, c } = base(k);
     inside.push(c.r * 0.38, c.g * 0.38, c.b * 0.48);
-    const topness = smoothstep(0.3, 0.8, Math.abs(nor.getY(k))) * smoothstep(0, 20, p.getY(k) - foot);
-    c.lerp(GRASS.clone().multiplyScalar(0.8 + 0.4 * n), topness * (0.45 + 0.55 * smoothstep(0.3, 0.6, n)));
+    // Outside: warm grey-brown cliff with broad horizontal strata, paler in the sun-facing tops, darker and cooler toward
+    // the depths (the abyss), a thin moss tint only on the flattest top.
+    const y = p.getY(k);
+    const band = 0.5 + 0.5 * Math.sin(y * 0.22 + n * 5);
+    c.copy(ROCK_DARK).lerp(ROCK_WARM, 0.15 + 0.7 * n + 0.45 * band * band);
+    c.multiplyScalar(0.5 + 0.45 * smoothstep(foot - 70, foot + 10, y));
+    const topness = smoothstep(0.55, 0.9, nor.getY(k) * outward) * smoothstep(0, 20, y - foot);
+    c.lerp(GRASS.clone().multiplyScalar(0.7 + 0.4 * n), topness * 0.35 * smoothstep(0.45, 0.65, n));
     outside.push(c.r, c.g, c.b);
     outPos.push(p.getX(k) + nor.getX(k) * outward * 0.7, p.getY(k) + nor.getY(k) * outward * 0.7, p.getZ(k) + nor.getZ(k) * outward * 0.7);
   }
@@ -465,11 +557,28 @@ function buildCave(track: Track): { shell: THREE.Mesh; points: { x: number; y: n
   skin.receiveShadow = true;
   skin.frustumCulled = false;
   shell.add(skin);
+  // The cave mouths: a thick, lumpy rock arch framing each end of the vault (a tube along the end section's arch, a
+  // little proud of the hillside), so the entry and exit read as openings in a cliff, not as a hole in a blob.
+  const arches: THREE.BufferGeometry[] = [];
+  ends.forEach((ring, e) => {
+    const axis = new THREE.Vector3(sections[e ? N - 1 : 0].x - sections[e ? N - 2 : 1].x, 0, sections[e ? N - 1 : 0].z - sections[e ? N - 2 : 1].z).normalize();
+    const path = ring.map((v) => v.clone().addScaledVector(axis, 1.5));
+    const radii = ring.map((_, j) => 3.4 + 2.2 * Math.sin((j / (M - 1)) * Math.PI) + 1.6 * (fbm3(j * 0.5, e * 7.3, 1.9, 4, 2) - 0.5));
+    arches.push(paint(tubeGeo(path, radii, 9), (q, nn) => {
+      const n = fbm3(q.x * 0.12, q.y * 0.12, q.z * 0.12, 6, 3);
+      return _c.copy(ROCK_DARK).lerp(ROCK_WARM, 0.45 + 0.5 * n + 0.15 * nn.y);
+    }));
+  });
+  const arch = new THREE.Mesh(merge(arches), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+  arch.castShadow = true;
+  arch.receiveShadow = true;
+  arch.frustumCulled = false;
+  shell.add(arch);
   // Surface points (for the glowing mushrooms): random spots on the inside of the vault.
   for (let k = 0; k < 1100; k++) {
     const i = 1 + Math.floor(rnd() * (N - 3));
-    const j = 1 + Math.floor(rnd() * (M - 3));
-    const a = i * M + j;
+    const j = 2 + Math.floor(rnd() * (M - 3)); // (column 0 is the sunken foot; the arch itself is columns 1..M)
+    const a = i * K + j;
     const nx = nor.getX(a);
     const ny = nor.getY(a);
     const nz = nor.getZ(a);
@@ -495,7 +604,8 @@ function glowMushroomGeo(): THREE.BufferGeometry {
     [0.35, 1.38],
     [0, 1.42],
   ];
-  return paint(latheGeo(profile, 8), (p) => _c.setScalar(0.4 + 0.6 * smoothstep(0.55, 1.1, p.y)));
+  // Saturated body, a dim stalk and a small, much brighter core on the dome (HDR, so only the core blooms white).
+  return paint(latheGeo(profile, 8), (p) => _c.setScalar(0.22 + 0.55 * smoothstep(0.55, 1.0, p.y) + 1.6 * smoothstep(1.28, 1.42, p.y)));
 }
 
 // ---------------------------------------------------------------------------
@@ -540,7 +650,7 @@ export class MushroomView {
     const greenGeos = [capGeo('green', 21), capGeo('green', 22), capGeo('green', 23)];
     // One static mesh per stretch of road (about 150 m), so the caps far away are culled with their mesh.
     const capAreas = new Map<number, THREE.BufferGeometry[]>();
-    const capMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 });
+    const capMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 });
     caps.forEach((c, i) => {
       const key = Math.floor(track.project(c.x, c.z).s / 150);
       if (!capAreas.has(key)) capAreas.set(key, []);
@@ -558,7 +668,7 @@ export class MushroomView {
     this.orange = caps.filter((c) => c.kind === 'orange');
     this.hitAt = this.orange.map(() => -1000);
     if (this.orange.length) {
-      const inst = new THREE.InstancedMesh(orangeGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, emissive: new THREE.Color('#ff5a00'), emissiveIntensity: 0.12 }), this.orange.length);
+      const inst = new THREE.InstancedMesh(orangeGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, emissive: new THREE.Color('#ff5a00'), emissiveIntensity: 0.1 }), this.orange.length);
       inst.castShadow = true;
       inst.receiveShadow = true;
       inst.frustumCulled = false;
@@ -578,7 +688,7 @@ export class MushroomView {
       const s1 = track.sAt(g.to);
       const mid = track.pointAt((s0 + track.deltaS(s0, s1) / 2 + track.length) % track.length);
       const len = track.deltaS(s0, s1);
-      areas.push({ x: mid.x, z: mid.z, w: 150, d: len + 90, rot: mid.heading, y: mid.y - 16 });
+      areas.push({ x: mid.x, z: mid.z, w: 150, d: len + 90, rot: mid.heading, y: mid.y - 4 });
     }
     {
       // The cave pit: one big layer stack over the bounding box of the cave's section.
@@ -587,7 +697,12 @@ export class MushroomView {
       // Centred on the vault (it lies to one side of the main road) and turned along the road.
       areas.push({ x: mid.x + mid.rx * centreOffset, z: mid.z + mid.rz * centreOffset, w: 170, d: sections.length * 9 + 80, rot: Math.atan2(-mid.rz, mid.rx), y: mid.y - 16 });
     }
-    this.group.add(buildMist(areas));
+    this.group.add(buildMist(areas, { gap: 12, alphas: [0.35, 0.55, 0.75, 0.9, 1.0] }));
+
+    // ---- backdrop: a sea of cloud far below the massif (valleys hidden) and a ring of distant snowy ranges -------
+    const ctr = track.samples.reduce((a, q) => ({ x: a.x + q.x / track.samples.length, z: a.z + q.z / track.samples.length }), { x: 0, z: 0 });
+    this.group.add(buildMist([{ x: ctr.x, z: ctr.z, w: 3600, d: 3600, rot: 0.3, y: 24 }], { layers: 2, gap: 15, alphas: [0.78, 0.95], dark: 0.5, tile: 16 }));
+    this.group.add(buildFarPeaks(ctr.x, ctr.z, new THREE.Color(track.def.theme.horizon)));
 
     // ---- cave --------------------------------------------------------------------------------------------
     const cave = buildCave(track);
@@ -595,7 +710,7 @@ export class MushroomView {
     const count = def.glow ?? 90;
     const rnd = seededRandom(909);
     const glow = new THREE.InstancedMesh(glowMushroomGeo(), new THREE.MeshBasicMaterial({ vertexColors: true }), count);
-    const palette = [new THREE.Color(0.25, 1.5, 1.2), new THREE.Color(0.6, 0.5, 2.0), new THREE.Color(1.6, 0.4, 1.2), new THREE.Color(0.5, 1.8, 0.6)];
+    const palette = [new THREE.Color(0.0, 1.5, 1.05), new THREE.Color(0.55, 0.08, 2.2), new THREE.Color(1.9, 0.03, 0.85), new THREE.Color(0.12, 1.9, 0.1)];
     const up = new THREE.Vector3(0, 1, 0);
     const q = new THREE.Quaternion();
     for (let i = 0; i < count; i++) {
