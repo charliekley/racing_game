@@ -196,6 +196,14 @@ export const ITEMS = {
   // --- Rocket: the kart becomes a rocket and is driven along the track ---------------------------
   /** How long the rocket flight lasts (s) and its speed (m/s; the normal top speed is 28). */
   rocketTime: 7,
+  /**
+   * The flight ends early (after `rocketEndDelay` s, so it doesn't stop in the middle of an overtake) once the rocket
+   * reaches 1st place, or once it has climbed this fraction of the field (1/3: 4 places of 12, 3 of 8, 2 of 4).
+   */
+  rocketClimbFraction: 1 / 3,
+  rocketEndDelay: 0.75,
+  /** Never shorter than this (s): even a rocket fired from 2nd gets a proper flight. */
+  rocketMinTime: 1.5,
   rocketSpeed: 50,
   /** Acceleration up to the rocket speed (m/s^2). */
   rocketAccel: 45,

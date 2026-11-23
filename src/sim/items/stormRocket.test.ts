@@ -246,16 +246,38 @@ describe('Rocket', () => {
     expect(k.speed).toBeLessThanOrEqual(KART.maxSpeed * KART.boostSpeedFactor + 0.01);
   });
 
-  it('lasts rocketTime seconds', () => {
-    const w = racing(2);
-    use(w, 1, 'rocket');
-    let seconds = 0;
-    while (w.items!.rocketActive(1) && seconds < 20) {
+  /** Fire a rocket for `slot` and return how long it flew, and the slot's place when it ended (1 = first). */
+  function flight(w: World, slot: number): { seconds: number; place: number } {
+    use(w, slot, 'rocket');
+    let seconds = 0.1; // (use() already ran 0.1 s)
+    while (w.items!.rocketActive(slot) && seconds < 20) {
       w.tick(() => NONE);
       seconds += SIM_DT;
     }
+    return { seconds, place: w.race!.standings().indexOf(slot) + 1 };
+  }
+
+  it('ends shortly after reaching 1st place (never before rocketMinTime, never after rocketTime)', () => {
+    const w = racing(2);
+    const { seconds, place } = flight(w, 1);
+    expect(place).toBe(1);
+    expect(seconds).toBeGreaterThanOrEqual(ITEMS.rocketMinTime + ITEMS.rocketEndDelay - 0.1);
+    expect(seconds).toBeLessThan(ITEMS.rocketTime - 0.5);
+  });
+
+  it('ends early after climbing a third of the field (4 places of 12)', () => {
+    // (The other karts are parked, so the rocket passes them all within its minimum flight: it just has to end early.)
+    const w = racing(12);
+    const { seconds, place } = flight(w, 11); // from 12th
+    expect(12 - place).toBeGreaterThanOrEqual(4);
+    expect(seconds).toBeLessThan(ITEMS.rocketMinTime + ITEMS.rocketEndDelay + 0.3);
+  });
+
+  it('a rocket fired from 1st place (nobody to climb past) flies the full time', () => {
+    const w = racing(4);
+    const { seconds } = flight(w, 0);
     expect(seconds).toBeGreaterThan(ITEMS.rocketTime - 0.2);
-    expect(seconds).toBeLessThan(ITEMS.rocketTime + 0.2);
+    expect(seconds).toBeLessThanOrEqual(ITEMS.rocketTime + 0.1);
   });
 
   it('is invincible, knocks other karts aside (they spin out) and items cannot hit it', () => {

@@ -93,7 +93,7 @@ export class ItemSystem {
   private entities: Entity[] = [];
   private nextUid = 1;
   /** Karts that are rockets right now, with the seconds they have left. */
-  private readonly rockets = new Map<number, { time: number }>();
+  private readonly rockets = new Map<number, { time: number; flown: number; startRank: number; endIn: number | null }>();
   private shoves: Shove[] = [];
   /** Solid scenery that destroys shots (null = shots fly through everything, as before). */
   private colliders: Colliders | null = null;
@@ -511,7 +511,9 @@ export class ItemSystem {
 
   /** The kart turns into a rocket: it sheds whatever it was doing and the automatic flight begins. */
   private startRocket(slot: number, k: KartState, st: ItemState): void {
-    this.rockets.set(slot, { time: ITEMS.rocketTime });
+    // Remember where the flight started (1 = first place), for the "climbed a third of the field" rule.
+    const rank = this.lastStandings.indexOf(slot) + 1 || this.lastStandings.length;
+    this.rockets.set(slot, { time: ITEMS.rocketTime, flown: 0, startRank: rank, endIn: null });
     k.rocketTime = ITEMS.rocketTime;
     k.spinTime = 0;
     k.invertTime = 0;
@@ -532,12 +534,27 @@ export class ItemSystem {
    * the track's centerline, see rail.ts), accelerates to `rocketSpeed` and glides over the ground like a shot does.
    * Over a ravine, a water gap or a ramp gap there is no ground, so it just keeps its height and the road line:
    * it cannot fall in. A launch cannon still captures it (the cannon system moves it, then it flies on).
-   * After `rocketTime` the kart returns to normal with a small boost and a short grace period.
+   * After `rocketTime` the kart returns to normal with a small boost and a short grace period; it ends earlier (after
+   * `rocketEndDelay`) once it reaches 1st place or has climbed a third of the field (`rocketClimbFraction`).
    */
   driveRocket(slot: number, k: KartState, ground: Ground, dt: number, events: ItemEvent[]): void {
     const r = this.rockets.get(slot);
     if (!r) return;
     r.time -= dt;
+    r.flown += dt;
+    // End early: reached 1st place, or climbed a third of the field. A short delay first, so the rocket finishes the
+    // overtake instead of stopping right next to the kart it just passed.
+    // (Only a rocket that started behind can "climb": one fired from 1st place, or alone in a race, flies the full time.)
+    if (r.endIn === null && r.startRank > 1 && r.flown >= ITEMS.rocketMinTime) {
+      const racers = this.lastStandings.length;
+      const rank = this.lastStandings.indexOf(slot) + 1;
+      const climbNeeded = Math.max(1, Math.ceil(racers * ITEMS.rocketClimbFraction));
+      if (rank === 1 || (rank > 0 && r.startRank - rank >= climbNeeded)) r.endIn = ITEMS.rocketEndDelay;
+    }
+    if (r.endIn !== null) {
+      r.endIn -= dt;
+      r.time = Math.min(r.time, Math.max(0, r.endIn));
+    }
     k.rocketTime = Math.max(0, r.time);
     k.invulnTime = Math.max(k.invulnTime, 0.1); // hazards and shots pass through a rocket
     if (r.time <= 0) {
