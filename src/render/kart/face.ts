@@ -93,7 +93,19 @@ export interface FaceSpec {
   /** Eyelid colour: the colour of the skin around the eye. */
   lid: string;
   brow: { color: string; surf?: Surf; thick?: number; maxY: number; liftK?: number; surfZ: (x: number, y: number) => number };
-  mouth: { y: number; w: number; color: string; surf?: Surf; inside: string; tongue?: string; teeth?: string; surfZ: (x: number, y: number) => number };
+  /**
+   * A drawn mouth (lip line, opening, tongue, teeth). OMIT it for species whose anatomy has none on the
+   * face: beaked birds (they use `beak`) and the elephant (its mouth is hidden under the trunk). Which
+   * features a species has never changes with the pose, so the vertex count still does not.
+   */
+  mouth?: { y: number; w: number; color: string; surf?: Surf; inside: string; tongue?: string; teeth?: string; surfZ: (x: number, y: number) => number };
+  /**
+   * Beaked species: the UPPER beak is part of the static head; this is the hinged LOWER beak that swings
+   * down when the mouth opens (happy, shocked, celebrate...). `hinge` is [y, z] of the joint at the back
+   * of the beak, `off` the lower beak centre relative to the hinge when shut, `maxOpen` the swing (radians)
+   * at mouthOpen = 1. A dark gape shows between the two halves while it is open.
+   */
+  beak?: { hinge: [number, number]; off: [number, number]; r: V3; tilt: number; color: string; inside: string; maxOpen: number; gape: number };
 }
 
 /** z of an ellipsoid's front surface at (x, y) (a function of |x|). Used to lay brows and mouths on a head or muzzle. */
@@ -166,7 +178,24 @@ export function addFace(p: Piece, spec: FaceSpec, f: FacePose): void {
     p.line(pts, Math.max(0.006, r * thick), brow.color, brow.surf ?? SURF.matte);
   }
 
+  // ---- Beak (birds): a hinged lower beak instead of a mouth ----
+  if (spec.beak) {
+    const b = spec.beak;
+    const a = f.mouthOpen * b.maxOpen;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const [hy, hz] = b.hinge;
+    // Rotate the shut offset about the hinge (x axis): +a swings the tip down.
+    const y = hy + b.off[0] * ca - b.off[1] * sa;
+    const z = hz + b.off[0] * sa + b.off[1] * ca;
+    const o = clamp(f.mouthOpen * 1.6, 0, 1);
+    // Dark gape inside the beak (invisible when shut).
+    p.e([0, hy - 0.004, hz + b.r[2] * 0.8], [Math.max(TINY, b.gape * o), Math.max(TINY, b.gape * 0.5 * o), Math.max(TINY, b.r[2] * 0.7 * o)], b.inside, SURF.matte, [0, 0, 0], 'low');
+    p.e([0, y, z], b.r, b.color, SURF.gloss, [b.tilt + a, 0, 0], 'mid');
+  }
+
   // ---- Mouth ----
+  if (!mouth) return;
   const mw = mouth.w * f.mouthW;
   const dep = mw * 0.5;
   const mpts: V3[] = [];

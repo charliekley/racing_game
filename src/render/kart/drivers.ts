@@ -157,10 +157,9 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.e(HEAD_C, [0.31, 0.28, 0.28], c.P);
-      // Cheek blush, beak and a little tuft.
+      // Cheek blush, upper beak (the lower beak is hinged, see the face) and a little tuft.
       p.ep([0.2, 0.2, 0.2], [0.06, 0.04, 0.03], '#ff9aa8', SURF.matte, [0, 0.5, 0]);
       p.e([0, 0.26, 0.32], [0.075, 0.04, 0.09], c.S, SURF.gloss);
-      p.e([0, 0.225, 0.3], [0.062, 0.028, 0.075], shade(c.S, 0.85), SURF.gloss);
       p.cone([0, 0.5, 0.02], 0.045, 0.17, c.P, [0.4, 0, 0]);
       p.cone([0.03, 0.5, 0.02], 0.04, 0.14, c.L, [0.35, 0, -0.5]);
       p.cone([-0.03, 0.5, 0.02], 0.04, 0.14, c.L, [0.35, 0, 0.5]);
@@ -169,7 +168,8 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       eye: { x: 0.115, y: 0.34, z: 0.235, r: 0.09 },
       white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.5, lid: c.P,
       brow: { color: c.D, maxY: 0.5, liftK: 0.6, surfZ: ellipsoidZ(HEAD_C, [0.31, 0.28, 0.28]) },
-      mouth: { y: 0.15, w: 0.06, color: shade(c.S, 0.5), inside: '#7a2a1c', surfZ: ellipsoidZ(HEAD_C, [0.31, 0.28, 0.28]) },
+      // Bird: no mouth line, the lower beak opens instead.
+      beak: { hinge: [0.24, 0.25], off: [-0.015, 0.05], r: [0.062, 0.028, 0.075], tilt: 0, color: shade(c.S, 0.85), inside: '#7a2a1c', maxOpen: 0.55, gape: 0.05 },
     }),
     arm: (c) => ({ sleeve: c.P, hand: c.S }),
   },
@@ -433,11 +433,10 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.e(HEAD_C, [0.3, 0.27, 0.27], c.P);
-      // White face mask that wraps under the eyes, orange cheek dabs, flat orange beak (two halves) and a crest of feathers.
+      // White face mask that wraps under the eyes, orange cheek dabs, flat orange upper beak (the lower half is hinged, see the face) and a crest of feathers.
       p.e([0, 0.25, 0.165], [0.235, 0.2, 0.15], PENGUIN_WHITE);
       p.ep([0.2, 0.2, 0.2], [0.05, 0.035, 0.03], c.S, SURF.matte, [0, 0.6, 0], true);
       p.e([0, 0.245, 0.335], [0.07, 0.03, 0.1], c.S, SURF.gloss, [0.12, 0, 0]);
-      p.e([0, 0.205, 0.32], [0.058, 0.024, 0.085], shade(c.S, 0.8), SURF.gloss, [0.1, 0, 0]);
       p.cone([0, 0.5, 0.0], 0.04, 0.12, c.P, [-0.3, 0, 0]);
       p.cone([0.045, 0.49, 0.0], 0.035, 0.1, c.P, [-0.25, 0, -0.45]);
       p.cone([-0.045, 0.49, 0.0], 0.035, 0.1, c.P, [-0.25, 0, 0.45]);
@@ -450,7 +449,7 @@ const SPECIES: Record<Species, SpeciesBuild> = {
         eye: { x: 0.105, y: 0.34, z: 0.245, r: 0.078 },
         white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.55, lid: PENGUIN_WHITE,
         brow: { color: c.P, maxY: 0.5, surfZ: surf },
-        mouth: { y: 0.14, w: 0.06, color: shade(c.S, 0.55), inside: '#7a2a1c', surfZ: surf },
+        beak: { hinge: [0.225, 0.25], off: [-0.02, 0.07], r: [0.058, 0.024, 0.085], tilt: 0.1, color: shade(c.S, 0.8), inside: '#7a2a1c', maxOpen: 0.5, gape: 0.05 },
       };
     },
     arm: (c) => ({ sleeve: c.P, hand: c.P }),
@@ -487,7 +486,7 @@ const SPECIES: Record<Species, SpeciesBuild> = {
         eye: { x: 0.125, y: 0.32, z: 0.285, r: 0.09 },
         white: '#fff7e0', iris: '#f4b21c', pupil: EYE_DARK, pupilK: 0.48, lid: c.S,
         brow: { color: c.D, thick: 0.18, maxY: 0.46, surfZ: surf },
-        mouth: { y: 0.15, w: 0.05, color: shade(c.P, 0.55), inside: '#5a2418', surfZ: head },
+        beak: { hinge: [0.275, 0.26], off: [-0.012, 0.055], r: [0.03, 0.014, 0.042], tilt: 0.3, color: '#d98a14', inside: '#5a2418', maxOpen: 0.6, gape: 0.03 },
       };
     },
     arm: (c) => ({ sleeve: c.P, hand: c.D }),
@@ -504,9 +503,8 @@ const SPECIES: Record<Species, SpeciesBuild> = {
     },
     head(p, c) {
       p.e(HEAD_C, [0.33, 0.27, 0.3], c.P);
-      // Broad snout, nostrils, big front horn and a small second one, small round ears.
+      // Broad snout (no nostrils: they read as a second pair of eyes), big front horn and a small second one, small round ears.
       p.e([0, 0.19, 0.28], [0.19, 0.13, 0.17], c.L, SURF.fur);
-      p.ep([0.08, 0.235, 0.42], [0.018, 0.012, 0.012], '#3a4254', SURF.matte, [0, 0, 0], true);
       p.cone([0, 0.3, 0.36], 0.08, 0.2, c.S, [0.75, 0, 0], false, SURF.gloss, 0.9);
       p.cone([0, 0.42, 0.22], 0.05, 0.12, c.S, [0.45, 0, 0], false, SURF.gloss, 0.9);
       p.cone([0.2, 0.47, -0.04], 0.07, 0.14, c.P, [0.1, 0, -0.5], true);
@@ -514,8 +512,8 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       p.ep([0.22, 0.2, 0.2], [0.06, 0.04, 0.03], '#e58f9f', SURF.matte, [0, 0.6, 0], true);
     },
     face: (c) => ({
-      eye: { x: 0.165, y: 0.35, z: 0.22, r: 0.055 },
-      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.62, lid: c.P,
+      eye: { x: 0.16, y: 0.355, z: 0.225, r: 0.07 },
+      white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.66, lid: c.P,
       brow: { color: c.D, thick: 0.24, maxY: 0.5, surfZ: ellipsoidZ(HEAD_C, [0.33, 0.27, 0.3]) },
       mouth: { y: 0.14, w: 0.085, color: shade(c.D, 0.55), inside: '#4a1a24', surfZ: ellipsoidZ([0, 0.19, 0.28], [0.19, 0.13, 0.17]) },
     }),
@@ -536,16 +534,21 @@ const SPECIES: Record<Species, SpeciesBuild> = {
       p.ep([0.3, 0.33, 0.0], [0.05, 0.17, 0.15], c.P, SURF.fur, [0, -0.15, -0.15]);
       p.ep([0.315, 0.33, 0.02], [0.04, 0.13, 0.11], c.S, SURF.matte, [0, -0.15, -0.15], true);
       // Trunk: hangs from the face and curls up at the tip, with two small ivory tusks beside it.
-      p.b.part(sweep([[0, 0.3, 0.25], [0, 0.2, 0.34], [0, 0.15, 0.4], [0, 0.15, 0.44], [0, 0.2, 0.46]], (t) => 0.082 - 0.035 * t, 22, 10), {}, c.P, SURF.fur);
+      // Built as a chain of overlapping balls, NOT a `sweep` tube: the sweep's rings twisted at the tight
+      // curl and some quads came out inside-out (backface-culled = the invisible gap). Balls can't flip.
+      const trunk = new THREE.CatmullRomCurve3([[0, 0.3, 0.25], [0, 0.22, 0.33], [0, 0.17, 0.385], [0, 0.15, 0.425], [0, 0.17, 0.455], [0, 0.2, 0.46]].map((q) => new THREE.Vector3(...q)), false, 'centripetal');
+      for (let i = 0; i <= 14; i++) {
+        const t = i / 14;
+        const q = trunk.getPointAt(t);
+        p.e([0, q.y, q.z], 0.082 - 0.035 * t, c.P, SURF.fur, [0, 0, 0], 'mid');
+      }
       for (const sx of [1, -1]) p.cone([0.1 * sx, 0.14, 0.28], 0.032, 0.13, '#fff4dc', [1.9, 0, -0.35 * sx], false, SURF.gloss);
-      p.ep([0.04, 0.23, 0.44], [0.012, 0.012, 0.008], shade(c.P, 0.6), SURF.matte, [0, 0, 0], true);
       p.cone([0, 0.52, 0.0], 0.05, 0.09, c.D, [0.2, 0, 0]); // small head tuft
     },
     face: (c) => ({
       eye: { x: 0.14, y: 0.37, z: 0.225, r: 0.062 },
       white: EYE_WHITE, pupil: EYE_DARK, pupilK: 0.62, lid: c.P,
       brow: { color: c.D, maxY: 0.52, surfZ: ellipsoidZ(HEAD_C, [0.32, 0.29, 0.28]) },
-      mouth: { y: 0.075, w: 0.07, color: shade(c.D, 0.6), inside: '#4a1a24', surfZ: ellipsoidZ(HEAD_C, [0.32, 0.29, 0.28]) },
     }),
     arm: (c) => ({ sleeve: c.P, hand: c.P }),
   },

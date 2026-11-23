@@ -100,7 +100,7 @@ const HEADS: Record<DriverLook['species'], HeadDrawer> = {
     plain(c, 'rgba(255,255,255,0.28)', () => (c.beginPath(), c.ellipse(50, 72, 20, 11, 0, 0, Math.PI * 2))); // fluffy tummy glow
     eye(c, 37, 49, 4.8);
     eye(c, 63, 49, 4.8);
-    // Beak: two orange halves (upper wider) so it reads as a beak, not a nose.
+    // Beak: two orange halves (upper wider); birds have no separate mouth.
     fill(c, s, () => path(c, [[40, 58], [60, 58], [50, 72]]));
     line(c, 42, 61.5, 58, 61.5, 1.4);
     blush(c, 27, 62);
@@ -269,7 +269,7 @@ const HEADS: Record<DriverLook['species'], HeadDrawer> = {
     fill(c, '#f0a020', () => path(c, [[45, 60], [55, 60], [50, 74]])); // beak
     for (const dx of [-8, 0, 8]) plain(c, 'rgba(90,50,20,0.25)', () => (c.beginPath(), c.ellipse(50 + dx, 85, 3.5, 2.2, 0, 0, Math.PI * 2))); // chest scallops
   },
-  // Rocco: blue-grey rhino, big cream horn, small ears, wide snout.
+  // Rocco: blue-grey rhino, big cream horn, small ears, wide snout (mouth only, no nostrils).
   rhino(c, p, s) {
     ellipse(c, 22, 28, 8, 11, p, -0.5); // ears
     ellipse(c, 78, 28, 8, 11, p, 0.5);
@@ -277,10 +277,8 @@ const HEADS: Record<DriverLook['species'], HeadDrawer> = {
     ellipse(c, 50, 72, 27, 17, '#b8c4d6'); // snout
     tri(c, s, [40, 54], [60, 54], [50, 2]); // horn
     tri(c, s, [43, 36], [57, 36], [50, 22]); // second horn
-    eye(c, 28, 50, 4.4);
-    eye(c, 72, 50, 4.4);
-    circle(c, 41, 66, 2, NOSE); // nostrils
-    circle(c, 59, 66, 2, NOSE);
+    eye(c, 28, 49, 5.4); // big readable eyes; no nostril dots (they read as a second pair of eyes)
+    eye(c, 72, 49, 5.4);
     smile(c, 50, 76, 8);
     blush(c, 20, 62, 3.6);
     blush(c, 80, 62, 3.6);
