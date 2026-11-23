@@ -47,6 +47,39 @@ export interface BridgeDef {
   /** Draw railings along the edges (default true). Railings are only decoration: karts never hit them,
    *  so open-edged bridges (e.g. where the wind can blow you off) should set this to false. */
   rails?: boolean;
+  /**
+   * Treetop tracks only (`scenery.treetop`): 'rope' draws this span as a rope bridge (sagging hand ropes,
+   * hangers, slatted deck) instead of a plank branch road. Looks only. Default: a plank branch road.
+   */
+  look?: 'rope';
+}
+
+/**
+ * A giant tree (treetop tracks): a huge trunk with spreading branches and an autumn crown. Its trunk is
+ * SOLID (a circle collider `radius` wide, from the ground up to `height`), so roads must keep clear of it.
+ */
+export interface GiantTreeDef {
+  x: number;
+  z: number;
+  /** Trunk radius at road level (m); the foot flares out wider over its roots. */
+  radius: number;
+  /** Height of the trunk top / middle of the crown (m above the forest floor). */
+  height: number;
+  /** Crown radius (m, default 1.4 x height / 3). */
+  crown?: number;
+}
+
+/**
+ * Treetop look (Autumn Speedway): plank roads, wooden rails, log supports, giant trees, falling leaves and
+ * leaf piles. Looks only, apart from the giant trunks, which are solid.
+ */
+export interface TreetopDef {
+  /** Hand-placed giant trees (the ones the road winds round). */
+  giantTrees: GiantTreeDef[];
+  /** Extra giant trees scattered by the scenery planner (seeded), keeping clear of every road: the forest. */
+  forest?: { count: number; seed?: number };
+  /** Leaf piles on the floor sections: soft heaps (you drive through them), in control-point units + lateral (-1..1). */
+  leafPiles?: { at: number; offset: number; size?: number }[];
 }
 
 /** A launch cannon: drive into its mouth and you are fired along an arc to the target. */
@@ -154,6 +187,8 @@ export interface TrackDef {
     buildings: number;
     /** Hand-placed solid blocks (container stacks, warehouses...). Optional. */
     blocks?: BlockDef[];
+    /** Treetop course: giant trees, plank roads and falling leaves (see TreetopDef). */
+    treetop?: TreetopDef;
     /**
      * Sky-island look: leave out the ring of green hills and mountains that normally stands on the
      * horizon, so the course floats in open sky (clouds are kept). Default false.
@@ -165,7 +200,7 @@ export interface TrackDef {
    * `mood` (optional) picks the lighting preset in src/render/scene.ts (sun colour and height, exposure,
    * bloom, colour grade, stars...). Default 'day'.
    */
-  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' };
+  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' };
 
   // ---- v2 (all optional) ----
   terrain?: TerrainDef;

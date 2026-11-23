@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { LANDING_LENGTH, shapeHeight } from '../sim/jumps';
 import { Track, type TrackSample } from '../sim/track';
 import { rampTexture } from './textures';
+import { plankTexture } from './env/treetop';
 
 /** A row of a strip: two vertices (left, right) and a texture V coordinate. */
 interface Row {
@@ -164,11 +165,20 @@ export function buildRamps(track: Track): THREE.Group {
     }
   }
 
+  // Treetop tracks (Autumn Speedway): ramps are built of planks like the road, lightly tinted per kind so a
+  // kicker still stands out (see env/treetop.ts). The plank texture is 12 m per repeat; ramp V is 3 m per unit.
+  const treetop = track.def.scenery.treetop !== undefined;
+  const WOOD_TINT: Record<Kind, string> = { kicker: '#ffd070', hump: '#ffe6c0', double: '#ffc0a0', apron: '#e6f0b0' };
   for (const [kind, acc] of tops) {
     const [base, stripe] = COLORS[kind];
-    group.add(acc.build(new THREE.MeshStandardMaterial({ map: rampTexture(base, stripe), roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }), true));
+    if (treetop) {
+      const map = plankTexture();
+      map.repeat.set(1, 0.25);
+      group.add(acc.build(new THREE.MeshStandardMaterial({ map, color: WOOD_TINT[kind], roughness: 0.8, side: THREE.DoubleSide }), true));
+    } else group.add(acc.build(new THREE.MeshStandardMaterial({ map: rampTexture(base, stripe), roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }), true));
   }
-  if (!sides.isEmpty) group.add(sides.build(new THREE.MeshStandardMaterial({ color: '#6b7078', roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide }), true));
+  const sideMat = treetop ? new THREE.MeshStandardMaterial({ color: '#4a2e1a', roughness: 0.9, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ color: '#6b7078', roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide });
+  if (!sides.isEmpty) group.add(sides.build(sideMat, true));
 
   return group;
 }

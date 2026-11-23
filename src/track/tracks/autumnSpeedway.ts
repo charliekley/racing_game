@@ -56,6 +56,18 @@ export const GREAT_TRUNK = { x: 180, z: 330, spiralRadius: 38, bottom: 28, top: 
 export const LANTERN_OAK = { x: 385, z: 290, hairpinRadius: 28 };
 
 const G = GREAT_TRUNK;
+
+/**
+ * The root ridge under the shortcut: mounds every ~5 m along the line from the hollow's north end to its south
+ * end, [x, z, height]. Lower at both ends so the path climbs onto the root and back down gently.
+ */
+const ROOT_RIDGE: [number, number, number][] = [];
+for (let k = 0; k <= 18; k++) {
+  const f = k / 18;
+  const x = -93 + (-77 - -93) * f;
+  const z = 120 + (40 - 120) * f;
+  ROOT_RIDGE.push([x, z, 1 + 6 * Math.pow(Math.sin(Math.PI * f), 0.6)]);
+}
 const L = LANTERN_OAK;
 
 const route: RoutePoint[] = [
@@ -109,11 +121,11 @@ const route: RoutePoint[] = [
   pt(-64, 178, 13),
   pt(-80, 154, 9.5, 'plungeEnd'),
   // ---- 7. Acorn Hollow: S-bends on the floor back to the line ----
-  pt(-102, 128, 8),
-  pt(-116, 96, 7, 'acornHollow'),
-  pt(-112, 64, 6),
-  pt(-98, 36, 5),
-  pt(-78, 14, 4),
+  pt(-112, 134, 8),
+  pt(-142, 106, 7, 'acornHollow'),
+  pt(-150, 70, 6),
+  pt(-130, 34, 5),
+  pt(-92, 12, 4),
   pt(-50, 2, 3.3, 'home'),
   pt(-20, 0, 3),
 ];
@@ -156,15 +168,80 @@ export const autumnSpeedway: TrackDef = {
   ],
   laps: 3,
   checkpoints: 18,
-  scenery: { seed: 23, trees: 300, buildings: 0 },
-  // Rust-brown forest floor, golden leaf litter on the verge, warm hazy sky.
-  theme: { grass: '#6b4a2a', offroad: '#b07a3a', sky: '#f2b878', horizon: '#ffd9a0', mood: 'dusk' },
+  scenery: {
+    seed: 23,
+    trees: 300,
+    buildings: 0,
+    treetop: {
+      // 40 more giant trees scattered by the scenery planner, clear of the roads: the forest itself.
+      forest: { count: 40, seed: 5 },
+      // Giant trees. The road winds between them, so each trunk stands just beyond the guard rail of the road
+      // passing it (autumnSpeedway.test.ts checks the clearance). Heights are to the middle of the crown.
+      giantTrees: [
+        { x: G.x, z: G.z, radius: 21, height: 150, crown: 62 }, // the Great Trunk (the spiral)
+        { x: L.x, z: L.z, radius: 11, height: 84 }, // the Lantern Oak (the hairpin)
+        { x: 90, z: 388, radius: 11, height: 120, crown: 46 }, // the landing crown of the jump
+        { x: 286, z: 86, radius: 9, height: 70 }, // beside the root ramp
+        { x: 312, z: 178, radius: 10, height: 76 }, // where the branch road leaves the root
+        { x: 302, z: 246, radius: 9, height: 70 }, // the rope bridge's west anchor
+        { x: 300, z: 326, radius: 10, height: 74 }, // above the hollow branch
+        { x: -4, z: 330, radius: 11, height: 110 }, // beside the top of the plunge
+        { x: -18, z: 206, radius: 9, height: 80 }, // halfway down the plunge
+        { x: -68, z: 262, radius: 11, height: 90 }, // west of the plunge
+        { x: 100, z: 180, radius: 16, height: 130, crown: 52 }, // the giant in the middle of the course
+        { x: 30, z: 120, radius: 9, height: 75 },
+        { x: 180, z: 120, radius: 10, height: 85 },
+        { x: 150, z: 40, radius: 8, height: 60 }, // the clearing
+        { x: 60, z: -32, radius: 9, height: 70 },
+        { x: 200, z: -50, radius: 9, height: 66 },
+        { x: -22, z: 78, radius: 9, height: 70 }, // Acorn Hollow, east of the root shortcut
+        { x: -190, z: 40, radius: 12, height: 95 },
+        { x: 380, z: 150, radius: 12, height: 90 },
+        { x: 210, z: 450, radius: 13, height: 120 },
+        { x: -60, z: 420, radius: 12, height: 100 },
+      ],
+    },
+  },
+  // Rust-brown forest floor, golden leaf litter on the verge, warm hazy golden sky (the 'autumn' light).
+  theme: { grass: '#7a5530', offroad: '#b9803c', sky: '#f0b070', horizon: '#ffd79a', mood: 'autumn' },
   terrain: {
     seed: 31,
     hills: { amplitude: 2.5, wavelength: 90 },
+    // THE ROOT RIDGE: a giant root arching across Acorn Hollow, a narrow ridge about 7 m above the hollow,
+    // which the shortcut runs along (a chain of small steep mounds), with the hollow dug out either side.
+    features: [
+      ...ROOT_RIDGE.map(([x, z, h]) => ({ x, z, radius: 7, height: h })),
+      { x: -108, z: 80, radius: 20, height: -3 }, // the hollow west of the root
+      { x: -60, z: 76, radius: 20, height: -3 }, // ...and east of it
+    ],
     blend: 18,
   },
+  // THE ROOT RIDGE SHORTCUT: a narrow dirt path along the top of the giant root across Acorn Hollow. Much shorter
+  // than the road's swing west, but only 6 m wide with a drop either side: fall off and the drone fetches you.
+  shortcuts: [
+    {
+      from: at('plungeEnd') + 0.3,
+      to: at('home') - 0.5,
+      points: [
+        [-92, 114],
+        [-86, 90],
+        [-81, 66],
+        [-77, 44],
+      ],
+      width: 6,
+    },
+  ],
+  // ACORN BEETLES: big beetles marching back and forth across the floor roads (one crossing every 4.5 s).
+  // Bump one and you bounce off its shell (no spin-out). Staggered so the three never move in step.
+  hazards: [
+    { kind: 'beetle', at: at('hollowS') + 2.5, period: 9, phase: 0 },
+    { kind: 'beetle', at: at('acornHollow'), period: 9, phase: 3 },
+    { kind: 'beetle', at: at('acornHollow') + 2.2, period: 9, phase: 6 },
+  ],
+  // Everything above the floor is a branch road on a bridge (the forest floor stays natural underneath).
   bridges: [
-    { from: at('rootRamp') + 0.8, to: at('plungeEnd') - 0.8 },
+    { from: at('rootRamp') + 0.8, to: at('ropeBridge') - 0.2 },
+    { from: at('ropeBridge') - 0.2, to: at('ropeEnd') + 0.2, look: 'rope' }, // the rope bridge (no rails: fall off and the drone fetches you)
+    { from: at('ropeEnd') + 0.2, to: at('plungeEnd') - 0.8 },
   ],
 };

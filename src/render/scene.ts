@@ -153,7 +153,7 @@ export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLigh
 // Looks: the mood of each track
 // ---------------------------------------------------------------------------
 
-export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night';
+export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn';
 
 /** Everything that gives a track its lighting mood. All colours are CSS strings. */
 export interface Look {
@@ -219,6 +219,13 @@ const LOOKS: Record<Mood, Look> = {
     sunColor: '#fff6ea', sunIntensity: 2.3, sunAzimuth: 35, sunElevation: 40, hemiIntensity: 0.95, envIntensity: 0.8,
     exposure: 0.92, fogNear: 150, fogFar: 700, bloom: 0.22, bloomThreshold: 1.15, saturation: 1.1, contrast: 1.06,
     tint: '#f6faff', vignette: 0.22, stars: 0, aurora: 0, cloudCover: 0.4,
+  },
+  // Autumn Speedway: a low golden afternoon sun slanting through the treetops, warm haze (golden fog) that
+  // swallows the far trunks, rich saturated leaf colours and a soft bloom on the light.
+  autumn: {
+    sunColor: '#ffc27a', sunIntensity: 3.2, sunAzimuth: 200, sunElevation: 24, hemiIntensity: 1.0, envIntensity: 0.85,
+    exposure: 1.15, fogNear: 90, fogFar: 560, bloom: 0.45, bloomThreshold: 0.9, saturation: 1.22, contrast: 1.08,
+    tint: '#fff2e0', vignette: 0.3, stars: 0, aurora: 0, cloudCover: 0.35,
   },
   // Not used by the current tracks, but ready: stars, aurora and a cool moon-ish light.
   night: {

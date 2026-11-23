@@ -34,6 +34,7 @@ import { ENV_TIME, bannerMaterial, clothMaterial, glowMaterial, propMaterial, wa
 import { buildPropSet, disposePropSet, type Style, VARIANTS } from './env/props';
 import { addBlock, addGrandstand, addHouse, frameM, makeTrackside, type Batches, type StructureLook } from './env/structures';
 import { backdropMaterial, cloudGeo, hillGeo, mountainGeo, skylineGeo, type BackdropKind } from './env/backdrop';
+import { forestBackdropGeo } from './env/treetop';
 import { matrix, merge, paint, scratch } from './env/geo';
 import { boxPart, flagGeo, polePart } from './env/parts';
 import { addExtras } from './env/extras';
@@ -288,10 +289,26 @@ function buildBackdrop(site: Site, style: Style, def: TrackDef, rnd: () => numbe
     desert: ['#c98d62', '#8a5a3a'],
     none: ['#888', '#444'],
   }[kind];
-  for (const [ring, haze, count] of [
+  // Treetop tracks (Autumn Speedway): the horizon is more giant forest, not mountains (see env/treetop.ts).
+  if (def.scenery.treetop) {
+    for (const [ring, haze, count] of [
+      [0, 0.35, 34],
+      [1, 0.55, 46],
+      [2, 0.72, 58],
+    ] as const) {
+      for (let i = 0; i < count; i++) {
+        const a = ((i + rnd() * 0.8) / count) * Math.PI * 2;
+        const dist = site.radius + 140 + ring * 150 + rnd() * 80;
+        const x = site.cx + Math.cos(a) * dist;
+        const z = site.cz + Math.sin(a) * dist;
+        put(x, z, forestBackdropGeo(rnd, x, z, 0.9 + rnd() * 0.6 + ring * 0.25, horizon, haze));
+      }
+    }
+  }
+  for (const [ring, haze, count] of (def.scenery.treetop ? [] : [
     [0, 0.3, 14],
     [1, 0.5, 18],
-  ] as const) {
+  ]) as readonly (readonly [number, number, number])[]) {
     for (let i = 0; i < count; i++) {
       const a = ((i + rnd() * 0.6) / count) * Math.PI * 2;
       const dist = site.radius + 380 + ring * 170 + rnd() * 90;

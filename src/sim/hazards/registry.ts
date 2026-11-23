@@ -8,6 +8,7 @@ import { Drawbridge } from './drawbridge';
 import { Geyser } from './geyser';
 import { Roller } from './roller';
 import { Gust } from './gust';
+import { Beetle } from './beetle';
 import type { Hazard } from './types';
 
 type Factory = (id: number, def: HazardDef, track: Track) => Hazard;
@@ -17,4 +18,5 @@ export const HAZARD_FACTORIES: Record<HazardDef['kind'], Factory> = {
   roller: (id, def, track) => new Roller(id, def as Extract<HazardDef, { kind: 'roller' }>, track),
   drawbridge: (id, def, track) => new Drawbridge(id, def as Extract<HazardDef, { kind: 'drawbridge' }>, track),
   gust: (id, def, track) => new Gust(id, def as Extract<HazardDef, { kind: 'gust' }>, track),
+  beetle: (id, def, track) => new Beetle(id, def as Extract<HazardDef, { kind: 'beetle' }>, track),
 };

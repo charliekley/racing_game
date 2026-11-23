@@ -668,6 +668,8 @@ export class TerrainView {
     }
     for (const g of track.gaps) {
       if (g.kind !== 'void') continue;
+      // Treetop tracks: a gap in a branch road high above the floor is just open air (no rock walls).
+      if (def.scenery.treetop && track.onBridge(g.s0)) continue;
       const ss = this.samplesBetween(g.s0, g.s1);
       const across = (p: TrackSample) => {
         const o: V3[] = [];
@@ -708,8 +710,10 @@ export class TerrainView {
     const hw = def.width / 2;
     const half = hw + CURB_WIDTH;
     const DECK = BRIDGE_DECK;
-    const concrete = new THREE.Color('#aeb0b6');
-    const shade = new THREE.Color('#70737b');
+    // Treetop tracks (Autumn Speedway): the deck is a wooden plank road on a branch log, not a concrete viaduct.
+    const wooden = def.scenery.treetop !== undefined;
+    const concrete = new THREE.Color(wooden ? '#6e4a2c' : '#aeb0b6');
+    const shade = new THREE.Color(wooden ? '#3e2716' : '#70737b');
     const pos: number[] = [];
     const col: number[] = [];
     const uv: number[] = [];
@@ -745,7 +749,8 @@ export class TerrainView {
       quadStrip(l, r, shade, shade, true);
 
       // Rounded bridge railings: posts every ~3 m and two smooth rails along each edge (unless the bridge is open-edged).
-      for (const side of b.rails ? [-1, 1] : []) {
+      // (Treetop roads have none: their wooden guard rails are the walls, and rope bridges get ropes; see env/treetop.ts.)
+      for (const side of b.rails && !wooden ? [-1, 1] : []) {
         const rail = (h: number) => ss.map((p) => ({ x: p.x + p.rx * side * (half + 0.15), y: surf(p, side * half).y + h, z: p.z + p.rz * side * (half + 0.15) }));
         for (const h of [0.55, 1.05]) {
           const path = rail(h).filter((_, i) => i % 3 === 0 || i === ss.length - 1).map((v) => new THREE.Vector3(v.x, v.y, v.z));
@@ -767,7 +772,7 @@ export class TerrainView {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const deck = new THREE.Mesh(g, groundMaterial({ maps: concreteMaps(), mottle: 0.2, speckle: 0.1, roughness: 1, side: THREE.DoubleSide }));
+    const deck = new THREE.Mesh(g, groundMaterial({ maps: wooden ? undefined : concreteMaps(), mottle: 0.2, speckle: 0.1, roughness: 1, side: THREE.DoubleSide }));
     deck.castShadow = true;
     deck.receiveShadow = true;
     this.group.add(deck);
@@ -785,6 +790,7 @@ export class TerrainView {
   private addPillar(out: THREE.BufferGeometry[], pier: BridgePier): void {
     const { sample: p, abutment, ground, deckBottom, half } = pier;
     const h = deckBottom - ground;
+    if (this.track.def.scenery.treetop) return this.addLogPier(out, pier);
     const col = new THREE.Color('#9a9ca3');
     const shadeFn = (c: THREE.Color) => (q: THREE.Vector3) => scratch.copy(c).multiplyScalar(0.7 + 0.3 * THREE.MathUtils.clamp((q.y + 3) / (h + 3), 0, 1));
     const place = (g: THREE.BufferGeometry) => out.push(g.applyMatrix4(matrix(p.x, 0, p.z, 1, 1, 1, p.heading)));
@@ -801,6 +807,27 @@ export class TerrainView {
     }
     place(paint(latheGeo(prof, 14), shadeFn(col)));
     place(paint(boxPart(0, deckBottom - 0.5, 0, half * 2 * 0.8, 1.0, 3.2, col, 0, 0.8), shadeFn(col)));
+  }
+
+  /**
+   * Treetop tracks: a pier is a rough log post with a flared, rooted foot and a fork at the top that holds the
+   * branch log (env/treetop.ts) under the deck. Same place and size as the collider (sim/bridgePillars.ts).
+   * Abutments (the bridge ends) are drawn as posts too: the deck there grows out of the ground anyway.
+   */
+  private addLogPier(out: THREE.BufferGeometry[], pier: BridgePier): void {
+    const { sample: p, ground, deckBottom } = pier;
+    const h = deckBottom - ground;
+    const R = PILLAR_RADIUS * 0.9;
+    const bark = new THREE.Color('#4e3220');
+    const prof: [number, number][] = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      prof.push([R * (1 + 0.8 * Math.pow(1 - t, 8) + 0.15 * Math.pow(t, 4)), ground + h * t]);
+    }
+    const color = (q: THREE.Vector3) =>
+      scratch.copy(bark).multiplyScalar((0.7 + 0.3 * THREE.MathUtils.clamp((q.y - ground) / Math.max(1, h), 0, 1)) * (0.8 + 0.4 * noise3(q.x * 2, q.y * 0.3, q.z * 2, 9)));
+    const geo = latheGeo(prof, 10, (a, t) => 1 + 0.08 * Math.sin(a * 5 + t * 4));
+    out.push(paint(geo, color).applyMatrix4(matrix(p.x, 0, p.z, 1, 1, 1, p.heading)));
   }
 
   // -------------------------------------------------------------------------

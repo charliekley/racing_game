@@ -96,9 +96,18 @@ export interface BlockItem extends Placement {
   color: string;
 }
 
+/** A giant tree of a treetop track (from `def.scenery.treetop.giantTrees`); its trunk is solid. */
+export interface GiantTreeItem extends Placement {
+  radius: number;
+  height: number;
+  crown: number;
+}
+
 export interface SceneryPlan {
   biome: Biome;
   blocks: BlockItem[];
+  /** Giant trees (treetop tracks only; empty otherwise). */
+  giantTrees: GiantTreeItem[];
   /** Centre and half-size of the scenery area (for the far hills/mountains/clouds). */
   bounds: { cx: number; cz: number; radius: number };
   trees: TreeItem[];
@@ -322,6 +331,7 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
   const plan: SceneryPlan = {
     biome,
     blocks: [],
+    giantTrees: [],
     bounds: { cx: site.cx, cz: site.cz, radius: site.radius },
     trees: [],
     bushes: [],
@@ -351,6 +361,19 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
     plan.blocks.push({ x: b.x, z: b.z, y, scale: 1, rotationY, seed: seed(), solid: true, collider, kind: b.kind, w: b.w, h: b.h, d: b.d, color: b.color });
   }
 
+  // Giant trees (treetop tracks): the trunk is solid all the way up, so karts on a branch road beside it bump it too.
+  // Reserved (with their wide root flare) so no small tree or rock grows inside one.
+  for (const g of def.scenery.treetop?.giantTrees ?? []) {
+    const y = h(g.x, g.z);
+    const collider = circle(g.x, g.z, y, g.radius, g.height + 4);
+    solidOf(collider);
+    site.reserve(g.x, g.z, g.radius * 1.8 + 2);
+    const crown = g.crown ?? (1.4 * g.height) / 3;
+    plan.giantTrees.push({ x: g.x, z: g.z, y, scale: 1, rotationY: 0, seed: seed(), solid: true, collider, radius: g.radius, height: g.height, crown });
+  }
+
+  planForestGiants(site, plan, h, def, solidOf);
+
   // Big man-made things first, so nature can grow around them.
   planGrandstands(site, plan, h, seed, solidOf);
   planHouses(site, plan, h, rnd, seed, solidOf, def.scenery.buildings);
@@ -374,6 +397,35 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
   }
 
   return plan;
+}
+
+// ---- The giant forest (treetop tracks) -------------------------------------
+
+/**
+ * Scatter `treetop.forest.count` extra giant trees over the scenery area (its own seeded stream, so the rest
+ * of the plan is unchanged). Each keeps clear of every road (main loop and shortcut paths) by its radius plus
+ * the off-road strip plus a margin, and of the other giants, so you can drive between them on the floor.
+ */
+function planForestGiants(site: Site, plan: SceneryPlan, h: (x: number, z: number) => number, def: TrackDef, solidOf: (c: Collider | null) => void): void {
+  const forest = def.scenery.treetop?.forest;
+  if (!forest) return;
+  const rnd = planRandom(forest.seed ?? 99);
+  const placed = plan.giantTrees.map((g) => ({ x: g.x, z: g.z, r: g.radius }));
+  let made = 0;
+  for (let tries = 0; tries < forest.count * 40 && made < forest.count; tries++) {
+    const [x, z] = site.randomPoint(rnd);
+    const radius = 6 + rnd() * 7;
+    if (site.distToTrack(x, z) < radius + site.outer + 10) continue;
+    if (placed.some((g) => Math.hypot(g.x - x, g.z - z) < g.r + radius + 28)) continue;
+    const height = 55 + radius * 4 + rnd() * 30;
+    const y = h(x, z);
+    const collider = circle(x, z, y, radius, height + 4);
+    solidOf(collider);
+    site.reserve(x, z, radius * 1.8 + 2);
+    placed.push({ x, z, r: radius });
+    plan.giantTrees.push({ x, z, y, scale: 1, rotationY: 0, seed: Math.floor(rnd() * 4294967296), solid: true, collider, radius, height, crown: height * (0.36 + rnd() * 0.12) });
+    made++;
+  }
 }
 
 // ---- Grandstands near the start/finish line -------------------------------

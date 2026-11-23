@@ -57,6 +57,27 @@ describe('Autumn Speedway', () => {
   });
 });
 
+describe('Autumn Speedway root-ridge shortcut', () => {
+  const track = new Track(autumnSpeedway);
+  const branch = track.branches[0];
+
+  it('is clearly shorter than the road it skips (it must beat the road even on slow dirt, with a boost)', () => {
+    const span = track.deltaS(branch.samples[0].s, branch.samples[branch.samples.length - 1].s);
+    expect(branch.length / span).toBeLessThan(0.72);
+  });
+
+  it('runs along a narrow ridge: in the middle the ground drops at least 4 m within 6 m of the path centre', () => {
+    let ridge = 0;
+    for (const p of branch.samples) {
+      const y = track.terrain.height(p.x, p.z);
+      const left = track.terrain.height(p.x - p.rx * 6, p.z - p.rz * 6);
+      const right = track.terrain.height(p.x + p.rx * 6, p.z + p.rz * 6);
+      if (y - left > 4 && y - right > 4) ridge++;
+    }
+    expect(ridge * branch.spacing).toBeGreaterThan(40); // at least 40 m of real knife-edge
+  });
+});
+
 describe('bots race Autumn Speedway', () => {
   function race(difficulty: Difficulty) {
     const world = new World(new Track(autumnSpeedway), new Track(autumnSpeedway));
