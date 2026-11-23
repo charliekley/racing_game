@@ -322,7 +322,7 @@ scenery plan, class balance).
 An original **mountain course over misty gorges**. Giant mushrooms rise out of the chasms: **orange caps are
 trampolines** (touch one and you are thrown along a big arc), **green caps are solid ground** (platforms and
 bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.87 km, bots lap in about 70 s
-(Autumn Speedway: 67 s); max grade 7 % up / 10 % down (steeper than nothing else, far below Autumn's 25 / 34 %).
+(Autumn Speedway: 67 s); max grade 7 % up / 10 % down (far gentler than Autumn Speedway, 25 / 34 %).
 
 ### Layout (`src/track/tracks/mushroomValley.ts`, north = +z, anticlockwise lap)
 
