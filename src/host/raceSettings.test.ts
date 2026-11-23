@@ -124,9 +124,8 @@ describe('bot names (characters)', () => {
     const n = names(fillBotSlots(1, 12), [3]);
     expect(n).toHaveLength(11);
     expect(new Set(n).size).toBe(11);
-    // 7 free characters, then the list starts over: the person's own character is used once (plain), the 3 others repeat ("Name 2").
-    expect(n.filter((x) => / 2$/.test(x))).toHaveLength(3);
-    expect(n.filter((x) => /\d$/.test(x))).toHaveLength(3);
+    // 12 characters for 12 racers: the 11 bots all get a different character, so no name needs a number.
+    expect(n.filter((x) => /\d$/.test(x))).toHaveLength(0);
   });
   it('is deterministic and keeps the usual kart bodies', () => {
     expect(names(fillBotSlots(2, 12), [0, 5])).toEqual(names(fillBotSlots(2, 12), [0, 5]));

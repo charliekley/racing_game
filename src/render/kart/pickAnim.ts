@@ -75,6 +75,10 @@ export const PICK_FACES: Record<Species, readonly PickFace[]> = {
   cat: [{ at: 0.15, expr: 'shocked', hold: 0.55 }, { at: 0.85, expr: 'smug', hold: 1.2 }],
   fox: [{ at: 0.1, expr: 'happy', hold: 0.8 }, { at: 0.95, expr: 'smug', hold: 1.2 }],
   dino: [{ at: 0.05, expr: 'angry', hold: 0.9 }, { at: 1.0, expr: 'celebrate', hold: 1.2 }],
+  penguin: [{ at: 0.1, expr: 'happy', hold: 0.9 }, { at: 0.95, expr: 'celebrate', hold: 1.2 }],
+  owl: [{ at: 0.05, expr: 'shocked', hold: 0.6 }, { at: 1.0, expr: 'smug', hold: 1.3 }],
+  rhino: [{ at: 0.05, expr: 'angry', hold: 0.7 }, { at: 0.85, expr: 'gritted', hold: 0.6 }, { at: 1.2, expr: 'celebrate', hold: 0.9 }],
+  elephant: [{ at: 0.1, expr: 'happy', hold: 0.6 }, { at: 0.55, expr: 'shocked', hold: 0.7 }, { at: 1.15, expr: 'celebrate', hold: 1.0 }],
 };
 
 /** The faces that start in the time window (t0, t1] (so a frame never misses one or fires it twice). */
@@ -192,6 +196,54 @@ export function pickPose(species: Species, t: number, out: PickPose = { ...NEUTR
       out.torsoYaw = 1.1 * whip;
       out.yaw = 0.5 * whip;
       out.headPitch = -0.15 * env(t, 0.9, 1.0, 1.3, 1.45);
+      break;
+    }
+    case 'penguin': {
+      // A waddle (the body rocks side to side), then a hop with the flippers out, ending in a little bow.
+      out.torsoRoll = wiggle(t, 3.5, 0.05, 0.2, 0.55, 0.75) * 0.22;
+      out.roll = wiggle(t, 3.5, 0.05, 0.2, 0.55, 0.75) * 0.08;
+      const hop = bump(t, 0.7, 1.2);
+      out.lift = 0.32 * hop;
+      out.squash = -0.12 * bump(t, 0.55, 0.72) + 0.1 * hop - 0.08 * bump(t, 1.2, 1.35);
+      out.armsUp = 0.9 * env(t, 0.7, 0.8, 1.1, 1.25);
+      out.torsoPitch = 0.14 * bump(t, 1.15, 1.5);
+      out.headPitch = 0.08 * bump(t, 1.15, 1.5);
+      break;
+    }
+    case 'owl': {
+      // The head swivels far round to one side and then the other, a slow blink, then a wing flutter with a hop.
+      out.headYaw = 2.4 * bump(t, 0.1, 0.65) - 2.4 * bump(t, 0.65, 1.1);
+      out.headRoll = 0.12 * bump(t, 0.1, 0.65) - 0.12 * bump(t, 0.65, 1.1);
+      out.blink = 0.9 * bump(t, 1.05, 1.3);
+      const flap = env(t, 1.1, 1.2, 1.35, 1.48);
+      out.armsUp = flap;
+      out.torsoRoll = wiggle(t, 8, 1.1, 1.2, 1.35, 1.48) * 0.1;
+      out.lift = 0.2 * bump(t, 1.1, 1.48);
+      break;
+    }
+    case 'rhino': {
+      // Paws the ground (two head tosses and a squat), then charges: the body lunges forward and the stage shakes.
+      out.headPitch = -0.3 * (bump(t, 0.1, 0.35) + bump(t, 0.4, 0.65));
+      out.squash = -0.1 * (bump(t, 0.1, 0.35) + bump(t, 0.4, 0.65)) - 0.1 * bump(t, 0.7, 0.85);
+      out.shake = 0.3 * (bump(t, 0.2, 0.3) + bump(t, 0.5, 0.6));
+      const charge = env(t, 0.75, 0.9, 1.1, 1.35);
+      out.torsoPitch = 0.2 * charge;
+      out.headPitch -= 0.1 * charge;
+      out.lift = 0.1 * bump(t, 0.85, 1.3);
+      out.shake += 0.7 * bump(t, 1.0, 1.25);
+      out.flash = 0.3 * bump(t, 1.0, 1.2);
+      break;
+    }
+    case 'elephant': {
+      // Rears back and trumpets: head thrown up, arms up, tall stretch and a stage-shaking stomp to finish.
+      const rear = env(t, 0.3, 0.55, 0.95, 1.15);
+      out.headPitch = -0.45 * rear;
+      out.squash = 0.07 * rear - 0.12 * bump(t, 0.05, 0.3) - 0.12 * bump(t, 1.15, 1.3);
+      out.armsUp = 0.9 * rear;
+      out.headRoll = wiggle(t, 12, 0.5, 0.6, 0.9, 1.05) * 0.07;
+      out.lift = 0.06 * bump(t, 0.3, 1.1);
+      out.shake = 0.7 * bump(t, 1.15, 1.3) + 0.15 * rear;
+      out.flash = 0.25 * bump(t, 1.15, 1.3);
       break;
     }
   }

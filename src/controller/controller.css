@@ -385,12 +385,13 @@ body.playing.need-rotate .rotate { display: flex; }
 .sf-bar i { flex: 1; height: clamp(5px, 1.9cqh, 8px); border-radius: 3px; background: #2a3166; }
 .sf-bar i.on { background: var(--player); }
 
-/* The strip is a grid so all choices are visible at once: 4 columns (8 drivers = 2 rows, 4 karts = 1 row). */
+/* The strip is a grid so all choices are visible at once: 6 columns for the 12 drivers (2 rows), 4 for the 4 karts (1 row). */
 .sf-strip { grid-area: strip; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; align-content: end; min-height: 0; }
 .sf-thumb { min-width: 0; padding: 3px; border: 3px solid transparent; border-radius: 12px; background: var(--panel); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .sf-thumb canvas { display: block; }
 .sf-thumb.on { border-color: var(--player); background: #252c5c; }
 /* driver thumbnails: square, as big as the row allows */
+.sf-browse[data-kind='character'] .sf-strip { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
 .sf-browse[data-kind='character'] .sf-thumb { height: clamp(40px, 15cqh, 62px); }
 .sf-browse[data-kind='character'] .sf-thumb canvas { height: 100%; aspect-ratio: 1; max-width: 100%; }
 /* kart thumbnails: wide picture + the name under it */

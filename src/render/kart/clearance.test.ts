@@ -1,7 +1,7 @@
 /**
- * Clearance tests: no driver part may poke into the kart, for every one of the 8 characters on every one of
+ * Clearance tests: no driver part may poke into the kart, for every one of the 12 characters on every one of
  * the 4 bodies, at rest, at the extreme poses of the driver rig (steering, leaning, looking back over the
- * shoulder, boost, arms up, spin-out...) and during the 8 pick animations of the selection screen.
+ * shoulder, boost, arms up, spin-out...) and during the 12 pick animations of the selection screen.
  *
  * If one of these fails after you change a head, a tail, a roll cage or the seat: the message names the combo,
  * the pose, which driver part and which kart part overlap, how deep (m) and where (body space). Fix the
@@ -53,7 +53,7 @@ describe('driver clearance in every kart', () => {
   // One test per body (8 characters each). Slow-ish (about 10 s each): everything is measured, not sampled.
   KART_STYLES.forEach((style, s) => {
     it.skipIf(only !== undefined && only !== s)(
-      `${style.name}: no head, torso, tail or arm pokes into the kart (all 8 characters, driving poses and pick moves)`,
+      `${style.name}: no head, torso, tail or arm pokes into the kart (all 12 characters, driving poses and pick moves)`,
       () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5); // the rig's wobble phase starts random: keep it repeatable
         const lines: string[] = [];

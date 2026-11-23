@@ -16,8 +16,8 @@ describe('pick animations', () => {
     expect(PICK_DURATION).toBeLessThanOrEqual(1.7);
   });
 
-  it('has a move for every one of the 8 species', () => {
-    expect(new Set(SPECIES).size).toBe(8);
+  it('has a move for every one of the 12 species', () => {
+    expect(new Set(SPECIES).size).toBe(12);
     for (const sp of SPECIES) expect(PICK_FACES[sp].length).toBeGreaterThan(0);
   });
 
@@ -64,7 +64,7 @@ describe('pick animations', () => {
       for (let t = 0.1; t < PICK_DURATION; t += 0.2) parts.push(Object.values(pickPose(sp, t)).map((v) => v.toFixed(2)).join(','));
       return parts.join('|');
     };
-    expect(new Set(SPECIES.map(signature)).size).toBe(8);
+    expect(new Set(SPECIES.map(signature)).size).toBe(12);
   });
 
   it('spinning moves complete a full turn', () => {

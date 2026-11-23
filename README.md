@@ -246,7 +246,7 @@ Shortcuts for testing (these still use the keyboard: **A/D** steer, **W** gas, *
 Before every race each player goes through four full-screen steps (P1's mode / track pop-up comes first):
 
 1. **Name**: type a name (remembered; there is no colour choice any more, colour comes from the character).
-2. **Character**: arrows, swipe or tap a thumbnail to browse the 8 drivers (weight class, stat bars); the TV shows
+2. **Character**: arrows, swipe or tap a thumbnail to browse the 12 drivers (weight class, stat bars); the TV shows
    the highlighted one live. **THIS ONE** confirms.
 3. **Kart**: the same for the 4 kart bodies; the stat bars change with the body. **LET'S GO** confirms.
 4. **Ready**: waiting screen that lists who is still choosing. **BACK** changes your picks until the race starts.
@@ -270,9 +270,14 @@ Each driver has stat points from 1 to 5, the kart body adds or subtracts a few, 
 
 | Class | Drivers | Style |
 |---|---|---|
-| Light | Pip, Mochi, Fizz | quick to accelerate, nimble, easily shoved |
-| Medium | Juno, Bolt, Sable | all-rounders |
-| Heavy | Bruno, Rex | highest top speed, slow to pick up, shove others aside |
+| Light | Pip (chick), Mochi (cat), Fizz (frog), Chip (penguin) | quick to accelerate, nimble, easily shoved |
+| Medium | Juno (astronaut), Bolt (robot), Sable (fox), Otto (owl) | all-rounders |
+| Heavy | Bruno (bear), Rex (dino), Rocco (rhino), Mabel (elephant) | highest top speed, slow to pick up, shove others aside |
+
+12 drivers so a full 12-kart grid can have a different one in every kart. Every character has its own kart
+palette (body, trim, accent, wheels); `src/host/selectLayout.test.ts` checks that every pair differs clearly in colour
+(CIE76 delta E). New in this set: **Chip** (glides: handling 5), **Otto** (fast but wide: speed 4, drift 2),
+**Rocco** (charges: quick for a heavy, weight 5) and **Mabel** (steady: weight 5, off-road 4).
 
 Kart bodies: **Sprinter** (balanced), **Mudlark** (off-road, heavy, slower), **Comet** (fast, wide turns),
 **Splash** (quick and slidey, light). Balance check: a lone bot's lap time for light, medium and heavy

@@ -1,6 +1,6 @@
 /**
  * Flat 2D pictures for the phone picker, drawn with the canvas API (no images, no 3D):
- *  - `drawPortrait`  : the driver's head, front view (the eight characters)
+ *  - `drawPortrait`  : the driver's head, front view (the twelve characters)
  *  - `drawKartPicture`: a side view of one kart body in the driver's paint, with the driver's small head in it
  *
  * Every head is built from a few circles, ellipses and triangles in the driver's two colours
@@ -238,6 +238,69 @@ const HEADS: Record<DriverLook['species'], HeadDrawer> = {
     tri(c, '#fff', [60, 80.5], [54, 82.5], [57, 87]);
     blush(c, 18, 66, 3.6);
     blush(c, 82, 66, 3.6);
+  },
+  // Chip: navy penguin, white face mask, flat orange beak, little head crest.
+  penguin(c, p, s) {
+    for (const dx of [-7, 0, 7]) ellipse(c, 50 + dx, 17 + Math.abs(dx) * 0.4, 3.6, 8, p, dx * 0.04); // crest
+    ellipse(c, 14, 62, 7, 14, p, 0.3); // flippers
+    ellipse(c, 86, 62, 7, 14, p, -0.3);
+    circle(c, 50, 55, 35, p);
+    ellipse(c, 50, 62, 26, 24, '#f7f9ff'); // white face mask
+    eye(c, 38, 52, 4.8);
+    eye(c, 62, 52, 4.8);
+    fill(c, s, () => path(c, [[38, 60], [62, 60], [50, 74]])); // beak
+    line(c, 41, 63.5, 59, 63.5, 1.4);
+    plain(c, s, () => (c.beginPath(), c.ellipse(26, 62, 4, 3, 0, 0, Math.PI * 2))); // cheek dabs
+    plain(c, s, () => (c.beginPath(), c.ellipse(74, 62, 4, 3, 0, 0, Math.PI * 2)));
+  },
+  // Otto: tawny owl, big cream facial discs with round amber eyes, ear tufts, tiny hooked beak.
+  owl(c, p, s) {
+    tri(c, p, [18, 42], [14, 8], [40, 26]); // ear tufts
+    tri(c, p, [82, 42], [86, 8], [60, 26]);
+    ellipse(c, 50, 56, 39, 33, p);
+    ellipse(c, 33, 52, 20, 20, s); // facial discs
+    ellipse(c, 67, 52, 20, 20, s);
+    for (const x of [33, 67]) {
+      circle(c, x, 52, 11, '#fff7e0');
+      circle(c, x, 52, 7.5, '#f4b21c');
+      circle(c, x, 52, 4.4, EYE);
+      plain(c, '#fff', () => (c.beginPath(), c.arc(x + 1.8, 49.5, 1.7, 0, Math.PI * 2)));
+    }
+    fill(c, '#f0a020', () => path(c, [[45, 60], [55, 60], [50, 74]])); // beak
+    for (const dx of [-8, 0, 8]) plain(c, 'rgba(90,50,20,0.25)', () => (c.beginPath(), c.ellipse(50 + dx, 85, 3.5, 2.2, 0, 0, Math.PI * 2))); // chest scallops
+  },
+  // Rocco: blue-grey rhino, big cream horn, small ears, wide snout.
+  rhino(c, p, s) {
+    ellipse(c, 22, 28, 8, 11, p, -0.5); // ears
+    ellipse(c, 78, 28, 8, 11, p, 0.5);
+    ellipse(c, 50, 54, 38, 31, p);
+    ellipse(c, 50, 72, 27, 17, '#b8c4d6'); // snout
+    tri(c, s, [40, 54], [60, 54], [50, 2]); // horn
+    tri(c, s, [43, 36], [57, 36], [50, 22]); // second horn
+    eye(c, 28, 50, 4.4);
+    eye(c, 72, 50, 4.4);
+    circle(c, 41, 66, 2, NOSE); // nostrils
+    circle(c, 59, 66, 2, NOSE);
+    smile(c, 50, 76, 8);
+    blush(c, 20, 62, 3.6);
+    blush(c, 80, 62, 3.6);
+  },
+  // Mabel: lilac elephant, huge ears with pink insides, trunk with a curl, small ivory tusks.
+  elephant(c, p, s) {
+    ellipse(c, 18, 52, 14, 27, p, 0.15); // big ears
+    ellipse(c, 82, 52, 14, 27, p, -0.15);
+    ellipse(c, 18, 52, 8, 18, s, 0.15);
+    ellipse(c, 82, 52, 8, 18, s, -0.15);
+    circle(c, 50, 50, 33, p);
+    eye(c, 38, 44, 4.4);
+    eye(c, 62, 44, 4.4);
+    // Trunk: a rounded bar down the middle that ends in a curl.
+    fill(c, p, () => path(c, [[42, 52], [58, 52], [58, 80], [66, 86], [60, 94], [48, 90], [44, 80]]), 2.2);
+    for (const y of [62, 70]) line(c, 45, y, 55, y, 1.5);
+    tri(c, '#fff4dc', [34, 70], [41, 66], [34, 82]); // tusks
+    tri(c, '#fff4dc', [66, 70], [59, 66], [66, 82]);
+    blush(c, 27, 60, 3.6);
+    blush(c, 73, 60, 3.6);
   },
 };
 
