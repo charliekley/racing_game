@@ -10,7 +10,7 @@
  *  - Grand Prix, not the last race: results + standings (scoreboard reveal), then the next race starts by
  *    itself after GP_NEXT_RACE_SECONDS. No ready step, no character change.
  *  - Grand Prix last race / Loser picks STOP: results, then the final standings with the 3D podium,
- *    then back to the lobby (players stay locked in at 'ready').
+ *    then back to the lobby (everybody keeps their driver but has to tap READY again).
  *  - Single race (and the hidden Knockout): results with the 3D podium (top three of THAT race), then back to the
  *    lobby: P1 chooses mode and track again, everybody keeps their driver but has to tap READY again.
  *  - Loser picks between races: results + standings, then the quadrants (like single) plus the track pick
