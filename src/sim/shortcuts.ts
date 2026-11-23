@@ -93,6 +93,13 @@ export interface Branch {
    * road, so the projection may swap back to the main road there (never at an underpass/overpass).
    */
   readonly nearMain: number[];
+  /**
+   * Per sample: true where the path is HELD at a height of its own, well above the ground under it (a `[x, z, height]`
+   * control point in the def): a span across a pit or chasm. The path has no dirt there (nothing to see: the ground
+   * under it is far below) and the terrain is not pulled up under it. Karts get the terrain as ground, so what
+   * keeps them up there is something else (the mushroom caps of Mushroom Valley, sim/bouncers.ts).
+   */
+  readonly pinned: boolean[];
   /** Branch distance (m) at each branch-local control point (0 … points.length + 1). */
   readonly controlB: number[];
   /** Branch distance (m) -> mapped main-route distance. */
@@ -136,6 +143,8 @@ interface Node {
   user: number;
   /** Forced direction at this node (the straight stretches at both ends); otherwise the bisector of the neighbours. */
   tan?: V2;
+  /** Pinned height (m) from the def's `[x, z, height]` point, if it gave one: the path is held at this level there. */
+  h?: number;
 }
 
 /**
@@ -147,7 +156,7 @@ export function buildBranches(track: Track): Branch[] {
   if (built.length > 0) {
     track.terrain.setPaths(new PathField(built));
     // Now that the ground has been nudged toward the smoothed path, the samples' height is the real ground height.
-    for (const { branch } of built) for (const p of branch.samples) p.y = track.terrain.height(p.x, p.z);
+    for (const { branch } of built) branch.samples.forEach((p, k) => (p.y = branch.pinned[k] ? p.y : track.terrain.height(p.x, p.z)));
   }
   return built.map((b) => b.branch);
 }
@@ -156,7 +165,10 @@ export function buildBranches(track: Track): Branch[] {
 interface Built {
   branch: Branch;
   level: number[];
+  pinned: boolean[];
 }
+/** A pinned stretch counts as "held in the air" where the path is more than this far above the ground (m). */
+const PIN_LIFT = 1.2;
 
 function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
   const L = track.length;
@@ -192,7 +204,7 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
   const nodes: Node[] = [
     { ...start, user: 0, tan: dirOut },
     { x: start.x + dirOut.x * LEAD, z: start.z + dirOut.z * LEAD, user: -1, tan: dirOut },
-    ...pts.map((p, i): Node => ({ x: p[0], z: p[1], user: i + 1 })),
+    ...pts.map((p, i): Node => ({ x: p[0], z: p[1], user: i + 1, h: def.hold ? p[2] : undefined })),
     { x: end.x - dirIn.x * LEAD, z: end.z - dirIn.z * LEAD, user: -1, tan: dirIn },
     { ...end, user: pts.length + 1, tan: dirIn },
   ];
@@ -307,6 +319,29 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
     level[last] = ends[1];
     for (let k = last - 1; k >= 0; k--) level[k] = Math.max(level[k + 1] - step, Math.min(level[k + 1] + step, level[k]));
   }
+
+  // 5b) Pinned heights: `[x, z, height]` control points hold the path at that level. Between two such anchors (and the
+  //     end junctions, which stay on the ground) the level is eased from one to the other. Where that puts the path
+  //     well above the natural ground, the stretch is "pinned" (see Branch.pinned).
+  const pinned = samples.map(() => false);
+  const anchors: { b: number; y: number; user: boolean }[] = [{ b: 0, y: level[0], user: false }];
+  nodes.forEach((nd, j) => {
+    if (nd.h !== undefined) anchors.push({ b: nodeB[j], y: nd.h, user: true });
+  });
+  anchors.push({ b: length, y: level[last], user: false });
+  if (anchors.length > 2) {
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const [A0, A1] = [anchors[a], anchors[a + 1]];
+      if (!A0.user && !A1.user) continue;
+      for (let k = 0; k <= last; k++) {
+        const bk = k * spacing;
+        if (bk < A0.b || bk > A1.b) continue;
+        const t = (bk - A0.b) / Math.max(1e-6, A1.b - A0.b);
+        level[k] = A0.y + (A1.y - A0.y) * (t * t * (3 - 2 * t));
+        pinned[k] = level[k] - ground[k] > PIN_LIFT;
+      }
+    }
+  }
   samples.forEach((p, k) => (p.y = level[k]));
 
   // 6) Walls (branch-local control units).
@@ -360,9 +395,10 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
     endSide,
     controlB,
     nearMain,
+    pinned,
     mapS: (b: number) => (s0 + (Math.max(0, Math.min(length, b)) / length) * span) % L,
   };
-  return { branch, level };
+  return { branch, level, pinned };
 }
 
 // ---------------------------------------------------------------------------
@@ -379,9 +415,9 @@ class PathField implements PathLookup {
   private readonly fields: { field: RoadField; branch: Branch; level: number[] }[];
 
   constructor(built: Built[]) {
-    this.fields = built.map(({ branch, level }) => {
+    this.fields = built.map(({ branch, level, pinned }) => {
       // Segment k joins samples k and k + 1; the last entry is the (unused) wrap-around segment.
-      const skip = branch.samples.map((_, k) => k === branch.samples.length - 1);
+      const skip = branch.samples.map((_, k) => k === branch.samples.length - 1 || pinned[k] || pinned[k + 1]);
       const field = new RoadField(branch.samples, skip, branch.samples[0].width / 2 + GROOVE_FALLOFF + 1, branch.spacing);
       return { field, branch, level };
     });
