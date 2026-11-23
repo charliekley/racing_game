@@ -15,6 +15,7 @@
  */
 import type { Track, TrackSample } from '../sim/track';
 import { bridgePiers, PILLAR_RADIUS } from '../sim/bridgePillars';
+import { gatewayLayout, PILLAR_R, SIGN_R } from '../sim/gateways';
 import type { TrackDef } from './types';
 
 // ---------------------------------------------------------------------------
@@ -398,6 +399,10 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
       plan.pierColliders.push({ shape: 'circle', x: p.x, z: p.z, y: pier.ground, r: PILLAR_RADIUS + 0.2, height, solid: true });
     }
   }
+
+  // Mushroom Valley: solid stone pillars and signposts at the ends of the orange routes (drawn by render/branchView.ts).
+  for (const sp of gatewayLayout(track).pillars) plan.colliders.push({ shape: 'circle', x: sp.x, z: sp.z, y: h(sp.x, sp.z), r: PILLAR_R, height: 2.6, solid: true });
+  for (const sp of gatewayLayout(track).signs) plan.colliders.push({ shape: 'circle', x: sp.x, z: sp.z, y: h(sp.x, sp.z), r: SIGN_R, height: 3.4, solid: true });
 
   return plan;
 }

@@ -174,19 +174,18 @@ export class Bouncers {
           target = { x: t.x, z: t.z, y: track.sample(t.x, t.z)?.height ?? me.y };
         }
       }
-      // A green cap on the main road tilts with the road's own slope there (so it joins the road without a step).
+      // A green cap IS the road (see `groundTop`): its top and tilt are the road's height and slope under it, so the cap
+      // joins the road without a step. (Banking and the road's own slope are folded into the tilt, by finite differences.)
+      let y = me.y;
       let gx = 0;
       let gz = 0;
-      if (d.kind === 'green' && d.at !== undefined) {
-        const s0 = track.sAt(d.at) + (d.ds ?? 0);
-        const a = track.pointAt(s0 - 3, d.offset ?? 0);
-        const b = track.pointAt(s0 + 3, d.offset ?? 0);
-        const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
-        const slope = (b.y - a.y) / len;
-        gx = (slope * (b.x - a.x)) / len;
-        gz = (slope * (b.z - a.z)) / len;
+      if (d.kind === 'green') {
+        const top = (x: number, z: number) => this.roadTop(x, z);
+        y = top(me.x, me.z);
+        gx = (top(me.x + 1.5, me.z) - top(me.x - 1.5, me.z)) / 3;
+        gz = (top(me.x, me.z + 1.5) - top(me.x, me.z - 1.5)) / 3;
       }
-      return { index, kind: d.kind, x: me.x, z: me.z, radius: d.radius, y: me.y, gx, gz, target, air: d.air ?? 0 };
+      return { index, kind: d.kind, x: me.x, z: me.z, radius: d.radius, y, gx, gz, target, air: d.air ?? 0 };
     });
   }
 
@@ -223,6 +222,11 @@ export class Bouncers {
    */
   private groundTop(c: Cap, x: number, z: number, hint?: number): number {
     if (c.kind !== 'green') return Bouncers.surface(c, x, z);
+    return this.roadTop(x, z, hint);
+  }
+
+  /** Height the main road has (or would have) at (x, z): centre line plus banking. */
+  private roadTop(x: number, z: number, hint?: number): number {
     const p = this.track.projectOnMain(x, z, hint !== undefined && hint >= 0 && hint < ROUTE_STRIDE ? hint : -1);
     return p.y + Track.bankLift(p.bank, p.width / 2, p.d);
   }

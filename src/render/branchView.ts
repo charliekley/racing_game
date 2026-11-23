@@ -10,6 +10,7 @@
  */
 import * as THREE from 'three';
 import type { Branch } from '../sim/shortcuts';
+import { gatewayLayout, PILLAR_R } from '../sim/gateways';
 import { DIRT_LIFT } from '../sim/shortcuts';
 import { CURB_WIDTH, Track, type TrackSample } from '../sim/track';
 import { dirtTexture, chevronSignTexture, wallTexture } from './textures';
@@ -152,7 +153,9 @@ export function buildBranchViews(track: Track, strip: StripFn): THREE.Group {
     }
 
     group.add(buildForkMarker(track, b));
+    
   }
+  if (track.def.scenery.mushroom) group.add(buildGateways(track)); // (once for all branches)
   return group;
 }
 
@@ -217,5 +220,55 @@ function buildForkMarker(track: Track, b: Branch): THREE.Group {
   });
   cones.castShadow = true;
   g.add(cones, bands);
+  return g;
+}
+
+/**
+ * Mushroom Valley: the two ends of an orange route get a GATEWAY so the split reads from far away and the opening
+ * is a clean gap (the trail fences stop short of it, see `BRANCH_GAP` in the track file): a pair of stone pillars,
+ * each topped by a little orange mushroom cap, flank the spot where the path crosses the verge, and a tall signpost
+ * with a big orange-capped arrow board stands just before the fork. The positions come from `gatewayLayout`
+ * (sim/gateways.ts), which also gives the pillars and the post their (solid) colliders.
+ */
+function buildGateways(track: Track): THREE.Group {
+  const g = new THREE.Group();
+  const layout = gatewayLayout(track);
+  const stone = new THREE.MeshStandardMaterial({ color: '#8d8578', roughness: 1 });
+  const stoneDark = new THREE.MeshStandardMaterial({ color: '#6c665c', roughness: 1 });
+  const orange = new THREE.MeshStandardMaterial({ color: '#e8651a', roughness: 0.45, emissive: new THREE.Color('#ff5a00'), emissiveIntensity: 0.25 });
+  const cream = new THREE.MeshStandardMaterial({ color: '#f6e8c4', roughness: 0.6 });
+  const wood = new THREE.MeshStandardMaterial({ color: '#7b5a38', roughness: 0.9 });
+  const H = 2.6;
+  for (const p of layout.pillars) {
+    const y = track.terrain.height(p.x, p.z);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(PILLAR_R * 0.7, PILLAR_R, H, 8), stone);
+    body.position.set(p.x, y + H / 2 - 0.2, p.z);
+    body.castShadow = true;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(PILLAR_R * 0.8, PILLAR_R * 0.8, 0.3, 8), stoneDark);
+    band.position.set(p.x, y + H * 0.62, p.z);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(1.15, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), orange);
+    cap.scale.y = 0.55;
+    cap.position.set(p.x, y + H - 0.2, p.z);
+    cap.castShadow = true;
+    const spot = new THREE.Mesh(new THREE.CircleGeometry(0.2, 8), cream);
+    spot.rotation.x = -Math.PI / 2;
+    spot.position.set(p.x, y + H - 0.2 + 1.15 * 0.55 + 0.01, p.z);
+    g.add(body, band, cap, spot);
+  }
+  const boardMat = new THREE.MeshBasicMaterial({ map: (signTex ??= chevronSignTexture()), side: THREE.DoubleSide });
+  for (const sg of layout.signs) {
+    const y = track.terrain.height(sg.x, sg.z);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 3.4, 6), wood);
+    post.position.set(sg.x, y + 1.7, sg.z);
+    post.castShadow = true;
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.5), boardMat);
+    board.position.set(sg.x, y + 3.2, sg.z);
+    board.rotation.y = Math.atan2(-sg.tx, -sg.tz); // face the traffic coming along the road
+    if (sg.side < 0) board.scale.x = -1; // (the arrows point right: mirror it when the path leaves on the left)
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), orange);
+    cap.scale.y = 0.6;
+    cap.position.set(sg.x, y + 3.95, sg.z);
+    g.add(post, board, cap);
+  }
   return g;
 }

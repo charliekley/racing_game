@@ -161,10 +161,12 @@ t.turn(52, -90, -1.5).mark('turnEast'); // the road comes out of the mountain he
 // ---- 7. Descent: up the mountain side, two sweeping S-bends, then a right turn that closes the lap at the start line ----
 {
   const total = t.y - 30; // the height still to lose
-  const sBend = (side: 1 | -1, deg: number, dy: number) => t.turn(200, side * deg, dy / 2).turn(200, -side * deg, dy / 2);
+  // Sweeping S-bends (radius 70 to 120 m: bends you carve, not a straight you wait out), with a dip and a crest between them.
+  const sBend = (r: number, side: 1 | -1, deg: number, dy: number) => t.turn(r, side * deg, dy / 2).turn(r, -side * deg, dy / 2);
   t.turn(45, -90, -0.1 * total).mark('chuteTop');
-  sBend(1, 18, -0.45 * total).mark('chute');
-  sBend(-1, 6, -0.15 * total);
+  sBend(90, 1, 34, -0.3 * total).mark('chute');
+  sBend(110, -1, 26, -0.17 * total);
+  sBend(80, 1, 22, -0.1 * total).mark('chuteS3');
   // The last turn is a circle arc whose radius is whatever puts its end exactly 34 m before the start line.
   const r = -34 - t.x;
   const run = -t.z - r; // metres to drive straight north before it
@@ -237,16 +239,23 @@ for (let k = 0; k < 7; k++) {
   const off = [0, -4, 0, 4, 0, -4, 0][k];
   add({ kind: 'green', radius: 10, at: at('g3a'), ds: 6 + k * 12.5, offset: off, dy: 0 });
 }
+/**
+ * Time in the air of an orange hop from `a` to `b`: the shortcut hops are flown at about SHORTCUT_SPEED (faster than the
+ * 28 m/s a kart drives, which is what makes the orange route quicker when flown well), but never shorter than 0.85 s (apex >= 2.5 m).
+ */
+const SHORTCUT_SPEED = 42;
+const hopAir = (a: { x: number; z: number }, b: { x: number; z: number }): number => Math.max(0.85, Math.round((Math.hypot(b.x - a.x, b.z - a.z) / SHORTCUT_SPEED) * 100) / 100);
 // TWIN SPANS, shortcut: three orange caps beside the gorge on the left, hop by hop (6 hops-worth of air each).
 export const G3_SIDE = -27; // metres to the left of the main road
 const G3_LAND = G3 + 22; // where the last hop lands (metres along from the gorge start)
 const G3_CAPS = [10, 46, 82].map((ds) => local('g3a', ds, G3_SIDE));
 {
   const first = caps.length;
+  const land = local('g3a', G3_LAND, G3_SIDE);
   G3_CAPS.forEach((c, k) => {
     const last = k === G3_CAPS.length - 1;
-    const land = local('g3a', G3_LAND, G3_SIDE);
-    add({ kind: 'orange', radius: 8.5, x: c.x, z: c.z, y: c.y - 0.4, air: last ? 0.8 : 0.88, to: last ? { x: land.x, z: land.z } : first + k + 1 });
+    const to = last ? land : G3_CAPS[k + 1];
+    add({ kind: 'orange', radius: 8.5, x: c.x, z: c.z, y: c.y - 0.4, air: hopAir(c, to), to: last ? { x: land.x, z: land.z } : first + k + 1 });
   });
 }
 // THE CAVE, main route: green caps all the way (a bit wider apart in the middle).
@@ -265,7 +274,8 @@ export const ORANGE_ROUTE = [4, 44, 84, 124].map((ds) => {
   const first = caps.length;
   const exit = local('caveIn', CAVE_LAND, CAVE_SIDE);
   ORANGE_ROUTE.forEach((c, k) => {
-    add({ kind: 'orange', radius: 8, x: c.x, z: c.z, y: c.y, air: k === ORANGE_ROUTE.length - 1 ? 0.8 : 0.95, to: k < ORANGE_ROUTE.length - 1 ? first + k + 1 : { x: exit.x, z: exit.z } });
+    const last = k === ORANGE_ROUTE.length - 1;
+    add({ kind: 'orange', radius: 8, x: c.x, z: c.z, y: c.y, air: hopAir(c, last ? exit : ORANGE_ROUTE[k + 1]), to: last ? { x: exit.x, z: exit.z } : first + k + 1 });
   });
 }
 
@@ -348,6 +358,9 @@ const cavePits = [0, 1, 2].map((k) => pit(local('caveIn', 30 + k * 40, CAVE_SIDE
 // The track
 // ---------------------------------------------------------------------------
 
+/** Control-point units (about 24 m each) between a branch's junction and the first / last piece of fence beside it. */
+const BRANCH_GAP = 1.6;
+
 export const mushroomValley: TrackDef = {
   name: 'Mushroom Valley',
   blurb: 'A mountain trail up switchbacks and along misty ridges: bounce across orange mushroom trampolines, cross on green caps, and pick a route through the glowing cave.',
@@ -365,12 +378,15 @@ export const mushroomValley: TrackDef = {
     { from: at('g1b'), to: at('g1end'), side: 'both' },
     { from: at('g2pre'), to: at('g2a'), side: 'both' },
     { from: at('g2b'), to: at('g2end'), side: 'both' },
-    { from: at('g3fork') - 1, to: at('g3a'), side: 'right' },
-    { from: at('g3b'), to: at('g3join'), side: 'right' },
-    { from: at('caveFork') - 1, to: at('caveIn'), side: 'left' },
-    { from: at('caveOut'), to: at('caveEnd'), side: 'left' },
+    // (The fences stop short of both ends of each orange branch: the dirt path crosses the verge there, so the opening
+    // must be clear, no rope and no collision wall across it; `BRANCH_GAP` metres is where the path has left / not yet joined.)
+    { from: at('g3fork') + BRANCH_GAP, to: at('g3a'), side: 'right' },
+    { from: at('g3b'), to: at('g3join') - BRANCH_GAP, side: 'right' },
+    { from: at('caveFork') + BRANCH_GAP, to: at('caveIn'), side: 'left' },
+    { from: at('caveOut'), to: at('caveEnd') - BRANCH_GAP, side: 'left' },
   ],
-  ramps: [],
+  // A small rock kicker on the way down (a smooth crest, no gap: a trick off it pays a boost) in the S-bends that replaced the long run-in.
+  ramps: [{ at: at('chute') + 0.5, length: 9, height: 1.2, shape: 'hump' }],
   boostPads: [
     { at: at('foot') - 0.4, offset: 0, length: 8, width: 5 }, // up the first climb
     { at: at('ridge1') + 0.4, offset: 0, length: 8, width: 5 }, // speed into the Sky Leap
@@ -391,7 +407,7 @@ export const mushroomValley: TrackDef = {
         { from: at('g2a'), to: at('g2b') },
         { from: at('g3a'), to: at('g3b') },
       ],
-      cave: { from: at('caveIn'), to: at('caveOut'), halfWidth: 58, roof: 46, offset: CAVE_SIDE * 0.42 }, // the vault is centred between the main road and the right-hand shortcut
+      cave: { from: at('caveIn'), to: at('caveOut'), halfWidth: 58, roof: 46, offset: -CAVE_SIDE * 0.42 }, // the vault is centred between the main road and the orange route (NB: `offset` is in the track's own lateral axis `d`, which is the opposite of `local()`'s `lat`: the route at local lat +30 is at d -30)
       glow: 130,
     },
   },
@@ -416,7 +432,7 @@ export const mushroomValley: TrackDef = {
       { from: at('g2a'), to: at('g2b'), pad: 14, fade: 45 },
       { from: at('g3a'), to: at('g3b'), pad: 6, fade: 40 },
       // The cave: the hill (the rock shell, +-58 m round its axis) stands as a mesa of its own; only the ground OUTSIDE it falls away.
-      { from: at('caveIn'), to: at('caveOut'), pad: 26, fade: 40, inner: [44, 74], open: false },
+      { from: at('caveIn'), to: at('caveOut'), pad: 26, fade: 40, inner: [74, 44], open: false },
     ],
   },
   // THE DIRT SHORTCUTS. Each leaves the road before a gorge, runs beside it and rejoins after it. Their middles are
