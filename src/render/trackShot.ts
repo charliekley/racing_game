@@ -35,7 +35,10 @@ interface ShotView {
 }
 const DEFAULT_VIEW: ShotView = { at: 0, ahead: 40, back: 90, side: 65, up: 62, fov: 42 };
 /** Per-track viewpoints: the start line, or a signature feature where that is more recognisable. */
-const VIEWS: Record<string, Partial<ShotView>> = {};
+const VIEWS: Record<string, Partial<ShotView>> = {
+  // The spiral round the Great Trunk, seen from outside (the trunk's centre is to the right of the road there).
+  'Autumn Speedway': { at: 0.47, ahead: 0, back: -10, side: -175, up: 55, fov: 40 },
+};
 
 export class TrackShooter {
   private renderer: THREE.WebGLRenderer | null = null;

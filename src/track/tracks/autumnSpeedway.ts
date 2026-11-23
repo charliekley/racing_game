@@ -170,11 +170,26 @@ export const autumnSpeedway: TrackDef = {
   checkpoints: 18,
   scenery: {
     seed: 23,
-    trees: 300,
+    trees: 220,
     buildings: 0,
     treetop: {
       // 40 more giant trees scattered by the scenery planner, clear of the roads: the forest itself.
       forest: { count: 40, seed: 5 },
+      // Leaf piles on the floor roads: heaps on the verges and a few smaller ones on the road edge to drive through.
+      leafPiles: [
+        { at: 1.2, offset: 1.5 },
+        { at: 2.4, offset: -1.4, size: 1.6 },
+        { at: 3.1, offset: 0.75, size: 1.3 },
+        { at: 4.6, offset: -1.6 },
+        { at: 5.5, offset: 1.4, size: 2.6 },
+        { at: 6.6, offset: -0.8, size: 1.3 },
+        { at: 7.4, offset: 1.6 },
+        { at: at('plungeEnd') + 1.4, offset: -1.5 },
+        { at: at('acornHollow') + 0.6, offset: 1.4, size: 2.8 },
+        { at: at('acornHollow') + 1.3, offset: -0.75, size: 1.3 },
+        { at: at('acornHollow') + 2.8, offset: 1.5 },
+        { at: at('home') + 0.4, offset: -1.6, size: 2.4 },
+      ],
       // Giant trees. The road winds between them, so each trunk stands just beyond the guard rail of the road
       // passing it (autumnSpeedway.test.ts checks the clearance). Heights are to the middle of the crown.
       giantTrees: [

@@ -19,7 +19,7 @@ import { fluidMaterial } from './env/fluids';
 import { merge, paint, scratch, tubeGeo } from './env/geo';
 import { FogCuller } from './env/fogCull';
 import { mergeStaticMeshes } from './env/mergeStatic';
-import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, isTreetop, plankTexture } from './env/treetop';
+import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, isTreetop, plankTexture } from './env/treetop';
 import { planScenery } from '../track/sceneryPlan';
 
 interface Edge {
@@ -351,7 +351,7 @@ export class TrackView {
     if (treetop) {
       // Giant trees go into the scenery group so the fog culler can skip the ones hidden in the haze.
       for (const o of buildGiantTrees(track, planScenery(track))) scenery.add(o);
-      for (const o of [...buildBranchLogs(track), ...buildRopeBridges(track), ...buildLeafPiles(track)]) this.group.add(o);
+      for (const o of [...buildBranchLogs(track), ...buildRopeBridges(track), ...buildLeafPiles(track), ...buildShortcutRoots(track), ...buildTrunkBrackets(track, planScenery(track))]) this.group.add(o);
       this.group.add(buildFallingLeaves(track));
     }
     this.group.add(scenery);

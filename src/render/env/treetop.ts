@@ -121,12 +121,12 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   const foot = t.y;
   const top = t.y + t.height;
   const r = t.radius;
-  const seg = detail ? 30 : 16;
+  const seg = detail ? 22 : 12;
 
   // Trunk: a surface of revolution. Wide root flare at the foot, then almost straight (never wider than the
   // collider radius above the flare), tapering into the crown. Bark ridges come from the angle modifier.
   const prof: [number, number][] = [];
-  const rings = detail ? 16 : 9;
+  const rings = detail ? 14 : 8;
   for (let i = 0; i <= rings; i++) {
     const f = i / rings;
     const y = foot - 2 + (top - foot + 2) * f;
@@ -140,7 +140,7 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   parts.push(paint(trunk, barkColor(foot, t.seed % 97)));
 
   // Roots: a few big snaking roots running out over the floor.
-  const roots = detail ? 7 : 4;
+  const roots = detail ? 6 : 3;
   for (let k = 0; k < roots; k++) {
     const a = (k / roots) * Math.PI * 2 + rnd() * 0.5;
     const len = r * (1.6 + rnd() * 0.9);
@@ -195,7 +195,7 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
   };
   blob(t.x, crownY + t.crown * 0.15, t.z, t.crown * 0.62, 0.62);
   for (const e of limbEnds) blob(e.x, e.y + t.crown * 0.08, e.z, t.crown * (0.36 + rnd() * 0.12), 0.7);
-  const puffs = detail ? 7 : 4;
+  const puffs = detail ? 6 : 3;
   for (let k = 0; k < puffs; k++) {
     const a = rnd() * Math.PI * 2;
     const d = t.crown * (0.5 + rnd() * 0.45);
@@ -211,20 +211,23 @@ function giantTreeGeo(t: GiantTreeItem, detail: 0 | 1, road: RoadSpace): THREE.B
 export function buildGiantTrees(track: Track, plan: SceneryPlan): THREE.Object3D[] {
   if (plan.giantTrees.length === 0) return [];
   const cell = 220; // metres: one merged mesh per cell of this size
-  const groups = new Map<string, THREE.BufferGeometry[]>();
+  // Trees close to the road get the detailed model and cast shadows on it; the rest of the forest is a cheaper
+  // model that casts none (its shadow would fall far from the road anyway). Separate meshes for the two kinds.
+  const groups = new Map<string, { near: boolean; geos: THREE.BufferGeometry[] }>();
   const road = new RoadSpace(track);
   for (const t of plan.giantTrees) {
     let near = Infinity;
     for (let i = 0; i < track.samples.length; i += 4) near = Math.min(near, Math.hypot(track.samples[i].x - t.x, track.samples[i].z - t.z));
-    const key = `${Math.floor(t.x / cell)},${Math.floor(t.z / cell)}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(giantTreeGeo(t, near - t.radius < 45 ? 1 : 0, road));
+    const close = near - t.radius < 30;
+    const key = `${Math.floor(t.x / cell)},${Math.floor(t.z / cell)},${close}`;
+    if (!groups.has(key)) groups.set(key, { near: close, geos: [] });
+    groups.get(key)!.geos.push(giantTreeGeo(t, close ? 1 : 0, road));
   }
   const material = propMaterial(0.9);
   const out: THREE.Object3D[] = [];
-  for (const list of groups.values()) {
-    const mesh = new THREE.Mesh(merge(list), material);
-    mesh.castShadow = true;
+  for (const { near, geos } of groups.values()) {
+    const mesh = new THREE.Mesh(merge(geos), material);
+    mesh.castShadow = near;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false; // static: lets the fog culler pick it up (env/fogCull.ts)
     mesh.updateMatrix();
@@ -295,6 +298,40 @@ export function buildBranchLogs(track: Track): THREE.Object3D[] {
 }
 
 /**
+ * Brackets where a plank road passes close to a giant trunk (the spiral round the Great Trunk, the hairpin
+ * round the Lantern Oak...): every ~12 m a beam runs from the trunk to under the middle of the deck, with a
+ * diagonal strut below it down to the trunk. The road then visibly hangs on the tree.
+ */
+export function buildTrunkBrackets(track: Track, plan: SceneryPlan): THREE.Object3D[] {
+  const parts: THREE.BufferGeometry[] = [];
+  const hw = track.def.width / 2;
+  const wood: ColorFn = (p) => _c.set('#4a3020').multiplyScalar(0.8 + 0.4 * noise3(p.x * 0.8, p.y * 0.8, p.z * 0.8, 4));
+  for (const run of bridgeRuns(track, false)) {
+    for (let i = 0; i < run.length; i += 6) {
+      const p = run[i];
+      for (const t of plan.giantTrees) {
+        const dx = p.x - t.x;
+        const dz = p.z - t.z;
+        const d = Math.hypot(dx, dz);
+        if (d > t.radius + hw + 16 || p.y < t.y + 6) continue; // only roads hugging a trunk, well above the floor
+        const ux = dx / d;
+        const uz = dz / d;
+        const under = p.y + Track.bankLift(p.bank, hw, 0) - BRIDGE_DECK - 0.2;
+        const atTrunk = (y: number) => new THREE.Vector3(t.x + ux * t.radius * 0.95, y, t.z + uz * t.radius * 0.95);
+        const mid = new THREE.Vector3(p.x, under, p.z);
+        parts.push(paint(tubeGeo([atTrunk(under), mid], [0.75, 0.55], 7), wood)); // the beam
+        parts.push(paint(tubeGeo([atTrunk(under - 9), new THREE.Vector3(t.x + ux * (d - hw * 0.4), under - 0.3, t.z + uz * (d - hw * 0.4))], [0.6, 0.45], 6), wood)); // the strut
+      }
+    }
+  }
+  if (parts.length === 0) return [];
+  const mesh = new THREE.Mesh(merge(parts), propMaterial(0.9));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return [mesh];
+}
+
+/**
  * Rope bridges: wooden posts at both edges every few metres, two hand ropes sagging between the posts,
  * thin hangers down to the deck and a rope along the deck edge. Decoration only (the bridge has no walls).
  */
@@ -335,6 +372,42 @@ export function buildRopeBridges(track: Track): THREE.Object3D[] {
   if (parts.length === 0) return [];
   const mesh = new THREE.Mesh(merge(parts), propMaterial(0.95));
   mesh.castShadow = true;
+  return [mesh];
+}
+
+/**
+ * Shortcut paths (the root-ridge shortcut): two bark roots run along both edges of the narrow dirt path, so
+ * it reads as driving along the top of a giant root, and the edge you must not cross is easy to see.
+ * Looks only (the drop beside the path is the real danger: fall and you respawn).
+ */
+export function buildShortcutRoots(track: Track): THREE.Object3D[] {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const b of track.branches) {
+    const S = b.samples;
+    // Leave the first and last 18 m alone: there the path joins the main road.
+    const skip = Math.ceil(18 / b.spacing);
+    for (const side of [-1, 1]) {
+      const path: THREE.Vector3[] = [];
+      const radii: number[] = [];
+      for (let i = skip; i < S.length - skip; i += 2) {
+        const p = S[i];
+        const d = side * (p.width / 2 + 0.9);
+        const x = p.x + p.rx * d;
+        const z = p.z + p.rz * d;
+        const ground = track.terrain.height(x, z);
+        const r = 0.9 + 0.35 * Math.sin(i * 0.37 + side); // knobbly: the thickness wanders
+        path.push(new THREE.Vector3(x, Math.max(ground, track.terrain.height(p.x, p.z) - 0.4) + r * 0.35, z));
+        radii.push(r);
+      }
+      if (path.length < 2) continue;
+      radii[0] = radii[radii.length - 1] = 0.2;
+      parts.push(paint(tubeGeo(path, radii, 7), barkColor(-100, 23)));
+    }
+  }
+  if (parts.length === 0) return [];
+  const mesh = new THREE.Mesh(merge(parts), propMaterial(0.92));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   return [mesh];
 }
 
@@ -532,8 +605,8 @@ export function forestBackdropGeo(rnd: () => number, x: number, z: number, scale
   const r = 7 * scale;
   parts.push(paint(latheGeo([[r * 1.8, -2], [r * 1.1, h * 0.1], [r, h * 0.5], [r * 0.6, h * 0.85]], 7), shade(BARK)));
   const palette = CROWNS[Math.floor(rnd() * CROWNS.length)];
-  for (let k = 0; k < 4; k++) {
-    const g = blobGeo(1, Math.floor(rnd() * 1000), 0.25, 1.4, noise3);
+  for (let k = 0; k < 3; k++) {
+    const g = blobGeo(haze < 0.4 ? 1 : 0, Math.floor(rnd() * 1000), 0.25, 1.4, noise3);
     const cr = h * (0.22 + rnd() * 0.12);
     const a = rnd() * 6.28;
     const d = k === 0 ? 0 : h * 0.22;

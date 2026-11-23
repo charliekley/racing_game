@@ -292,9 +292,9 @@ function buildBackdrop(site: Site, style: Style, def: TrackDef, rnd: () => numbe
   // Treetop tracks (Autumn Speedway): the horizon is more giant forest, not mountains (see env/treetop.ts).
   if (def.scenery.treetop) {
     for (const [ring, haze, count] of [
-      [0, 0.35, 34],
-      [1, 0.55, 46],
-      [2, 0.72, 58],
+      [0, 0.35, 30],
+      [1, 0.55, 36],
+      [2, 0.72, 40],
     ] as const) {
       for (let i = 0; i < count; i++) {
         const a = ((i + rnd() * 0.8) / count) * Math.PI * 2;
