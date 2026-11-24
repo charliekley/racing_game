@@ -5,8 +5,10 @@
  *   - the RIBBON: one shader material (soft rainbow gradient, a scrolling shimmer, glitter, dashed centre line and glowing edge
  *     lines), drawn translucent (depthWrite off) FIRST among the transparent objects, so item boxes and effects still sort over it;
  *     a wider additive halo under it makes it glow in the bloom. The fork's high line is a second ribbon of the same material.
- *   - RAILS: a few glassy rails (a faint additive wall and a bright top bar) only where the track def has walls.
- *   - boost-pad ARCHES: a glowing half ring with a row of stars over every pad with `arch: true`.
+ *   - RAILS: a few rainbow guard rails (a translucent, slowly shifting rainbow wall with a glowing top line and a bright
+ *     rainbow bar on top, the same style as the ribbon) only where the track def has walls.
+ *   - boost-pad ARCHES: a glowing half ring (above the road only) with a row of stars over every pad with `arch: true`.
+ *   - the FORK (a `deck` branch): a glowing divider post where the road splits and where it comes back together, and a star arch over each arm.
  *   - the STAR TUNNEL: a translucent tube of rings and orbiting sparkles along the mandatory cannon's flight path.
  *   - the SPACE backdrop (`buildSpace`): the planet (continents, oceans, cloud bands from a canvas texture, an atmosphere rim), a
  *     star field, drifting dust, and a sun flare. The sky dome's aurora (mood 'space') sits behind them.
@@ -15,6 +17,7 @@
  */
 import * as THREE from 'three';
 import { flightPoint, type ResolvedCannon } from '../../sim/cannon';
+import type { Branch } from '../../sim/shortcuts';
 import { Track, type TrackSample } from '../../sim/track';
 import { lookFor } from '../scene';
 import { merge, paint, placed, scratch, tubeGeo } from './geo';
@@ -105,6 +108,42 @@ function roadMaterial(width: number, time: { value: number }): THREE.ShaderMater
   });
 }
 
+/**
+ * A rainbow guard rail: a translucent wall (uv.x = 0 at the foot, 1 at the top) whose hue drifts along the road and with
+ * height, a bright glowing top line, a faint foot line and a few sparkles. Additive, so it glows against the dark void.
+ */
+function railMaterial(time: { value: number }): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { time },
+    vertexShader: ROAD_VERT,
+    fragmentShader: /* glsl */ `
+      uniform float time;
+      varying vec2 vUv;
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+      }
+      void main() {
+        float along = vUv.y * 6.0;
+        float hue = fract(along * 0.018 + vUv.x * 0.25 - time * 0.05);
+        vec3 col = hsv2rgb(vec3(hue, 0.75, 1.0));
+        float body = mix(0.10, 0.42, vUv.x * vUv.x);                    // clearer at the foot, brighter towards the top
+        float top = smoothstep(0.86, 0.97, vUv.x);                      // the glowing top line
+        float foot = smoothstep(0.1, 0.0, vUv.x) * 0.6;
+        float spark = step(0.992, fract(sin(floor(along * 1.5) * 12.9898 + floor(vUv.x * 5.0) * 78.233) * 43758.5453)) * (0.5 + 0.5 * sin(time * 6.0 + along));
+        vec3 rgb = col * (body + foot) + mix(col, vec3(1.0), 0.35) * top * 1.7 + vec3(1.0) * spark * 0.5;
+        gl_FragColor = vec4(rgb, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+}
+
 /** A soft additive glow under the road (a wider ribbon, bright in the middle, fading to nothing at the sides). */
 function haloMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -165,24 +204,23 @@ export class RainbowView {
       this.addMesh(tools.ribbon(b.samples, false, eh, V_REPEAT), halo, -11);
     }
 
-    // ---- Rails (only where the def has walls): glass wall + bright top bar ----
+    // ---- Rails (only where the def has walls): a rainbow glass wall + a bright rainbow bar on top ----
     const outer = hw + def.offroadWidth;
+    const RAIL_H = 1.35;
     const railGlass: THREE.BufferGeometry[] = [];
     const railBars: THREE.BufferGeometry[] = [];
     for (const side of [-1, 1]) {
       const has = (p: TrackSample) => (side < 0 ? p.wallLeft : p.wallRight);
       for (const run of tools.runs(track.samples, has)) {
         const wallD = (p: TrackSample) => side * Math.min(outer, track.cliffEdgeAt(p.s, side));
-        railGlass.push(tools.ribbon(run, false, (p) => [{ d: wallD(p), h: lift(p, wallD(p)) }, { d: wallD(p), h: lift(p, wallD(p)) + 1.15 }], 6));
-        const pts = run.filter((_, i) => i % 2 === 0 || i === run.length - 1).map((p) => new THREE.Vector3(p.x + p.rx * wallD(p), p.y + lift(p, wallD(p)) + 1.15, p.z + p.rz * wallD(p)));
-        if (pts.length > 1) railBars.push(paint(tubeGeo(pts, pts.map(() => 0.1), 6), () => scratch.set('#ffffff')));
+        railGlass.push(tools.ribbon(run, false, (p) => [{ d: wallD(p), h: lift(p, wallD(p)) }, { d: wallD(p), h: lift(p, wallD(p)) + RAIL_H }], 6));
+        const pts = run.filter((_, i) => i % 2 === 0 || i === run.length - 1).map((p) => new THREE.Vector3(p.x + p.rx * wallD(p), p.y + lift(p, wallD(p)) + RAIL_H, p.z + p.rz * wallD(p)));
+        // (the bar's colour follows the position along the lap, like the glass's hue drift)
+        if (pts.length > 1) railBars.push(paint(tubeGeo(pts, pts.map(() => 0.12), 6), (q) => scratch.setHSL((q.x * 0.011 + q.z * 0.017) % 1, 1, 0.62)));
       }
     }
-    if (railGlass.length) {
-      const glass = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 0.9, 1.3), transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      this.addMesh(merge(railGlass), glass, -9);
-    }
-    if (railBars.length) this.addMesh(merge(railBars), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 2.4, 3.2), vertexColors: true }), 0);
+    if (railGlass.length) this.addMesh(merge(railGlass), railMaterial(this.time), -9);
+    if (railBars.length) this.addMesh(merge(railBars), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.7, 1.7), vertexColors: true }), 0);
 
     // ---- Boost-pad arches ----
     this.archMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(2, 2, 2) });
@@ -190,8 +228,11 @@ export class RainbowView {
     def.boostPads.forEach((def2, i) => {
       const b = track.boostPads[i];
       if (!def2.arch || !b) return;
-      arches.push(archGeometry(track, (b.s0 + b.s1) / 2, i));
+      const p = track.pointAt((b.s0 + b.s1) / 2);
+      arches.push(archGeometry(track.samples[p.index], hw, i));
     });
+    // ---- The fork: a divider post at the split and at the merge, a star arch over each arm ----
+    for (const b of track.branches) if (b.def.deck) arches.push(...forkMarkers(track, b));
     if (arches.length) this.addMesh(merge(arches), this.archMat, 0);
 
     // ---- Star tunnels (mandatory cannons) ----
@@ -260,21 +301,28 @@ function tinted(g: THREE.BufferGeometry, c: THREE.Color): THREE.BufferGeometry {
   return g.index ? g.toNonIndexed() : g; // (the parts of an arch / tunnel are merged: all non-indexed)
 }
 
-/** A half-ring arch with seven rainbow stars across the road at distance `s` (placed in the road's own frame, banked with it). */
-function archGeometry(track: Track, s: number, seed: number): THREE.BufferGeometry {
-  const hw = track.def.width / 2;
-  const p = track.pointAt(s);
-  const smp = track.samples[p.index];
+/** Radius (m) of the arch's main tube. */
+const ARCH_TUBE = 0.3;
+
+/**
+ * A half-ring arch with seven rainbow stars across the road at `smp` (placed in the road's own frame, banked with it).
+ * It stands ON the road and arches over it: nothing of it goes below the deck. `hw` is the half width of the ribbon.
+ */
+export function archGeometry(smp: TrackSample, hw: number, seed: number): THREE.BufferGeometry {
   const slope = (Track.bankLift(smp.bank, hw, hw) - Track.bankLift(smp.bank, hw, -hw)) / (2 * hw);
-  const right = new THREE.Vector3(smp.rx, slope, smp.rz).normalize();
+  // The road's frame. `smp.r` points to the RIGHT of travel (x = -tz, z = tx, heading 0 = +z), which is the -x side when
+  // looking along +z with y up. The basis needs x, y, z right-handed with y pointing UP, so x is the LEFT-hand side: with
+  // the right-hand side as x the cross product (fwd x right) points DOWN and the half ring hangs under the road.
+  const left = new THREE.Vector3(-smp.rx, -slope, -smp.rz).normalize();
   const fwd = new THREE.Vector3(smp.tx, 0, smp.tz).normalize();
-  const up = new THREE.Vector3().crossVectors(fwd, right).normalize();
-  const basis = new THREE.Matrix4().makeBasis(right, up, fwd);
-  basis.setPosition(smp.x, smp.y + Track.bankLift(smp.bank, hw, 0) + 0.02, smp.z);
+  const up = new THREE.Vector3().crossVectors(fwd, left).normalize();
+  const basis = new THREE.Matrix4().makeBasis(left, up, fwd);
+  // (the ring's tube is 0.3 m thick: lift it by that much so its feet stand on the deck and nothing goes below it)
+  basis.setPosition(smp.x, smp.y + Track.bankLift(smp.bank, hw, 0) + 0.02 + ARCH_TUBE, smp.z);
   const R = hw + 0.4;
   const parts: THREE.BufferGeometry[] = [];
-  // The ring: a half torus (a semicircle from the left edge over the top to the right edge), in the local XY plane.
-  const ring = new THREE.TorusGeometry(R, 0.3, 8, 36, Math.PI);
+  // The ring: a half torus (a semicircle from one edge over the top to the other), in the local XY plane (y up).
+  const ring = new THREE.TorusGeometry(R, ARCH_TUBE, 8, 36, Math.PI);
   parts.push(tinted(ring, new THREE.Color('#ffffff')));
   // A thinner second ring a little inside it.
   parts.push(tinted(new THREE.TorusGeometry(R - 0.9, 0.12, 6, 36, Math.PI), new THREE.Color('#bfe9ff')));
@@ -288,6 +336,52 @@ function archGeometry(track: Track, s: number, seed: number): THREE.BufferGeomet
   const merged = merge(parts);
   merged.applyMatrix4(basis);
   return merged;
+}
+
+/**
+ * The marks of a Y fork (a `deck` branch): where the two ribbons first pull apart (the tip of the void between them)
+ * stands a tall glowing divider post with a star on top, and a star arch a little way on over each arm; the same at the
+ * merge. They tell a driver, from far away, that the road splits here and where it comes back together.
+ */
+function forkMarkers(track: Track, b: Branch): THREE.BufferGeometry[] {
+  const out: THREE.BufferGeometry[] = [];
+  const bw = b.samples[0].width;
+  const hw = track.def.width / 2;
+  /** The centre of the main ribbon beside branch sample k. */
+  const main = (k: number) => track.pointAt(b.samples[k].s);
+  const open = (k: number) => {
+    const m = main(k);
+    return Math.hypot(b.samples[k].x - m.x, b.samples[k].z - m.z) > (bw + track.def.width) / 2 + 1;
+  };
+  const last = b.samples.length - 1;
+  let k0 = 0;
+  while (k0 < last && !open(k0)) k0++;
+  let k1 = last;
+  while (k1 > 0 && !open(k1)) k1--;
+  if (k0 >= k1) return out;
+  /** A divider post at the tip of the void on sample k: a slim glowing pylon, a ring and a big star. */
+  const post = (k: number, seed: number) => {
+    const p = b.samples[k];
+    const m = main(k);
+    const x = (p.x + m.x) / 2;
+    const z = (p.z + m.z) / 2;
+    const y = Math.max(p.y, m.y) + 0.02;
+    // A tall tapering pylon, two rainbow rings round it and a big star on top (all HDR bright: they bloom).
+    out.push(placed(tinted(new THREE.CylinderGeometry(0.3, 0.8, 13, 8), new THREE.Color('#ffffff')), new THREE.Matrix4().setPosition(x, y + 6.5, z)));
+    for (const [h, r, hue] of [[5.5, 2.6, 0], [8.5, 2.0, 2], [11.2, 1.5, 4]] as const) {
+      out.push(placed(tinted(new THREE.TorusGeometry(r, 0.18, 6, 28), rainbowColor(seed + hue, 7, 0.7)), new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(x, y + h, z)));
+    }
+    out.push(placed(tinted(starGeometry(2.3, 0.5), rainbowColor(seed, 7, 0.7)), new THREE.Matrix4().setPosition(x, y + 15.5, z)));
+  };
+  post(k0, 0);
+  post(k1, 3);
+  // A star arch over each arm a little way past the split (and before the merge): the branch and the main ribbon.
+  const after = Math.round(18 / b.spacing);
+  for (const [k, seed] of [[Math.min(k1 - 2, k0 + after), 1], [Math.max(k0 + 2, k1 - after), 4]] as [number, number][]) {
+    out.push(archGeometry(b.samples[k], bw / 2, seed));
+    out.push(archGeometry(track.samples[main(k).index], hw, seed + 2));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------

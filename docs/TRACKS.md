@@ -454,24 +454,27 @@ Spans shortcut ledges. The renderer draws no side walls along an open gap (only 
 
 ## Rainbow Route (7th track): what is implemented
 
-An original **ribbon road in space**: a narrow, translucent, pastel-rainbow road floating high above a planet, with almost no rails
-(fall off the edge = void = the usual respawn). Lobby index 6 (`?track=6`), 7th and last race of the Grand Prix. 3 laps, 1.68 km
-(1.58 km driven: the star tunnel flies you over 104 m of sky). Normal bots lap in about 53 s (hard 50, easy 56), so a race is
-2.5 to 3 minutes. Width 14 m, every bend has a radius of 28 m or more (arcs of 44 to 60 m; the track-wide curvature minimum is about 29 m).
+An original **ribbon road in space**: a wide, translucent, pastel-rainbow road floating high above a planet, with only a few rainbow rails
+(fall off the edge = void = the usual respawn). Lobby index 6 (`?track=6`), 7th and last race of the Grand Prix. 3 laps, 1.69 km
+(1.59 km driven: the star tunnel flies you over 100 m of sky). Normal bots lap in about 55 to 57 s (hard 52, easy 65), so a race is
+about 3 minutes. Width 18 m everywhere (the fork's branch too), every bend has a radius of 28 m or more (arcs of 42 to 70 m; the track-wide
+curvature minimum is about 29 m). Heights: 72 m at the start, down to 37 m at the wave road, up to 66 m at the tunnel mouth and 103 m after the
+tunnel, then down to 72 m again (range 64 m, steepest climb 13.8 %, steepest drop 13.9 %).
 
 ### Layout (`src/track/tracks/rainbowRoute.ts`, written with the shared turtle `src/track/turtle.ts`; anticlockwise, north = +z)
 
 | # | Section | Height | What happens |
 |---|---|---|---|
-| 1 | Launch run | 72 -> 67 m | boost pads on the grid, a flowing S, `esses1`, then a kicker over a 14 m gap |
-| 2 | The fork | 66 -> 64 m | the ribbon splits: the main ribbon keeps its pads and arches; the high line (left, 11 m wide, no pads, a little higher in the middle) is a `deck` branch; they rejoin |
-| 3 | East curl | 64 -> 59 m | a wide half-pipe through 180 degrees in two quarters, strongly banked (up to 20 degrees), a rail on the outside |
-| 4 | Wave road | 59 m | five trick bumps (`hump` ramps, 0.8 m) on a long easy S: no tight bend and no pad here, because karts fly the bumps at full speed |
-| 5 | Climb | 59 -> 78 m | one big S-bend up (16 % at the steepest) |
-| 6 | Star tunnel | 78 -> 104 m | the ribbon ends at a launch pad (a MANDATORY cannon, flight 2.2 s, 104 m of sky); rings and sparkles along the flight; you land on the high ribbon 26 m up and the second jump follows 14 m later |
-| 7 | High ribbon | 104 -> 72 m | a double kicker over a 15 m gap, an S and a bigger S-bend, then the long banked sky sweep (a U-turn, an S and a gentle S) back to the grid |
+| 1 | Launch run | 72 -> 60 m | boost pads on the grid, an S, a diving `esses1` (rail on its middle swing), then a kicker over a 9 m gap with a straight run-out |
+| 2 | The fork (a Y) | 59 -> 56 m | one ribbon splits at a glowing divider post into two ribbons of 18 m with a void of up to 15 m between them, and merges again at a second post. The MAIN ribbon bulges 20 m to the right and keeps the three pads and an arch; the HIGH line (a `deck` branch) stays left, is a few metres shorter and up to 2.2 m higher, with no pads. A star arch stands over each arm. |
+| 3 | East curl | 56 -> 39 m | a wide half-pipe through 180 degrees in two quarters, strongly banked (up to 20 degrees), a rail on the outside; it drops 17 m |
+| 4 | Wave road | 39 m (lowest) | five trick bumps (`hump` ramps, 0.8 m) on a long easy S: no tight bend and no pad here, because karts fly the bumps at full speed |
+| 5 | Climb | 40 -> 66 m | one big S-bend up (14 % at the steepest) with a rail on its middle swing, then the funnel into the tunnel |
+| 6 | Star tunnel | 66 -> 103 m | the ribbon ends at a launch pad (a MANDATORY cannon, flight 2.0 s, 100 m of sky); rings and sparkles along the flight; you land on the high ribbon **37 m up** and the second kicker follows 14 m later |
+| 7 | High ribbon | 103 -> 75 m | a kicker over a 9 m gap, a straight run-out, an S and a steep S-bend down (the lap's 14 % descent), then the long banked sky sweep (a U-turn, an S and a gentle S) back to the grid |
 
-15 boost pads (11 with a star-ring arch), 14 rows of item boxes (`itemRowSpacing` 120 m).
+The tunnel is the only way back up: the lap closes in height because everything after it runs downhill to the grid. 15 boost pads (10 with a
+star-ring arch), 14 rows of item boxes (`itemRowSpacing` 120 m).
 
 ### How it works (and what other tracks do not see)
 
@@ -480,27 +483,55 @@ All additions are optional and gated, other tracks are unchanged:
 * `scenery.rainbow` (`RainbowDef`, `types.ts`): turns off the terrain mesh, the road/kerb/verge/barrier meshes, the fork's dirt look and the
   scenery, and draws `src/render/env/rainbow.ts` instead (`RainbowView`, built last by `trackView.ts`): the translucent ribbon
   (one shader: rainbow gradient, scrolling shimmer, glitter, dashed centre line, glowing edge lines; `depthWrite` off, `renderOrder` -10 so
-  item boxes still sort over it) with an additive halo, glassy rails where the def has `walls`, the boost-pad arches
-  (`boostPads[].arch`: a half ring and seven stars), the **star tunnel** (translucent tube, rings, 140 orbiting sparkles along the cannon's
+  item boxes still sort over it) with an additive halo, rainbow rails where the def has `walls` (a translucent rainbow gradient wall whose hue drifts along the road, a glowing top line and a rainbow bar on top: six stretches on the sharpest corners, about 17 % of the lap, with colliders like any wall), the boost-pad arches
+  (`boostPads[].arch`: a half ring and seven stars; it stands ON the deck and arches over it, nothing below the road), the **fork's markers**
+  (a tall glowing divider post at the split and at the merge, a star arch over each arm), the **star tunnel** (translucent tube, rings, 140 orbiting sparkles along the cannon's
   flight path; `cannonView.ts` leaves out its barrel, funnel and steel gate there) and the space backdrop (a canvas-textured planet with an
   atmosphere rim, 2600 stars that follow the camera, drifting dust, a sun flare). `rampView.ts` draws glowing candy-coloured ramps.
 * Mood `'space'` (`scene.ts`): violet sky with the dome's aurora, no fog, soft bloom. Music: its own tune `rainbow` (F lydian, 150 bpm).
-* The ground ends at the road's edge: `cliffs` on both sides all round the lap (`edge` 8.8 m) except on the fork's left. The terrain exists
+* The ground ends at the road's edge: `cliffs` on both sides all round the lap (`edge` 10.8 m, also along the fork: the branch is a deck with ground of its own). The terrain exists
   only because a shortcut needs it.
 * `ShortcutDef.deck: true` (`shortcuts.ts`, `track.ts`): a branch with its own height line (control-point heights, smoothed) and its own
   ground (its width; nothing beside it, so you fall off like the main ribbon). No dirt, no terrain shaping. Progress, bots, the maps and
-  the Seeker use the normal branch system.
+  the Seeker use the normal branch system. A deck is the second arm of a Y: it starts ON the main centre line (`DECK_JOIN_ANGLE_DEG` 9 degrees,
+  not at the edge) and ends on it, the two ribbons overlap for the first and last ~40 m, and a kart steps onto it within `DECK_JUNCTION_ZONE`
+  (48) samples (the autopilot keeps steering for a branch it likes for 90 m after the split on a deck). The main route must veer away from the
+  branch in between (here: right 20 degrees, a straight, back); the branch's control points are written in the split's own frame.
 * `mapData.ts` leaves the all-round cliff off the maps (it would only double the road outline).
 * Heights are smoothed after the turtle writes them (28 m triangular average, in two parts that never mix across the star tunnel's gap):
   a rising kart whose ground bends away fast leaves the ground (crest launch), so a +4 % grade step at 38 m/s is a ramp.
-* Checkpoints: 11, spaced 153 m. None lies on a ramp, in a jump gap or within 50 m before one (a respawn needs a run-up), and the second
+* Checkpoints: 11, spaced 154 m. None lies on a ramp, in a jump gap or within 50 m before one (a respawn needs a run-up), and the second
   jump respawns before the tunnel.
 * The Seeker: the star tunnel's flight is shorter than the shot's trip across the gap, so the target must land before the shot gets there
-  (`flightTime` 2.2 s over 120 m). Keep that rule when changing `TUNNEL_GAP`.
+  (`flightTime` 2.0 s over 100 m). Keep that rule when changing `TUNNEL_GAP`.
+
+### Jumps and the star tunnel: landing at every speed
+
+A kicker's flight grows with the square of the speed, so a high ramp over a long gap that a slow kart only just clears would throw a boosted kart
+30 m past the apron, off the end of a straight and into the void. Both gaps are therefore short (9 m) over low ramps (1.4 m, 10 m long) with a
+straight 40+ m run-out: at 20 m/s a kart lands on the apron, at 44 m/s (boosted, plus an item) 16 m past the gap, still on the straight road
+(the old 14 m gap over a 2.4 m ramp followed by a curve did that only up to 28 m/s). The star tunnel is not ballistic: a captured kart is
+carried along ONE authored arc and set down on the same spot (to the centimetre) whatever it entered with, always with the same boost, so the
+second kicker 14 m after the landing is always taken at the same ~28-30 m/s. The tests fly every ramp and the tunnel from 20, 26, 28, 38 (boosted) and 44 m/s
+without steering and demand ground under the landing, a landing within 20 m of the gap's end and no fall.
+
+### The bots on this track (`TrackDef.botTuning`, `sim/autopilot.ts`, `sim/bots.ts`)
+
+Why they were "insanely good" (normal bot 31.3 s per km of lap against 33.3 to 37.2 on the other six tracks, easy 33.4 against 39 to 44, hard
+29.8 against 31.4 to 33.6): a wide road of gentle bends never made them lift, they hit every one of the 15 pads dead centre (about 52 % of the lap
+boosted, against 11 to 26 % elsewhere), did a trick boost off every bump and kicker (16 per lap, 4 to 13 elsewhere) and never fell where people do.
+`botTuning` (all optional, only this track sets it) holds them back: `pace` 0.97 (a multiplier on the straight-line target), `cornerCurvature`
+0.022 (they lift for every bend of 45 m or less), `wander` 4.5 m (the racing line sways slowly across the road, skill-scaled: easy 1.6x, normal 0.8x,
+hard 0.5x, never closer than 3 m to the edge and off around every ramp, the cannon and the fork, so they miss about as many pads as a person),
+`trickScale` 0.5 (half the tricks) and `noDrift` (the rails stand on the S-bends, and a drift from there would carry a bot off the rail-less ribbon).
+Result (normal bot, one lap, slots 0 to 3): easy 65 s, normal 55 to 61 s (33.7 s/km on average), hard 52 to 54 s (31.5 s/km).
 
 ### Tests
 
-`rainbowRoute.test.ts`: length 1.4 to 1.8 km, radius >= 28 m, the set pieces, pads and arches, item rows, grades under 20 %, almost no rails,
-the void beside the ribbon and beside the deck, normal bot laps of 40 to 60 s, 4 bots of every difficulty finish 3 laps with at most 2
-respawns each. `sceneryPlan.test.ts` expects no trees on this track; `mapData.test.ts` expects no cliffs on its maps.
+`rainbowRoute.test.ts`: length 1.4 to 1.8 km, radius >= 28 m, width 17 to 19 m, the set pieces, pads and arches, item rows, grades between 10 and 20 %
+and a height range over 55 m, the lap closing in height, rails (5 to 20 % of the lap, with colliders), the void beside the ribbon and beside the
+deck, the Y fork (starts and ends on the main line, one unbroken void of 10 m or more over 65+ m, equal widths, higher and shorter, pads only on
+the main ribbon, projection onto the branch and back), every jump from 20 to 44 m/s and the tunnel from 20 to 44 m/s landing on the road, normal bot
+laps of 50 to 62 s at 32.5 to 38 s per km, 4 bots of every difficulty finish 3 laps with at most 2 respawns each. `rainbowArch.test.ts`: no part of the boost-pad arch is below the
+deck. `sceneryPlan.test.ts` expects no trees on this track; `mapData.test.ts` expects no cliffs on its maps.
 Plus all the generic ones (layout, grid of 12, bots of every difficulty, 12 racers, class balance, Rocket/Seeker, cannons).

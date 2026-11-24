@@ -355,6 +355,8 @@ export class Bot {
       pace: this.skill.pace,
       cornerSpeed: this.personality.cornerSpeed + this.skill.cornerBonus,
       steerGain: this.skill.steerGain,
+      // On a track that asks for it (`botTuning.wander`) the line sways: weak bots a lot, strong ones little.
+      wanderScale: label === 'easy' ? 1.6 : label === 'normal' ? 0.8 : 0.5,
       // Easy bots never leave the main road; the others take what their slot likes (hard bots like shortcuts more).
       useCannons: this.skill.skillful,
       shortcutBias: !this.skill.skillful ? 0 : label === 'hard' ? Math.max(base.shortcutBias ?? 0, 0.6) : base.shortcutBias,
@@ -496,7 +498,7 @@ export class Bot {
     // --- Tricks off ramps -------------------------------------------------------------------------
     if (k.grounded) this.airTime = 0;
     else this.airTime += SIM_DT;
-    if (k.trickable && !this.wasTrickable) this.wantsTrick = this.rnd() < this.skill.trickChance;
+    if (k.trickable && !this.wasTrickable) this.wantsTrick = this.rnd() < this.skill.trickChance * (track.def.botTuning?.trickScale ?? 1);
     this.wasTrickable = k.trickable;
     if (!k.grounded && k.trickable && !k.trickDone && this.wantsTrick && this.airTime > 0.12) buttons |= Buttons.TRICK;
 
@@ -665,7 +667,7 @@ export class Bot {
     const none = { hold: false, forceSteer: 0 };
     const threshold = this.skill.driftCurvature;
     this.driftCooldown = Math.max(0, this.driftCooldown - SIM_DT);
-    if (threshold <= 0) return none;
+    if (threshold <= 0 || track.def.botTuning?.noDrift) return none;
 
     if (this.drifting) {
       // Keep the button down through the hop, the drift, and release once the corner is nearly over.

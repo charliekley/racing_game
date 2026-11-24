@@ -1,24 +1,25 @@
 /**
- * Track: "Rainbow Route" – a narrow, glowing, translucent ribbon road floating in space far above a planet (about 1.9 km).
+ * Track: "Rainbow Route" – a wide, glowing, translucent ribbon road floating in space far above a planet (about 1.7 km).
  *
- * There is no ground anywhere: the ribbon is all there is, and the few rails stand only on the hardest corners.
+ * There is no ground anywhere: the ribbon is all there is, and the few rails (rainbow glass) stand only on the hardest corners.
  * Step off the edge and you fall into the void; the carrier drone fetches you (the usual respawn rule).
  *
  * The lap runs anticlockwise (north = +z, east = +x; the start line is at the west end of the south edge, heading east):
  *
- *   1. LAUNCH RUN  (y 72 -> 66)   a boost pad on the grid, a flowing S-bend, then a KICKER over a 14 m gap in the ribbon.
- *   2. THE FORK    (y 66 -> 64)   the ribbon splits in two. The main ribbon keeps its boost pads (and a star-ring arch);
- *                                 the high-line branch to the left is a little shorter but has no pads. They rejoin.
- *   3. EAST CURL   (y 64 -> 59)   a wide, strongly banked half-pipe turn through 180 degrees, boost pad on the way out.
- *   4. WAVE ROAD   (y 59 -> 62)   westbound: a row of trick bumps ("waves"), then
- *   5. CLIMB       (y 62 -> 80)   a long climbing S-bend with boost pads on its crests.
- *   6. STAR TUNNEL (y 80 -> 108)  the ribbon ends at a glowing launch pad: a tube of star rings fires every kart
- *                                 along an arc and sets it down on the high ribbon 28 m up (a mandatory cannon).
- *   7. HIGH RIBBON (y 108 -> 82)  S-bends and a DOUBLE KICKER over a 15 m gap, then a long sweeping descent
- *   8. SKY SWEEP   (y 82 -> 72)   the long banked sweeper that comes down to the start line.
+ *   1. LAUNCH RUN  (y 72 -> 58)   a boost pad on the grid, a diving S-bend, then a KICKER over a short gap in the ribbon.
+ *   2. THE FORK    (y 58 -> 54)   a clear Y: the ribbon splits in two equal ribbons with a void between them. The main ribbon
+ *                                 swings out to the right and keeps its boost pads; the high line stays on the left, is a little
+ *                                 shorter and higher, and has no pads. They merge again at a glowing divider post.
+ *   3. EAST CURL   (y 54 -> 37)   a wide, strongly banked half-pipe turn through 180 degrees that drops to the lowest point of the lap.
+ *   4. WAVE ROAD   (y 37)         westbound: a row of trick bumps ("waves"), then
+ *   5. CLIMB       (y 37 -> 66)   a long climbing S-bend (the steepest part is the lap's highest grade, under 20 %).
+ *   6. STAR TUNNEL (y 66 -> 102)  the ribbon ends at a glowing launch pad: a tube of star rings fires every kart
+ *                                 along ONE fixed arc (whatever its speed) and sets it down on the high ribbon 36 m up.
+ *   7. HIGH RIBBON (y 102 -> 75)  a kicker right after the landing, then S-bends and a long, steep descent, and
+ *   8. SKY SWEEP   (y 75 -> 72)   the long banked sweeper that comes down to the start line.
  *
  * Like Mushroom Valley the route is written with a turtle (src/track/turtle.ts): every bend is an exact circle arc, so
- * the radius (>= 40 m everywhere: the bots never have to brake for a bend on a road with no rails) is known and the lap can
+ * the radius (>= 28 m everywhere: the bots never have to brake hard for a bend on a road with few rails) is known and the lap can
  * be closed exactly (see `closeTo`).
  *
  * How the look works: `scenery.rainbow` turns the standard road, kerbs, terrain and scenery off and draws the ribbon,
@@ -36,46 +37,54 @@ const arcLen = (r: number, deg: number): number => (Math.abs(deg) * Math.PI * r)
 /** Start height (m above the planet's cloud tops: only relative heights matter). */
 const Y0 = 72;
 /** The road ends here before the launch (height of the star tunnel's mouth is wherever the turtle stands). */
-export const TUNNEL_GAP = 120;
-/** Gap lengths (m) of the two jumps. */
-export const JUMP1_GAP = 14;
-export const JUMP2_GAP = 15;
+export const TUNNEL_GAP = 100;
+/**
+ * Gap lengths (m) of the two jumps. Short ones, and the ramps low: a kicker's flight grows with the SQUARE of the speed, so a
+ * high ramp and a long gap would be cleared by a few metres at a slow 22 m/s but overshoot by 30 m at a boosted 44 m/s. These
+ * (see the landing tests) land on the apron or just past it at every speed from 20 to 44 m/s, and the road is straight for 40 m
+ * after each gap.
+ */
+export const JUMP1_GAP = 9;
+export const JUMP2_GAP = 9;
 /** Start/landing heights are set by the route; this is how much higher the star tunnel puts the high ribbon (m). */
-export const TUNNEL_CLIMB = 26;
+export const TUNNEL_CLIMB = 36;
+/** Width of the ribbon (m): the main road and the fork's branch. */
+export const RIBBON_WIDTH = 18;
 
 const t = new Turtle(0, 0, Y0, 90).mark('start');
 
-// ---- 1. Launch run: pads on the grid, an S-bend, then the first kicker ----
-t.turn(80, 18, -0.25).turn(80, -18, -0.25).mark('run'); // (nothing is dead straight: every straight is a gentle S)
-t.turn(44, 45, -1).turn(44, -90, -1.5).turn(44, 45, -1).mark('esses1');
-t.line(26, 0).mark('jump1'); // the kicker (see `ramps`): 11 m ramp, 14 m of nothing, a 10 m landing apron
-t.turn(50, 30, -0.4).turn(50, -30, -0.4).mark('land1');
+// ---- 1. Launch run: a pad on the grid, a diving S-bend, then the first kicker (flat, with a straight run-up and run-out) ----
+t.turn(60, 18, 0).turn(60, -18, 0).mark('run'); // (nothing is dead straight: the grid, then a gentle S)
+t.turn(42, 45, -3).mark('e1a').turn(42, -90, -6).mark('e1b').turn(42, 45, -3).mark('esses1'); // (a dive: 12 m in 138 m)
+t.line(20, 0).mark('jump1'); // the kicker (see `ramps`): 10 m ramp, 9 m of nothing, a 10 m landing apron...
+t.line(38, 0); // ...and a straight run-out, so a flat-out flight lands on the road
+t.turn(46, 26, -0.5).turn(46, -26, -0.5).mark('land1');
 
-// ---- 2. The fork: main ribbon bends right then left; the high line is on the left (inside) ----
-t.line(30, -0.4).mark('forkA');
-t.turn(60, 36, -0.6).turn(60, -36, -0.6);
-t.turn(50, 28, -0.2).turn(50, -28, -0.2).mark('forkB');
-t.line(10, -0.2);
+// ---- 2. The fork: a Y. One ribbon splits at 'forkA'; the main ribbon bulges out to the right, the high line stays left ----
+t.line(16, -0.6).mark('forkA');
+t.turn(70, 20, -0.3).line(36, -0.6).turn(70, -40, -0.6).line(36, -0.6).turn(70, 20, -0.3).mark('forkB'); // (net sideways shift 0)
 
-// ---- 3. East curl: a wide half-pipe in two quarters, strongly banked (the bank follows the curvature, see bankPerCurvature) ----
-t.turn(50, -90, -2.2).mark('pipeE');
-t.turn(50, 32, -0.15).turn(50, -32, -0.15).mark('pipeMid'); // (the straight between the quarters: pads, and room to breathe)
-t.turn(50, -90, -2.2);
-t.turn(54, 28, -0.25).turn(54, -28, -0.25).mark('padN'); //                      boost pads on the way out
-// ---- 4. Wave road (westbound): a field of bumps on a long, easy bend ----
+// ---- 3. East curl: a wide half-pipe in two quarters, strongly banked, dropping 17 m (the bank follows the curvature, see bankPerCurvature) ----
+t.turn(50, -90, -5).mark('pipeE');
+t.turn(52, 36, -2).turn(52, -36, -2).mark('pipeMid'); // (the straight between the quarters: pads, and room to breathe)
+t.turn(50, -90, -5);
+t.turn(54, 28, -1.5).turn(54, -28, -1.5).mark('padN'); //                      boost pads on the way out
+// ---- 4. Wave road (westbound): a field of bumps on a long, easy bend (the lowest point of the lap) ----
 t.line(10, 0).mark('waves'); // (the wave road: 5 humps on a long easy S: karts fly the bumps flat out, so no tight bend and no boost pad here)
-t.turn(150, 10, 0.3).turn(150, -20, 0.5).turn(150, 10, 0.4).mark('wavesEnd');
-// ---- 5. The climb: one big S-bend ----
-t.turn(42, 50, 3).turn(42, -100, 7).turn(42, 50, 4).mark('climbTop');
-t.line(14, 1.2).mark('tunnelIn');
-// ---- 6. Star tunnel: the road ends at the launch pad; 120 m of sky; the high ribbon starts at the landing ----
-t.line(26, 1).mark('tunnelMouth');
-t.line(TUNNEL_GAP, TUNNEL_CLIMB).mark('tunnelLand'); // (a straight line across the gap: nobody drives these points)
-// ---- 7. High ribbon: the double kicker right after the landing, then S-bends and the long descent ----
+t.turn(100, 10, 0).turn(100, -20, 0).turn(100, 10, 0).mark('wavesEnd');
+// ---- 5. The climb: one big S-bend, then the funnel into the tunnel ----
+t.turn(44, 60, 6).mark('c1').turn(44, -120, 12).mark('c2').turn(44, 60, 6).mark('climbTop');
+t.line(14, 2).mark('tunnelIn');
+// ---- 6. Star tunnel: the road ends at the launch pad; 100 m of sky; the high ribbon starts at the landing ----
+t.line(26, 2).mark('tunnelMouth');
+// (A straight line across the gap, nobody drives it; but the launch pad's 7 m and the landing platform's 10 m are on it, so they stay level.)
+t.line(12, 0).line(TUNNEL_GAP - 24, TUNNEL_CLIMB).line(12, 0).mark('tunnelLand');
+// ---- 7. High ribbon: the kicker right after the landing, a straight run-out, then S-bends and the long descent ----
 t.line(4, 0).mark('highStart');
-t.line(10, -0.5).mark('jump2'); // (right after the landing: the star tunnel drops you into the second jump)
-t.turn(50, 28, -0.75).turn(50, -28, -0.75).mark('land2');
-t.turn(44, -45, -2).turn(44, 90, -3).turn(44, -45, -2).mark('highEsses');
+t.line(10, 0).mark('jump2'); // (right after the landing: the star tunnel drops you into the second jump)
+t.line(30, 0);
+t.turn(46, 26, -2).turn(46, -26, -2).mark('land2');
+t.turn(42, -45, -5).mark('h1a').turn(42, 90, -8).mark('h1b').turn(42, -45, -5).mark('highEsses');
 
 /** The pose the turtle stands in. */
 const here = () => ({ x: t.x, z: t.z, heading: t.heading });
@@ -254,65 +263,76 @@ const pad = (name: string, ds: number, arch = false, offset = 0, length = 9, wid
 const boostPads = [
   pad('start', 14, true), //                  the grid launch
   pad('run', 10, true),
+  pad('esses1', 10, false, 0.3),
   pad('land1', 14, true), //                  after the first jump
   // The fork's main ribbon: a row of pads (the branch has none).
-  pad('forkA', 16, true, -0.3),
-  pad('forkA', 60, false, 0.3),
-  pad('forkA', 110, true, 0),
+  pad('forkA', 52, false, -0.25),
+  pad('forkA', 78, true, 0.15),
+  pad('forkA', 106, false, -0.1),
   pad('padN', 0, true, 0),
-  pad('wavesEnd', 14, true),
   pad('climbTop', 6, true),
-  pad('esses1', 22, false, 0.3),
   pad('sweep1', 30, true),
   pad('highEsses', 4, false, 0.3),
+  pad('jump2', 44, false, -0.3), // (the straight run-out after the second kicker)
   pad('land2', 12, true),
   pad('pipeMid', 12, true),
   pad('sweep2', 30, true),
 ];
 
 /** Waves: a row of smooth humps (trick bumps) over 6 x 18 m. */
-const waves = [0, 1, 2, 3, 4].map((k) => ({ at: along('waves', 14 + k * 18), length: 12, height: 0.8, shape: 'hump' as const }));
+const waves = [0, 1, 2, 3, 4].map((k) => ({ at: along('waves', 12 + k * 14), length: 12, height: 0.8, shape: 'hump' as const }));
 
 // ---------------------------------------------------------------------------
 // The track
 // ---------------------------------------------------------------------------
 
-const FORK_FROM = along('forkA', 6);
-const FORK_TO = along('forkB', 0);
+const FORK_FROM = at('forkA');
+const FORK_TO = at('forkB');
 
 /**
- * The high line of the fork: leaves the main ribbon on the left, swings out to about 28 m beside it and comes back. Its
- * height is the main ribbon's own height at the point beside it, so it can never cut a step into the road.
+ * The high line of the fork: the other arm of the Y. It leaves the main ribbon's centre line at the split, swings out to
+ * about 10 m to the LEFT of the line the road had before the split (while the main ribbon bulges 20 m to the right of it:
+ * the void between them is about 12 m wide at its widest) and comes back to the centre line at the merge. Control points are
+ * given in the split's own frame (metres forward, metres to the right), the height is the main ribbon's height there plus a
+ * lift of up to 2.2 m (the high line climbs a little and comes back: higher and a few metres shorter).
  */
 const FORK_POINTS = (
   [
-    [34, -22, 0.3],
-    [64, -31, 1.6],
-    [94, -24, 0.8],
+    [36, -5, 0.5],
+    [80, -10, 2.2],
+    [120, -5, 1.4],
   ] as const
-).map(([ds, lat, dy]) => {
-  const p = local('forkA', ds, lat);
-  return [p.x, p.z, p.y + dy] as [number, number, number];
+).map(([f, lat, dy]) => {
+  const o = route[at('forkA')];
+  const h = rad(o.heading);
+  const base = local('forkA', f, 0); // (for the height only: the main ribbon's height `f` metres on)
+  return [o.p[0] + Math.sin(h) * f + Math.cos(h) * lat, o.p[1] + Math.cos(h) * f - Math.sin(h) * lat, base.y + dy] as [number, number, number];
 });
 
 export const rainbowRoute: TrackDef = {
   name: 'Rainbow Route',
-  blurb: 'A narrow, glowing ribbon road in space: boost-pad arches, a banked half-pipe, trick waves, a split ribbon and a star tunnel that fires you up to the high road.',
+  blurb: 'A glowing ribbon road in space: boost-pad arches, a banked half-pipe, trick waves, a Y-shaped split, steep dives and climbs and a star tunnel that fires you back up to the high road.',
   points,
-  width: 14,
+  width: RIBBON_WIDTH,
   offroadWidth: 2,
+  // Bots on a wide, grip-everywhere ribbon would be far quicker than a person: see docs/TRACKS.md (Rainbow Route, bots).
+  botTuning: { pace: 0.97, cornerCurvature: 0.022, wander: 4.5, trickScale: 0.5, noDrift: true },
   bankPerCurvature: 16,
   maxBankDeg: 20,
-  // Rails ONLY on the hardest corners: the half-pipe (outside), the funnel into the star tunnel and the last big sweeper.
+  // Rainbow rails ONLY on the sharpest corners: the dive's middle swing, the half-pipe (outside), the climb's middle swing, the
+  // funnel into the star tunnel and the last big sweeper.
   walls: [
+    { from: at('e1a') + 1, to: at('e1b') - 1, side: 'outer' },
     { from: at('forkB') + 0.6, to: at('pipeE'), side: 'outer' },
+    { from: at('c1') + 1.5, to: at('c2') - 1.5, side: 'outer' },
     { from: along('tunnelMouth', -46), to: at('tunnelMouth'), side: 'both' },
     { from: at('sweep1') + 1, to: at('sweep1') + 5, side: 'outer' },
   ],
   ramps: [
-    { at: at('jump1'), length: 11, height: 2.4, gap: JUMP1_GAP, gapKind: 'void', shape: 'kicker' },
+    // Low ramps and short gaps: the flight at a boosted 44 m/s still lands on the apron or just past it (see the tests).
+    { at: at('jump1'), length: 10, height: 1.4, gap: JUMP1_GAP, gapKind: 'void', shape: 'kicker' },
     ...waves,
-    { at: at('jump2'), length: 16, height: 2.2, gap: JUMP2_GAP, gapKind: 'void', shape: 'double' },
+    { at: at('jump2'), length: 10, height: 1.4, gap: JUMP2_GAP, gapKind: 'void', shape: 'kicker' },
   ],
   boostPads,
   laps: 3,
@@ -322,22 +342,22 @@ export const rainbowRoute: TrackDef = {
   theme: { grass: '#1b1650', offroad: '#2a2266', sky: '#0b0c3c', horizon: '#3d2a7c', mood: 'space' },
   // (Terrain only exists because the fork's branch needs it; the ground beside the ribbon is gone: see `cliffs`.)
   terrain: { blend: 4 },
-  // The ground ENDS at the edge of the road, all round the lap (two overlapping stretches so no taper shows), except on the
-  // left of the fork, where the high line leaves and rejoins.
+  // The ground ENDS at the edge of the road, all round the lap (two overlapping stretches so no taper shows). The fork's
+  // high line is a deck with ground of its own, so the main ribbon has no ground beside it there either.
   cliffs: [
-    { from: FORK_TO + 0.5, to: FORK_FROM - 0.5, side: 'both', edge: 7 + 1.2 + 0.6 },
-    { from: FORK_FROM - 0.5, to: FORK_TO + 0.5, side: 'right', edge: 7 + 1.2 + 0.6 },
+    { from: FORK_TO + 0.5, to: FORK_FROM - 0.5, side: 'both', edge: RIBBON_WIDTH / 2 + 1.2 + 0.6 },
+    { from: FORK_FROM - 0.5, to: FORK_TO + 0.5, side: 'both', edge: RIBBON_WIDTH / 2 + 1.2 + 0.6 },
   ],
   cannons: [
-    // The star tunnel. Mouth at the end of the ribbon, landing on the high ribbon 28 m up.
-    { at: at('tunnelMouth'), offset: 0, target: { at: at('tunnelLand') + 0.3 }, flightTime: 2.2, apex: 11, mandatory: true },
+    // The star tunnel. Mouth at the end of the ribbon, landing on the high ribbon 36 m up.
+    { at: at('tunnelMouth'), offset: 0, target: { at: at('tunnelLand') + 0.3 }, flightTime: 2.0, apex: 12, mandatory: true },
   ],
   shortcuts: [
     {
       from: FORK_FROM,
       to: FORK_TO,
       points: FORK_POINTS,
-      width: 11,
+      width: RIBBON_WIDTH,
       deck: true,
       hold: true,
       surface: 'road',

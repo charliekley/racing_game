@@ -37,6 +37,11 @@ import { CURB_WIDTH, SAMPLE_SPACING, type Projection, type Track, type TrackSamp
 export const ROUTE_STRIDE = 1 << 20;
 /** Angle (degrees) between the main road and the path where the path leaves it / merges into it. */
 export const JOIN_ANGLE_DEG = 14;
+/**
+ * A DECK branch (Rainbow Route's fork) does not start beside the main road but ON its centre line, and the two ribbons
+ * pull apart from there like the arms of a Y: this is the angle (degrees) at which it leaves and comes back.
+ */
+export const DECK_JOIN_ANGLE_DEG = 9;
 /** The path runs straight at that angle for this many metres at each end, so the entry and exit are clean. */
 const LEAD = 16;
 /** Steepest path grade (rise / run). Steeper natural ground is cut or filled to this. */
@@ -49,6 +54,8 @@ const DECK_SMOOTH = 8;
 export const DIRT_LIFT = 0.05;
 /** Junction zone: the kart may step from the main road onto the path this many samples after its start. */
 export const JUNCTION_ZONE = 24;
+/** ...a deck's ribbons overlap for a while after the split, so the kart may step onto it this many samples after its start. */
+export const DECK_JUNCTION_ZONE = 48;
 /** Branch samples this close (m, horizontally) to the main road, at the same height, count as "near the main road". */
 const NEAR_MAIN_DIST = 30;
 /** ...and "the same height" means within this many metres. */
@@ -83,6 +90,8 @@ export interface Branch {
   readonly s0: number;
   readonly s1: number;
   readonly span: number;
+  /** How many samples after its start a kart may step from the main road onto this branch (JUNCTION_ZONE, or longer for a deck). */
+  readonly zone: number;
   /** Main sample index at each junction. */
   readonly fromIdx: number;
   readonly toIdx: number;
@@ -193,11 +202,12 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
   // The side is where the first / last control point lies (the path goes that way, the points say so).
   const startSide = pts.length > 0 ? sideOf(A, pts[0][0], pts[0][1]) : 1;
   const endSide = pts.length > 0 ? sideOf(Q, pts[pts.length - 1][0], pts[pts.length - 1][1]) : startSide;
-  const ang = (JOIN_ANGLE_DEG * Math.PI) / 180;
+  const ang = ((def.deck ? DECK_JOIN_ANGLE_DEG : JOIN_ANGLE_DEG) * Math.PI) / 180;
   const rA = rightOf(A);
   const rQ = rightOf(Q);
-  const edgeA = A.width / 2 + CURB_WIDTH;
-  const edgeQ = Q.width / 2 + CURB_WIDTH;
+  // A dirt path leaves from the main road's outer edge; a deck leaves from its centre line (the tip of a Y).
+  const edgeA = def.deck ? 0 : A.width / 2 + CURB_WIDTH;
+  const edgeQ = def.deck ? 0 : Q.width / 2 + CURB_WIDTH;
   const start: V2 = { x: A.x + rA.x * startSide * edgeA, z: A.z + rA.z * startSide * edgeA };
   const end: V2 = { x: Q.x + rQ.x * endSide * edgeQ, z: Q.z + rQ.z * endSide * edgeQ };
   // Leaving: main direction turned toward the path's side. Arriving: main direction turned toward the road.
@@ -416,6 +426,7 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
     s0,
     s1,
     span,
+    zone: def.deck ? DECK_JUNCTION_ZONE : JUNCTION_ZONE,
     fromIdx: A.idx,
     toIdx: Q.idx,
     startSide,
@@ -635,8 +646,8 @@ export function projectWithBranches(track: Track, x: number, z: number, hint: nu
     for (const b of branches) {
       if (best.route === 0) {
         // Start of a path: once off the main road's tarmac and kerb, and closer to the path's centerline.
-        if (ringDist(best.i, b.fromIdx, n) <= JUNCTION_ZONE + 2 && !onTarmac(best)) {
-          const cand = scanBranch(b, 0, JUNCTION_ZONE);
+        if (ringDist(best.i, b.fromIdx, n) <= b.zone + 2 && !onTarmac(best)) {
+          const cand = scanBranch(b, 0, b.zone);
           if (Math.sqrt(cand.d2) + SWITCH_MARGIN < Math.sqrt(best.d2)) best = cand;
         }
       } else if (best.route === b.route) {

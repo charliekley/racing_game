@@ -29,6 +29,8 @@ export interface BotStyle {
   cornerCurvature?: number;
   /** Steering gain: how hard the bot turns per radian of heading error (default 3). */
   steerGain?: number;
+  /** Share (0..1+) of the track's `botTuning.wander` this bot uses (default 1; the better the bot, the less it sways). */
+  wanderScale?: number;
 }
 
 /** A bot starts steering for a shortcut this far (m) before the junction. */
@@ -51,7 +53,7 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   let atFork = false; // steering for a shortcut junction: take it at corner speed
   if (track.branches.length > 0) {
     const wants = (style.shortcutBias ?? 0) > 0.5;
-    if (route > 0 && !wants && at <= 30) {
+    if (route > 0 && !wants && at <= (track.branches[route - 1].def.deck ? 60 : 30)) {
       // Where the roads overlap, a bot that doesn't want the shortcut ignores the branch.
       p = track.projectOnMain(k.pos.x, k.pos.z);
       route = 0;
@@ -60,7 +62,8 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
       // Approaching (or just past) a junction of a branch we like: steer along the branch.
       for (const b of track.branches) {
         const dist = track.deltaS(p.s, b.s0);
-        if (dist > -30 && dist < SHORTCUT_APPROACH) {
+        // (A deck fork is a Y whose arms overlap for a while: keep steering for the branch until it has taken the kart.)
+        if (dist > (b.def.deck ? -90 : -30) && dist < SHORTCUT_APPROACH) {
           route = b.route;
           at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
           atFork = b.def.surface !== 'road'; // (a hard-packed branch is taken at full speed)
@@ -71,6 +74,16 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   }
   // A launch cannon within ~60 m ahead and roughly on our line: aim for its mouth.
   let lane = style.lane;
+  // A track may ask for a slowly swaying line (Rainbow Route): bots do not hit every boost pad, like people. It is off
+  // around every ramp (a kart in the air cannot steer back), on branches and before the cannon, where the line has to be exact.
+  const wander = (track.def.botTuning?.wander ?? 0) * (style.wanderScale ?? 1);
+  if (wander > 0 && route === 0) {
+    const exact = track.ramps.some((r) => track.deltaS(p.s, r.s0) > -40 && track.deltaS(p.s, r.s0) < (r.gap > 0 ? 90 : r.s1 - r.s0 + 30)) || track.cannons.some((cn) => track.deltaS(p.s, cn.mouth.s) > -80 && track.deltaS(p.s, cn.mouth.s) < 5);
+    if (!exact) {
+      const edge = track.def.width / 2 - 3; // (never closer to the rail-less edge than 3 m)
+      lane = Math.max(-edge, Math.min(edge, lane + wander * Math.sin(p.s * 0.043)));
+    }
+  }
   if (style.useCannons !== false && track.cannons.length > 0) {
     for (const c of track.cannons) {
       const dist = track.deltaS(p.s, c.mouth.s);
@@ -111,9 +124,9 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   // low-handling kart must lift more than a nimble one, like a human would. A bot never takes a corner
   // faster than its straight-line pace.
   const handling = c.turnRateHigh / KART.turnRateHigh;
-  const cornering = sharp > (style.cornerCurvature ?? 0.03) || atFork;
-  const straight = c.maxSpeed * style.pace;
-  const target = jumpAhead ? Infinity : cornering ? Math.min(straight, KART.maxSpeed * style.pace * (style.cornerSpeed ?? 0.75) * handling) : straight;
+  const cornering = sharp > (style.cornerCurvature ?? track.def.botTuning?.cornerCurvature ?? 0.03) || atFork;
+  const straight = c.maxSpeed * style.pace * (track.def.botTuning?.pace ?? 1);
+  const target = jumpAhead ? Infinity : cornering ? Math.min(straight, KART.maxSpeed * style.pace * (track.def.botTuning?.pace ?? 1) * (style.cornerSpeed ?? 0.75) * handling) : straight;
   const gas = k.speed < target;
   return { steer, buttons: gas ? Buttons.GAS : 0 };
 }

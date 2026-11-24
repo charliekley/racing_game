@@ -196,6 +196,8 @@ export interface ShortcutDef {
    * true = the branch is a DECK (Rainbow Route's second ribbon): it follows its own control-point heights (the third number
    * of every point is required, and they are measured above sea level like the main road), has its own ground (its width,
    * nothing beside it: step off and you fall) and no dirt look. The terrain is not shaped under it. Default false.
+   * A deck is the second arm of a Y: it starts ON the main road's centre line at `from` and ends on it at `to`
+   * (the two ribbons overlap until they have pulled apart), so the main route should veer away from it in between.
    */
   deck?: boolean;
   /**
@@ -315,6 +317,22 @@ export interface TrackDef {
   shortcuts?: ShortcutDef[];
   /** Metres between rows of item boxes (default ITEMS.rowSpacing). Mushroom Valley uses a shorter spacing so every crossing has a row on both sides. */
   itemRowSpacing?: number;
+  /**
+   * Holds the computer drivers back on a track whose road never makes them brake (Rainbow Route: wide, gentle bends and no
+   * grip loss, so a bot that is as good as on the other tracks is far faster than a human). All optional; see sim/autopilot.ts.
+   */
+  botTuning?: {
+    /** Multiplier on the bots' straight-line pace (default 1). */
+    pace?: number;
+    /** Curvature (1/m) above which a bot lifts for a bend (default 0.03). */
+    cornerCurvature?: number;
+    /** Amplitude (m) of the slow sideways drift of a bot's line: humans do not hit every boost pad either. Skill scales it. */
+    wander?: number;
+    /** Multiplier on the chance that a bot does a trick off a ramp (default 1): every trick landing pays a boost, and this track is all ramps. */
+    trickScale?: number;
+    /** true = bots never drift here (the rails stand on the S-bends' apexes, where a bot's drift would carry it off the rail-less ribbon). */
+    noDrift?: boolean;
+  };
   /** Timed dangers and moving parts (geysers, drawbridges...). Their state depends only on the race clock; see src/sim/hazards/. */
   hazards?: HazardDef[];
 }
