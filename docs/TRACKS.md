@@ -451,3 +451,56 @@ Spans shortcut ledges. The renderer draws no side walls along an open gap (only 
   swapped to match), so the orange route runs under the arch with clear openings at both ends.
 * **Descent**: the 360 m of r=200 near-straight after the cave is now S-bends of radius 80-110 m (34 / 26 / 22 degrees) with a small hump kicker
   (`ramps`), the lap still closes (final bend r 62 m).
+
+## Rainbow Route (7th track): what is implemented
+
+An original **ribbon road in space**: a narrow, translucent, pastel-rainbow road floating high above a planet, with almost no rails
+(fall off the edge = void = the usual respawn). Lobby index 6 (`?track=6`), 7th and last race of the Grand Prix. 3 laps, 1.68 km
+(1.58 km driven: the star tunnel flies you over 104 m of sky). Normal bots lap in about 53 s (hard 50, easy 56), so a race is
+2.5 to 3 minutes. Width 14 m, every bend has a radius of 28 m or more (arcs of 44 to 60 m; the track-wide curvature minimum is about 29 m).
+
+### Layout (`src/track/tracks/rainbowRoute.ts`, written with the shared turtle `src/track/turtle.ts`; anticlockwise, north = +z)
+
+| # | Section | Height | What happens |
+|---|---|---|---|
+| 1 | Launch run | 72 -> 67 m | boost pads on the grid, a flowing S, `esses1`, then a kicker over a 14 m gap |
+| 2 | The fork | 66 -> 64 m | the ribbon splits: the main ribbon keeps its pads and arches; the high line (left, 11 m wide, no pads, a little higher in the middle) is a `deck` branch; they rejoin |
+| 3 | East curl | 64 -> 59 m | a wide half-pipe through 180 degrees in two quarters, strongly banked (up to 20 degrees), a rail on the outside |
+| 4 | Wave road | 59 m | five trick bumps (`hump` ramps, 0.8 m) on a long easy S: no tight bend and no pad here, because karts fly the bumps at full speed |
+| 5 | Climb | 59 -> 78 m | one big S-bend up (16 % at the steepest) |
+| 6 | Star tunnel | 78 -> 104 m | the ribbon ends at a launch pad (a MANDATORY cannon, flight 2.2 s, 104 m of sky); rings and sparkles along the flight; you land on the high ribbon 26 m up and the second jump follows 14 m later |
+| 7 | High ribbon | 104 -> 72 m | a double kicker over a 15 m gap, an S and a bigger S-bend, then the long banked sky sweep (a U-turn, an S and a gentle S) back to the grid |
+
+15 boost pads (11 with a star-ring arch), 14 rows of item boxes (`itemRowSpacing` 120 m).
+
+### How it works (and what other tracks do not see)
+
+All additions are optional and gated, other tracks are unchanged:
+
+* `scenery.rainbow` (`RainbowDef`, `types.ts`): turns off the terrain mesh, the road/kerb/verge/barrier meshes, the fork's dirt look and the
+  scenery, and draws `src/render/env/rainbow.ts` instead (`RainbowView`, built last by `trackView.ts`): the translucent ribbon
+  (one shader: rainbow gradient, scrolling shimmer, glitter, dashed centre line, glowing edge lines; `depthWrite` off, `renderOrder` -10 so
+  item boxes still sort over it) with an additive halo, glassy rails where the def has `walls`, the boost-pad arches
+  (`boostPads[].arch`: a half ring and seven stars), the **star tunnel** (translucent tube, rings, 140 orbiting sparkles along the cannon's
+  flight path; `cannonView.ts` leaves out its barrel, funnel and steel gate there) and the space backdrop (a canvas-textured planet with an
+  atmosphere rim, 2600 stars that follow the camera, drifting dust, a sun flare). `rampView.ts` draws glowing candy-coloured ramps.
+* Mood `'space'` (`scene.ts`): violet sky with the dome's aurora, no fog, soft bloom. Music: its own tune `rainbow` (F lydian, 150 bpm).
+* The ground ends at the road's edge: `cliffs` on both sides all round the lap (`edge` 8.8 m) except on the fork's left. The terrain exists
+  only because a shortcut needs it.
+* `ShortcutDef.deck: true` (`shortcuts.ts`, `track.ts`): a branch with its own height line (control-point heights, smoothed) and its own
+  ground (its width; nothing beside it, so you fall off like the main ribbon). No dirt, no terrain shaping. Progress, bots, the maps and
+  the Seeker use the normal branch system.
+* `mapData.ts` leaves the all-round cliff off the maps (it would only double the road outline).
+* Heights are smoothed after the turtle writes them (28 m triangular average, in two parts that never mix across the star tunnel's gap):
+  a rising kart whose ground bends away fast leaves the ground (crest launch), so a +4 % grade step at 38 m/s is a ramp.
+* Checkpoints: 11, spaced 153 m. None lies on a ramp, in a jump gap or within 50 m before one (a respawn needs a run-up), and the second
+  jump respawns before the tunnel.
+* The Seeker: the star tunnel's flight is shorter than the shot's trip across the gap, so the target must land before the shot gets there
+  (`flightTime` 2.2 s over 120 m). Keep that rule when changing `TUNNEL_GAP`.
+
+### Tests
+
+`rainbowRoute.test.ts`: length 1.4 to 1.8 km, radius >= 28 m, the set pieces, pads and arches, item rows, grades under 20 %, almost no rails,
+the void beside the ribbon and beside the deck, normal bot laps of 40 to 60 s, 4 bots of every difficulty finish 3 laps with at most 2
+respawns each. `sceneryPlan.test.ts` expects no trees on this track; `mapData.test.ts` expects no cliffs on its maps.
+Plus all the generic ones (layout, grid of 12, bots of every difficulty, 12 racers, class balance, Rocket/Seeker, cannons).

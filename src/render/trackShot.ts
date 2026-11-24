@@ -40,6 +40,8 @@ const VIEWS: Record<string, Partial<ShotView>> = {
   'Autumn Speedway': { at: 0.47, ahead: 0, back: -10, side: -175, up: 55, fov: 40 },
   // The orange mushroom chain across the first gorge, seen from the side (the camera stands to the right of the road).
   'Mushroom Valley': { at: 0.522, ahead: 0, back: 20, side: 80, up: 38, fov: 42 },
+  // The ribbon from far above and beside the start run, with the planet below and the fork ahead.
+  'Rainbow Route': { at: 0.12, ahead: 0, back: 60, side: -190, up: 110, fov: 48 },
 };
 
 export class TrackShooter {

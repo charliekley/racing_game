@@ -9,7 +9,7 @@ web page. There's no app to install. All names, art and sounds are original.
 > act as tilt steering wheels. 1–4 players race in **split-screen** (full /
 > top-bottom / quadrants, with a track map in the spare quadrant for 3 players),
 > each with their own chase camera and HUD. 3-2-1-GO countdown with a rocket
-> start, 3 laps on one of six tracks and results. Computer drivers fill the grid up to 4, 8 or 12 karts. Audio and polish arrive in M7.
+> start, 3 laps on one of seven tracks and results. Computer drivers fill the grid up to 4, 8 or 12 karts. Audio and polish arrive in M7.
 
 * [Architecture & folder structure](docs/ARCHITECTURE.md)
 * Tech: TypeScript, Vite, Three.js (from M2), PeerJS (WebRTC), Vitest
@@ -323,7 +323,7 @@ rocks, houses and the distant mountains (see `biomeFor` in
   tables (leader and last place) that every position interpolates between. Save the file and the dev server reloads.
 * **Race rules:** countdown length, rocket-start window, finish grace period in
   [`src/sim/race.ts`](src/sim/race.ts).
-* **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Ember Peaks, Dockside Loop, Cloud Garden, Switchback Summit, Autumn Speedway, Mushroom Valley;
+* **Tracks:** [`src/track/tracks/`](src/track/tracks/) (Ember Peaks, Dockside Loop, Cloud Garden, Switchback Summit, Autumn Speedway, Mushroom Valley, Rainbow Route (a glowing ribbon road in space: `?track=6`);
   files starting with `_` are dev-only test tracks, see [`docs/TRACKS.md`](docs/TRACKS.md)).
   A track is a list of control points plus walls, ramps and boost pads placed
   "between point 10 and 11" style. To add one, copy that file, change the

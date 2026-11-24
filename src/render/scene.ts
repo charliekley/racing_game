@@ -231,7 +231,7 @@ const LOOKS: Record<Mood, Look> = {
   // below must stay visible), strong bloom for the glowing ribbon. (Stars are their own mesh, see env/rainbow.ts.)
   space: {
     sunColor: '#ffe6f4', sunIntensity: 2.6, sunAzimuth: 215, sunElevation: 38, hemiIntensity: 1.05, envIntensity: 0.9,
-    exposure: 1.12, fogNear: 4000, fogFar: 9000, bloom: 0.75, bloomThreshold: 0.85, saturation: 1.22, contrast: 1.08,
+    exposure: 1.0, fogNear: 4000, fogFar: 9000, bloom: 0.55, bloomThreshold: 1.0, saturation: 1.22, contrast: 1.08,
     tint: '#f6f0ff', vignette: 0.3, stars: 0, aurora: 0.9, cloudCover: 0,
   },
   // Not used by the current tracks, but ready: stars, aurora and a cool moon-ish light.

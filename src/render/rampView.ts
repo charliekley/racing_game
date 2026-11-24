@@ -93,6 +93,14 @@ const COLORS: Record<Kind, [string, string]> = {
   apron: ['#3fd17a', '#0e3a22'],
 };
 
+/** Rainbow Route: candy colours that glow against the ribbon (base, stripe). */
+const RAINBOW_COLORS: Record<Kind, [string, string]> = {
+  kicker: ['#ffd84a', '#7a3fb0'],
+  hump: ['#ff7ac8', '#5a2f9a'],
+  double: ['#7ae0ff', '#4a2f9a'],
+  apron: ['#8dffb0', '#2a5a9a'],
+};
+
 /** Builds the group with every ramp (and landing apron) of the track: one mesh per colour kind, one for the sides, one for chasm floors. */
 export function buildRamps(track: Track): THREE.Group {
   const group = new THREE.Group();
@@ -168,16 +176,20 @@ export function buildRamps(track: Track): THREE.Group {
   // Treetop tracks (Autumn Speedway): ramps are built of planks like the road, lightly tinted per kind so a
   // kicker still stands out (see env/treetop.ts). The plank texture is 12 m per repeat; ramp V is 3 m per unit.
   const treetop = track.def.scenery.treetop !== undefined;
+  const rainbow = track.def.scenery.rainbow !== undefined;
   const WOOD_TINT: Record<Kind, string> = { kicker: '#ffd070', hump: '#ffe6c0', double: '#ffc0a0', apron: '#e6f0b0' };
   for (const [kind, acc] of tops) {
-    const [base, stripe] = COLORS[kind];
+    const [base, stripe] = (track.def.scenery.rainbow ? RAINBOW_COLORS : COLORS)[kind];
     if (treetop) {
       const map = plankTexture();
       map.repeat.set(1, 0.25);
       group.add(acc.build(new THREE.MeshStandardMaterial({ map, color: WOOD_TINT[kind], roughness: 0.8, side: THREE.DoubleSide }), true));
+    } else if (rainbow) {
+      // Rainbow Route: glowing candy-coloured ramps (they must stand out against the translucent ribbon).
+      group.add(acc.build(new THREE.MeshStandardMaterial({ map: rampTexture(base, stripe), roughness: 0.4, emissive: new THREE.Color(base), emissiveIntensity: 0.55, emissiveMap: rampTexture(base, stripe), side: THREE.DoubleSide }), false));
     } else group.add(acc.build(new THREE.MeshStandardMaterial({ map: rampTexture(base, stripe), roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }), true));
   }
-  const sideMat = treetop ? new THREE.MeshStandardMaterial({ color: '#4a2e1a', roughness: 0.9, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ color: '#6b7078', roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide });
+  const sideMat = treetop ? new THREE.MeshStandardMaterial({ color: '#4a2e1a', roughness: 0.9, side: THREE.DoubleSide }) : rainbow ? new THREE.MeshStandardMaterial({ color: '#c9b8ff', emissive: new THREE.Color('#8f7bff'), emissiveIntensity: 0.6, roughness: 0.4, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ color: '#6b7078', roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide });
   if (!sides.isEmpty) group.add(sides.build(sideMat, true));
 
   return group;

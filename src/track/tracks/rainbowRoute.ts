@@ -47,37 +47,35 @@ const t = new Turtle(0, 0, Y0, 90).mark('start');
 
 // ---- 1. Launch run: pads on the grid, an S-bend, then the first kicker ----
 t.turn(80, 18, -0.25).turn(80, -18, -0.25).mark('run'); // (nothing is dead straight: every straight is a gentle S)
-t.turn(38, 45, -1).turn(38, -90, -1.5).turn(38, 45, -1).mark('esses1');
+t.turn(44, 45, -1).turn(44, -90, -1.5).turn(44, 45, -1).mark('esses1');
 t.line(26, 0).mark('jump1'); // the kicker (see `ramps`): 11 m ramp, 14 m of nothing, a 10 m landing apron
-t.turn(50, 22, -0.4).turn(50, -22, -0.4).mark('land1');
-t.turn(40, -30, -0.4).turn(40, 60, -0.4).turn(40, -30, -0.4).mark('esses1b'); // a quick left-right-left
+t.turn(50, 30, -0.4).turn(50, -30, -0.4).mark('land1');
 
 // ---- 2. The fork: main ribbon bends right then left; the high line is on the left (inside) ----
 t.line(30, -0.4).mark('forkA');
 t.turn(60, 36, -0.6).turn(60, -36, -0.6);
-t.turn(50, 22, -0.2).turn(50, -22, -0.2).mark('forkB');
+t.turn(50, 28, -0.2).turn(50, -28, -0.2).mark('forkB');
 t.line(10, -0.2);
 
 // ---- 3. East curl: a wide half-pipe in two quarters, strongly banked (the bank follows the curvature, see bankPerCurvature) ----
-t.turn(46, -90, -2.2).mark('pipeE');
-t.turn(50, 22, -0.15).turn(50, -22, -0.15).mark('pipeMid'); // (the straight between the quarters: pads, and room to breathe)
-t.turn(46, -90, -2.2);
-t.turn(40, 30, -0.25).turn(40, -30, -0.25).mark('padN'); //                      boost pads on the way out
+t.turn(50, -90, -2.2).mark('pipeE');
+t.turn(50, 32, -0.15).turn(50, -32, -0.15).mark('pipeMid'); // (the straight between the quarters: pads, and room to breathe)
+t.turn(50, -90, -2.2);
+t.turn(54, 28, -0.25).turn(54, -28, -0.25).mark('padN'); //                      boost pads on the way out
 // ---- 4. Wave road (westbound): a field of bumps on a long, easy bend ----
-t.line(10, 0).mark('waves'); // (the wave road: 6 humps on a long easy S: karts fly the bumps flat out, so no tight bend and no boost pad here)
-t.turn(150, 12, 0.3).turn(150, -24, 0.5).turn(150, 12, 0.4).mark('wavesEnd');
+t.line(10, 0).mark('waves'); // (the wave road: 5 humps on a long easy S: karts fly the bumps flat out, so no tight bend and no boost pad here)
+t.turn(150, 10, 0.3).turn(150, -20, 0.5).turn(150, 10, 0.4).mark('wavesEnd');
 // ---- 5. The climb: one big S-bend ----
-t.turn(34, 50, 3).turn(34, -100, 7).turn(34, 50, 4).mark('climbTop');
+t.turn(42, 50, 3).turn(42, -100, 7).turn(42, 50, 4).mark('climbTop');
 t.line(14, 1.2).mark('tunnelIn');
-// ---- 6. Star tunnel: the road ends at the launch pad; 124 m of sky; the high ribbon starts at the landing ----
+// ---- 6. Star tunnel: the road ends at the launch pad; 120 m of sky; the high ribbon starts at the landing ----
 t.line(26, 1).mark('tunnelMouth');
 t.line(TUNNEL_GAP, TUNNEL_CLIMB).mark('tunnelLand'); // (a straight line across the gap: nobody drives these points)
-t.turn(50, 22, 0).turn(50, -22, 0).mark('highStart');
 // ---- 7. High ribbon: the double kicker right after the landing, then S-bends and the long descent ----
-t.turn(50, 22, 0).turn(50, -22, 0).mark('highStart');
-t.line(34, -1.5).mark('jump2');
-t.turn(50, 22, -0.75).turn(50, -22, -0.75).mark('land2');
-t.turn(32, -45, -2).turn(32, 90, -3).turn(32, -45, -2).mark('highEsses');
+t.line(4, 0).mark('highStart');
+t.line(10, -0.5).mark('jump2'); // (right after the landing: the star tunnel drops you into the second jump)
+t.turn(50, 28, -0.75).turn(50, -28, -0.75).mark('land2');
+t.turn(44, -45, -2).turn(44, 90, -3).turn(44, -45, -2).mark('highEsses');
 
 /** The pose the turtle stands in. */
 const here = () => ({ x: t.x, z: t.z, heading: t.heading });
@@ -137,7 +135,15 @@ const close = closeTo(CLOSE_R, END_X, END_Z, 90);
   const total = arcLen(CLOSE_R, close.a1) + close.len + arcLen(CLOSE_R, close.a2);
   const drop = (len: number) => (-rest * len) / total;
   if (Math.abs(close.a1) > 0.01) t.turn(CLOSE_R, close.a1, drop(arcLen(CLOSE_R, close.a1))).mark('sweep1');
-  if (close.len > 0.01) t.line(close.len, drop(close.len)).mark('sweep2');
+  if (close.len > 100) {
+    // A long run between the two arcs: an S in the middle of it (three arcs, neutral sideways and in heading).
+    const S_R = 60;
+    const S_A = 20;
+    const sForward = 4 * S_R * Math.sin(rad(S_A));
+    const sLen = 4 * arcLen(S_R, S_A);
+    const rest = (close.len - sForward) / 2;
+    t.line(rest, drop(rest)).turn(S_R, S_A, drop(sLen / 4)).turn(S_R, -2 * S_A, drop(sLen / 2)).turn(S_R, S_A, drop(sLen / 4)).line(rest, drop(rest)).mark('sweep2');
+  } else if (close.len > 0.01) t.line(close.len, drop(close.len)).mark('sweep2');
   if (Math.abs(close.a2) > 0.01) t.turn(CLOSE_R, close.a2, drop(arcLen(CLOSE_R, close.a2))).mark('sweep2');
   t.turn(120, 14.5, 0).turn(120, -14.5, 0).line(29.9, 0); // a gentle S, then 30 m dead straight (the grid) to the start line
 }
@@ -248,29 +254,24 @@ const pad = (name: string, ds: number, arch = false, offset = 0, length = 9, wid
 const boostPads = [
   pad('start', 14, true), //                  the grid launch
   pad('run', 10, true),
-  pad('esses1', 30), //                     out of the S-bend
   pad('land1', 14, true), //                  after the first jump
   // The fork's main ribbon: a row of pads (the branch has none).
   pad('forkA', 16, true, -0.3),
   pad('forkA', 60, false, 0.3),
   pad('forkA', 110, true, 0),
   pad('padN', 0, true, 0),
-  pad('padN', 14, false, 0.3),
   pad('wavesEnd', 14, true),
   pad('climbTop', 6, true),
-  pad('climbTop', 40, false, -0.3),
-  pad('tunnelIn', 20, false),
-  pad('tunnelIn', 52, false),
-  pad('highStart', 4, true),
+  pad('esses1', 22, false, 0.3),
+  pad('sweep1', 30, true),
   pad('highEsses', 4, false, 0.3),
   pad('land2', 12, true),
   pad('pipeMid', 12, true),
-  pad('sweep1', 40, false, -0.3),
   pad('sweep2', 30, true),
 ];
 
 /** Waves: a row of smooth humps (trick bumps) over 6 x 18 m. */
-const waves = [0, 1, 2, 3, 4, 5].map((k) => ({ at: along('waves', 14 + k * 18), length: 12, height: 0.8, shape: 'hump' as const }));
+const waves = [0, 1, 2, 3, 4].map((k) => ({ at: along('waves', 14 + k * 18), length: 12, height: 0.8, shape: 'hump' as const }));
 
 // ---------------------------------------------------------------------------
 // The track
@@ -315,7 +316,7 @@ export const rainbowRoute: TrackDef = {
   ],
   boostPads,
   laps: 3,
-  checkpoints: 12, // (even spacing, ~135 m: every respawn point has a run-up of 55 m or more to the two jumps, and none lies on a ramp or in a gap)
+  checkpoints: 11, // (even spacing, ~153 m: no checkpoint lies on a ramp, in a jump gap or within 50 m before one; the jump after the star tunnel respawns before the tunnel)
   itemRowSpacing: 120,
   scenery: { seed: 71, trees: 0, buildings: 0, rainbow: { seed: 7 } },
   theme: { grass: '#1b1650', offroad: '#2a2266', sky: '#0b0c3c', horizon: '#3d2a7c', mood: 'space' },

@@ -346,6 +346,7 @@ export class CannonView {
     this.sparks = new SparkEmitter(scene);
     this.sparks.setTier(2); // orange
     scene.add(this.group);
+    const starTunnel = track?.def.scenery.rainbow !== undefined;
 
     for (const c of cannons) {
       const group = new THREE.Group();
@@ -357,14 +358,15 @@ export class CannonView {
       cannon.rotation.y = c.mouth.heading;
       const body = new THREE.Mesh(sh.body, sh.bodyMat);
       body.castShadow = true;
-      cannon.add(body, new THREE.Mesh(sh.funnel, sh.funnelMat));
+      // Rainbow Route's cannon is a STAR TUNNEL (rings and sparkles, drawn by env/rainbow.ts): no barrel, funnel or steel gate.
+      if (!starTunnel) cannon.add(body, new THREE.Mesh(sh.funnel, sh.funnelMat));
       const flash = new THREE.Mesh(sh.flash, sh.flashMat);
       flash.visible = false;
       cannon.add(flash);
       group.add(cannon);
 
       // Mandatory cannon: the launch gate across the whole road.
-      if (c.mandatory) {
+      if (c.mandatory && !starTunnel) {
         const gate = buildGate(c.captureHalfWidth);
         ownGeometry.push(gate.solid, gate.glow);
         const g1 = new THREE.Mesh(gate.solid, sh.bodyMat);
