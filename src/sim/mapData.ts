@@ -73,7 +73,8 @@ export function mapDataFromTrack(track: Track): MapData {
   // One polyline per cliff side, offset from the centerline to where the ground ends.
   const reach = track.def.width / 2 + track.def.offroadWidth;
   const cliffs: MapCliff[] = [];
-  for (const c of track.cliffs) {
+  // (Rainbow Route: the whole ribbon is a cliff, which would only be a double outline of the road: left off the maps.)
+  for (const c of track.def.scenery.rainbow ? [] : track.cliffs) {
     const edge = Math.min(c.edge, reach);
     const sides = c.side === 'both' ? (['left', 'right'] as const) : ([c.side] as const);
     for (const side of sides) {

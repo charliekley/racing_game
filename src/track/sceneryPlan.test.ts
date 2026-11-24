@@ -26,9 +26,13 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('scenery plan for %s', (_
   });
 
   it('is not empty and has both circles and boxes', () => {
-    expect(plan.trees.length).toBeGreaterThan(5);
-    expect(plan.colliders.some((c) => c.shape === 'circle')).toBe(true);
-    expect(plan.colliders.some((c) => c.shape === 'box')).toBe(true);
+    // (Rainbow Route floats in space: no trees, no buildings; the ribbon's own look is drawn by env/rainbow.ts.)
+    if (def.scenery.rainbow) expect(plan.trees.length).toBe(0);
+    else {
+      expect(plan.trees.length).toBeGreaterThan(5);
+      expect(plan.colliders.some((c) => c.shape === 'circle')).toBe(true);
+      expect(plan.colliders.some((c) => c.shape === 'box')).toBe(true);
+    }
     expect(plan.colliders.every((c) => c.solid)).toBe(true);
     expect(plan.bushes.every((b) => !b.solid && b.collider === null)).toBe(true);
   });
