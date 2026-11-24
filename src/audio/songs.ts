@@ -131,6 +131,29 @@ const mushroom: Song = {
   drums: ['K..hS..hK.h.S.ho', 'K..hS..hK.hkS.h.'],
 };
 
+/** Rainbow Route (a ribbon road in space): F lydian, fast and shimmering, with a bright rising arpeggio (the star rings). */
+const rainbow: Song = {
+  bpm: 150,
+  scale: 'lydian',
+  bassRoot: 41,
+  leadRoot: 77,
+  swing: 0.1,
+  leadWave: 'sine',
+  bass: {
+    grid: 2,
+    bars: ['0 . 0 . 4 . 4 .', '2 . 2 . 5 . 5 .', '3 . 3 . 6 . 3 .', '4 . 4 . 1 . 2 .'],
+  },
+  lead: {
+    grid: 2,
+    bars: ['4 . 6 7 9 . 7 .', '6 . 7 6 4 . 2 .', '7 . 9 11 9 . 7 6', '7 - 4 - 6 - . .'],
+  },
+  arp: {
+    grid: 1,
+    bars: ['0 2 4 7 9 7 4 2 0 2 4 7 9 7 4 2', '2 4 6 9 11 9 6 4 3 5 7 10 12 10 7 5'],
+  },
+  drums: ['K..hS.hhK.h.S.ho', 'K..hS.hkK.hhS.oh'],
+};
+
 /** Lobby: C major, relaxed and friendly. */
 const lobby: Song = {
   bpm: 96,
@@ -169,9 +192,9 @@ const results: Song = {
   drums: ['k...h...s...h...'],
 };
 
-export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn' | 'mushroom';
+export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn' | 'mushroom' | 'rainbow';
 
-export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn, mushroom };
+export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn, mushroom, rainbow };
 
 /** Track name (from src/track) -> its tune. Unknown (dev) tracks get a default by index. */
 const BY_TRACK_NAME: Record<string, MusicId> = {
@@ -181,8 +204,9 @@ const BY_TRACK_NAME: Record<string, MusicId> = {
   'Switchback Summit': 'summit',
   'Autumn Speedway': 'autumn',
   'Mushroom Valley': 'mushroom',
+  'Rainbow Route': 'rainbow',
 };
-const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn', 'mushroom'];
+const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn', 'mushroom', 'rainbow'];
 
 export function musicForTrack(name: string, index = 0): MusicId {
   return BY_TRACK_NAME[name] ?? RACE_TUNES[Math.abs(index) % RACE_TUNES.length];

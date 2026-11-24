@@ -39,7 +39,7 @@ describe.each(all)('mapDataFromTrack: %s', (_name, def) => {
     expect(data.bridges).toHaveLength(track.bridges.length);
     expect(data.cannons).toHaveLength(track.cannons.length);
     expect(data.voidGaps).toHaveLength(track.gaps.filter((g) => g.kind !== 'sky').length); // a cannon's flight gap is not drawn as a notch
-    const cliffSides = track.cliffs.reduce((n, c) => n + (c.side === 'both' ? 2 : 1), 0);
+    const cliffSides = track.def.scenery.rainbow ? 0 : track.cliffs.reduce((n, c) => n + (c.side === 'both' ? 2 : 1), 0); // (Rainbow Route leaves the all-round cliff off the maps)
     expect(data.cliffs).toHaveLength(cliffSides);
     for (const b of data.bridges) expect(b.points.length).toBeGreaterThanOrEqual(2);
     for (const c of data.cliffs) expect(c.points.length).toBeGreaterThanOrEqual(2);
