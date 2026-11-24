@@ -11,9 +11,9 @@ describe('Autumn Speedway', () => {
   const track = new Track(autumnSpeedway);
   const stats = layoutStats(track);
 
-  it('is between 1.2 and 2.0 km long', () => {
+  it('is between 1.2 and 1.85 km long', () => {
     expect(track.length).toBeGreaterThan(1200);
-    expect(track.length).toBeLessThan(2000);
+    expect(track.length).toBeLessThan(1850);
   });
 
   it('has the signature features: branch-road bridges, a void jump between crowns, humps and a boost pad', () => {

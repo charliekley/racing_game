@@ -96,6 +96,7 @@ describe('orange caps need skill: air control', () => {
     k.speed = speed;
     k.vel = { x: Math.sin(h) * speed, y: 0, z: Math.cos(h) * speed };
     k.trackIndex = track.project(x, z).index;
+    world.race!.grantProgress(0, track.project(x, z).s); // the kart is on course here (not racing from the start line across the lap)
     let respawned = false;
     let bounces = 0;
     let lastBounce = 0;

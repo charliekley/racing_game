@@ -241,8 +241,8 @@ export type HazardEvent =
 
 An original **treetop course**: wooden branch roads and plank walkways through a forest of giant autumn trees,
 a rope bridge, a spiral round the biggest trunk, a jump between two crowns and one long steep plunge back to
-the forest floor. 3 laps, about 1.95 km, laps take about the same time as the other tracks (bots: hard ~65 s,
-normal ~69 s, easy ~79 s). Lobby index 4 (`?track=4`), 5th race of the Grand Prix.
+the forest floor. 3 laps, about 1.73 km (trimmed by ~11 % so 3 laps take a person under 3 minutes: the Mossy Hollow run to the root and the
+hollow branch between the hairpin and the spiral were shortened; bots, 1 lap: hard ~57 s, normal ~64 s, easy ~71 s). Lobby index 4 (`?track=4`), 5th race of the Grand Prix.
 
 ### Layout (`src/track/tracks/autumnSpeedway.ts`, north = +z)
 
@@ -321,8 +321,8 @@ scenery plan, class balance).
 
 An original **mountain trail over misty gorges**. Giant mushrooms rise out of the chasms: **orange caps are
 trampolines** (touch one and you are thrown along a big floaty arc), **green caps are solid ground** (platforms and
-bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.97 km, bots lap in about 68-77 s
-(Autumn Speedway: 67 s); climbs up to 16 % (the switchback legs), descents up to 11 %, height range 47 m.
+bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.79 km (trimmed ~9 %: shorter foothills, switchback legs, ridge winds and descent S-bends), bots lap in about 57-74 s
+(Autumn Speedway: 57-71 s); climbs up to 16 % (the switchback legs), descents up to 11 %, height range ~41 m.
 
 ### Layout (`src/track/tracks/mushroomValley.ts`, anticlockwise-ish lap, start line at the foot of the mountain)
 
@@ -342,7 +342,7 @@ lat)` ("so many metres along the road from a named point, so many metres to the 
 | 6 | **The cave** (choice 2) | 63 -> 61 m | a long bend into a glowing cave; 126 m chasm with an S-bend inside. Main road: nine green caps. Shortcut (right, `shortcuts[1]`): four orange caps (hops of 40 m, 1.4 s) |
 | 7 | Descent | 59 -> 30 m | boost pad, a left up the mountain side, two sweeping S-bends (the 11 % chute), a final right that closes the lap |
 
-Item rows come every 175 m (`TrackDef.itemRowSpacing`, default 260 m for other tracks), so every chasm has a row of boxes
+Item rows come every ~158 m (`TrackDef.itemRowSpacing`, default 260 m for other tracks; 160 m requested, 11 rows), so every chasm has a row of boxes
 before and after it.
 
 ### Fun rules of thumb

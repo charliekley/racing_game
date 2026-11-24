@@ -1,5 +1,5 @@
 /**
- * Track: "Mushroom Valley" – a mountain trail over deep, cloudy gorges (about 1.9 km).
+ * Track: "Mushroom Valley" – a mountain trail over deep, cloudy gorges (about 1.8 km).
  *
  * Giant mushrooms rise out of the gorges. ORANGE caps are trampolines: touch one and you are thrown along a big
  * arc onto the next cap or the far road (see src/sim/bouncers.ts for the rules). GREEN caps are solid: drive across
@@ -125,25 +125,26 @@ class Turtle {
 const t = new Turtle(0, 0, 30, 90).mark('start');
 
 // ---- 1. Foothills: a short warm-up through three bends, boost pad on the way to the first hairpin ----
-t.line(14, 0.4).turn(80, 25, 0.3).turn(80, -40, 0.4).turn(80, 15, 0.3).line(10, 0.3).mark('foot');
+t.line(8, 0.3).turn(80, 15, 0.2).turn(80, -24, 0.3).turn(80, 9, 0.2).line(6, 0.2).mark('foot');
 // ---- 2. Switchbacks up the east face: three hairpins (left, right, left), steep legs between ----
-t.turn(30, -180, 8).mark('hair1'); //  left hairpin: the cliff drops away on its outside (south)
-t.wiggle(72, 11, 21).mark('leg2'); //   15 % climb, a gentle S
-t.turn(30, 180, 8).mark('hair2'); //    right hairpin
-t.wiggle(72, 10, 21).mark('leg3'); //   14 % climb
-t.turn(30, -180, 8).mark('crest'); //   left hairpin: the crest, heading west
+t.turn(30, -180, 8.5).mark('hair1'); //  left hairpin: the cliff drops away on its outside (south)
+t.wiggle(50, 7.5, 21).mark('leg2'); //   15 % climb, a gentle S
+t.turn(30, 180, 8.5).mark('hair2'); //    right hairpin
+t.wiggle(50, 7.0, 21).mark('leg3'); //   14 % climb
+t.turn(30, -180, 8.5).mark('crest'); //   left hairpin: the crest, heading west
 // ---- 3. Sky Leap: the ridge road (a drop on both sides) and ONE huge bounce over a 50 m gorge ----
+t.line(19, 0); // a stretch of ridge (keeps everything from the Twin Spans on exactly where the mountain was built for it)
 t.turn(200, 5, 0).mark('ridge1').turn(200, 5, 0).mark('g1a'); //  boost pad on the approach
 t.turn(200, -arcDeg(G1_LEN, 200), -2.5).mark('g1b'); //   the far side is 2.5 m lower: a long floaty descent
 t.turn(200, arcDeg(G1_LEN, 200) - 10, -1.5).mark('g1c');
-t.turn(150, 18, -0.5).mark('g1end').turn(150, -18, -0.5); // the ridge winds
+t.turn(150, 6, -0.5).mark('g1end').turn(150, -6, -0.5); // the ridge winds
 // ---- 4. Stepping Stones: a gorge crossed on a path of green caps ----
 t.turn(170, 8, -0.2).mark('g2pre');
 t.turn(170, 4, -0.1).mark('g2a');
 t.turn(170, -arcDeg(G2_LEN, 170), -1.5).mark('g2b');
 t.turn(170, arcDeg(G2_LEN, 170) - 12, -0.5).mark('g2end');
 // ---- 5. Twin Spans: round the corner and down the west face to the gorge with the choice ----
-t.turn(46, -90, -1.5).mark('turnSouth');
+t.turn(36, -90, -1.5).mark('turnSouth');
 t.line(14, -0.3);
 t.turn(200, 5, -0.2).mark('g3fork'); //  the dirt shortcut leaves here (about 36 m before the gorge)
 t.turn(200, 5, -0.2).turn(200, 5, -0.2).mark('g3a'); //     the gorge: 84 m
@@ -157,16 +158,16 @@ t.turn(200, -5, -0.2).turn(200, -5, -0.2).mark('caveIn'); //  the chasm: 126 m (
 t.turn(200, arcDeg(CAVE_LEN / 2, 200), -1);
 t.turn(200, -arcDeg(CAVE_LEN / 2, 200), -1).mark('caveOut');
 t.turn(200, 15, -0.4).mark('caveEnd'); //                  ...and the shortcut rejoins
-t.turn(52, -90, -1.5).mark('turnEast'); // the road comes out of the mountain heading east
+t.turn(40, -90, -1.5).mark('turnEast'); // the road comes out of the mountain heading east
 // ---- 7. Descent: up the mountain side, two sweeping S-bends, then a right turn that closes the lap at the start line ----
 {
   const total = t.y - 30; // the height still to lose
   // Sweeping S-bends (radius 70 to 120 m: bends you carve, not a straight you wait out), with a dip and a crest between them.
   const sBend = (r: number, side: 1 | -1, deg: number, dy: number) => t.turn(r, side * deg, dy / 2).turn(r, -side * deg, dy / 2);
-  t.turn(45, -90, -0.1 * total).mark('chuteTop');
-  sBend(90, 1, 34, -0.3 * total).mark('chute');
-  sBend(110, -1, 26, -0.17 * total);
-  sBend(80, 1, 22, -0.1 * total).mark('chuteS3');
+  t.turn(36, -90, -0.1 * total).mark('chuteTop');
+  sBend(90, 1, 26, -0.25 * total).mark('chute');
+  sBend(110, -1, 20, -0.15 * total);
+  sBend(80, 1, 18, -0.1 * total).mark('chuteS3');
   // The last turn is a circle arc whose radius is whatever puts its end exactly 34 m before the start line.
   const r = -34 - t.x;
   const run = -t.z - r; // metres to drive straight north before it
@@ -396,7 +397,7 @@ export const mushroomValley: TrackDef = {
   ],
   laps: 3,
   checkpoints: 20,
-  itemRowSpacing: 175, // a row of boxes before and after every crossing
+  itemRowSpacing: 160, // eleven rows of boxes about 158 m apart: one before and one after every crossing
   scenery: {
     seed: 61,
     trees: 320,

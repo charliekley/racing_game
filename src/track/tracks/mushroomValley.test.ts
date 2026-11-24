@@ -13,9 +13,9 @@ describe('Mushroom Valley', () => {
   const stats = layoutStats(track);
   const bouncers = new Bouncers(track);
 
-  it('is 1.5 to 2.0 km long, a real mountain: slopes up to about 16 % and a height range over 40 m', () => {
+  it('is 1.5 to 1.85 km long, a real mountain: slopes up to about 16 % and a height range over 40 m', () => {
     expect(track.length).toBeGreaterThan(1500);
-    expect(track.length).toBeLessThan(2000);
+    expect(track.length).toBeLessThan(1850);
     expect(stats.heightRange).toBeGreaterThan(40);
     expect(stats.maxClimb).toBeGreaterThan(0.12); // switchbacks that really climb
     expect(stats.maxClimb).toBeLessThan(0.2);
@@ -120,9 +120,9 @@ describe('Mushroom Valley', () => {
     expect(second.onRoute[1]).toBeGreaterThan(60 * 2); // it really drove both shortcuts
     expect(second.onRoute[2]).toBeGreaterThan(60 * 4);
     expect(Math.abs(second.time - main.time)).toBeLessThan(main.time * 0.07);
-    // A lap takes about as long as on the other tracks (a minute to a minute and a quarter).
-    expect(main.time).toBeGreaterThan(55);
-    expect(main.time).toBeLessThan(80);
+    // A lap takes a bit under a minute (the lap was trimmed by about 12 %).
+    expect(main.time).toBeGreaterThan(48);
+    expect(main.time).toBeLessThan(72);
   }, 60_000);
 
   it('has item box rows before and after every crossing', () => {
