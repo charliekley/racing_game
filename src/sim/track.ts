@@ -674,6 +674,8 @@ export class Track implements Ground {
    * No ramps, gaps, cliffs or bridges here.
    */
   private branchSurfaceAt(p: Projection, x?: number, z?: number): GroundHit | null {
+    // A deck (Rainbow Route's second ribbon): its own height line, no ground beside it.
+    if (this.branches[p.route - 1]?.def.deck) return Math.abs(p.d) > p.width / 2 + CURB_WIDTH ? null : { height: p.y, surface: 'road' };
     const height = x !== undefined && z !== undefined ? this.terrain.height(x, z) : p.y;
     // A branch def may say `surface: 'road'` (a hard-packed trail: full speed, Mushroom Valley's orange routes).
     return { height, surface: this.branches[p.route - 1]?.def.surface === 'road' ? 'road' : 'offroad' };

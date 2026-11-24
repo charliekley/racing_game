@@ -153,7 +153,7 @@ export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLigh
 // Looks: the mood of each track
 // ---------------------------------------------------------------------------
 
-export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn';
+export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space';
 
 /** Everything that gives a track its lighting mood. All colours are CSS strings. */
 export interface Look {
@@ -226,6 +226,13 @@ const LOOKS: Record<Mood, Look> = {
     sunColor: '#ffc27a', sunIntensity: 3.2, sunAzimuth: 200, sunElevation: 24, hemiIntensity: 1.0, envIntensity: 0.85,
     exposure: 1.15, fogNear: 90, fogFar: 560, bloom: 0.45, bloomThreshold: 0.9, saturation: 1.22, contrast: 1.08,
     tint: '#fff2e0', vignette: 0.3, stars: 0, aurora: 0, cloudCover: 0.35,
+  },
+  // Rainbow Route: deep space. A soft pink-white sun, a violet sky with a slow aurora, almost no fog (the planet far
+  // below must stay visible), strong bloom for the glowing ribbon. (Stars are their own mesh, see env/rainbow.ts.)
+  space: {
+    sunColor: '#ffe6f4', sunIntensity: 2.6, sunAzimuth: 215, sunElevation: 38, hemiIntensity: 1.05, envIntensity: 0.9,
+    exposure: 1.12, fogNear: 4000, fogFar: 9000, bloom: 0.75, bloomThreshold: 0.85, saturation: 1.22, contrast: 1.08,
+    tint: '#f6f0ff', vignette: 0.3, stars: 0, aurora: 0.9, cloudCover: 0,
   },
   // Not used by the current tracks, but ready: stars, aurora and a cool moon-ish light.
   night: {

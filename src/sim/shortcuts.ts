@@ -43,6 +43,8 @@ const LEAD = 16;
 export const MAX_GRADE = 0.18;
 /** Metres over which the path's ground height is smoothed (each side), so it does not follow every bump. */
 const SMOOTH_RADIUS = 6;
+/** Metres over which a deck branch's height line is smoothed (each side). */
+const DECK_SMOOTH = 8;
 /** How far (m) the dirt surface is drawn above the terrain. The terrain itself is the physics ground. */
 export const DIRT_LIFT = 0.05;
 /** Junction zone: the kart may step from the main road onto the path this many samples after its start. */
@@ -320,15 +322,40 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
     for (let k = last - 1; k >= 0; k--) level[k] = Math.max(level[k + 1] - step, Math.min(level[k + 1] + step, level[k]));
   }
 
+  // 5a) A DECK branch (Rainbow Route) ignores the ground altogether: its level is a straight-line interpolation of the
+  //     control points' own heights (the two junctions take the main road's height), lightly smoothed along the path.
+  if (def.deck) {
+    const anchorsD: { b: number; y: number }[] = [{ b: 0, y: A.y }];
+    nodes.forEach((nd, j) => {
+      if (nd.h !== undefined) anchorsD.push({ b: nodeB[j], y: nd.h });
+    });
+    anchorsD.push({ b: length, y: Q.y });
+    const raw = samples.map((_, k) => {
+      const bk = k * spacing;
+      let a = 0;
+      while (a < anchorsD.length - 2 && bk > anchorsD[a + 1].b) a++;
+      const t = Math.max(0, Math.min(1, (bk - anchorsD[a].b) / Math.max(1e-6, anchorsD[a + 1].b - anchorsD[a].b)));
+      return anchorsD[a].y + (anchorsD[a + 1].y - anchorsD[a].y) * t;
+    });
+    const RD = Math.max(1, Math.round(DECK_SMOOTH / spacing));
+    for (let k = 0; k <= last; k++) {
+      const r = Math.min(RD, k, last - k);
+      let sum = 0;
+      for (let o = -r; o <= r; o++) sum += raw[k + o];
+      level[k] = sum / (2 * r + 1);
+    }
+  }
+
   // 5b) Pinned heights: `[x, z, height]` control points hold the path at that level. Between two such anchors (and the
   //     end junctions, which stay on the ground) the level is eased from one to the other. Where that puts the path
   //     well above the natural ground, the stretch is "pinned" (see Branch.pinned).
-  const pinned = samples.map(() => false);
-  const anchors: { b: number; y: number; user: boolean }[] = [{ b: 0, y: level[0], user: false }];
+  // (A deck counts as "held" everywhere: the terrain is not shaped under it and no dirt is drawn.)
+  const pinned = samples.map(() => def.deck === true);
+  const anchors: { b: number; y: number; user: boolean }[] = def.deck ? [] : [{ b: 0, y: level[0], user: false }];
   nodes.forEach((nd, j) => {
-    if (nd.h !== undefined) anchors.push({ b: nodeB[j], y: nd.h, user: true });
+    if (nd.h !== undefined && !def.deck) anchors.push({ b: nodeB[j], y: nd.h, user: true });
   });
-  anchors.push({ b: length, y: level[last], user: false });
+  if (!def.deck) anchors.push({ b: length, y: level[last], user: false });
   if (anchors.length > 2) {
     for (let a = 0; a < anchors.length - 1; a++) {
       const [A0, A1] = [anchors[a], anchors[a + 1]];

@@ -193,6 +193,12 @@ export interface ShortcutDef {
   /** 'dirt' (default): the path slows you like off-road. 'road': a hard-packed trail, driven at full speed (it is still drawn as dirt). */
   surface?: 'road' | 'dirt';
   /**
+   * true = the branch is a DECK (Rainbow Route's second ribbon): it follows its own control-point heights (the third number
+   * of every point is required, and they are measured above sea level like the main road), has its own ground (its width,
+   * nothing beside it: step off and you fall) and no dirt look. The terrain is not shaped under it. Default false.
+   */
+  deck?: boolean;
+  /**
    * Barriers along the branch. Same shape as the main `walls`, but `from`/`to` are in
    * BRANCH-local control-point units: 0 = the junction where the branch starts,
    * 1..points.length = your `points`, points.length + 1 = the junction where it rejoins.
@@ -213,6 +219,14 @@ export interface BlockDef {
   rot?: number;
   /** Wall colour, e.g. '#c0392b'. */
   color: string;
+}
+
+/** Rainbow Route look: a ribbon road floating in space above a planet. Everything is optional. */
+export interface RainbowDef {
+  /** The planet under the course: centre (world metres), radius. Default: below the lap, radius 1000, top 170 m under the lowest road. */
+  planet?: { x: number; y: number; z: number; radius: number };
+  /** Seed for the planet's continents, the star field and the dust. */
+  seed?: number;
 }
 
 import type { HazardDef } from './hazardTypes';
@@ -253,7 +267,14 @@ export interface TrackDef {
     landing?: boolean;
   }[];
   /** Boost pads: `offset` is lateral position, -1 = left edge … 1 = right edge. */
-  boostPads: { at: number; offset: number; length: number; width: number }[];
+  boostPads: {
+    at: number;
+    offset: number;
+    length: number;
+    width: number;
+    /** Rainbow Route only: a glowing star-ring arch stands over this pad (looks only). */
+    arch?: boolean;
+  }[];
   laps: number;
   /** Number of checkpoints the lap is split into (must pass them all, in order). */
   checkpoints: number;
@@ -272,13 +293,15 @@ export interface TrackDef {
      * horizon, so the course floats in open sky (clouds are kept). Default false.
      */
     openSky?: boolean;
+    /** Rainbow Route: a glowing translucent ribbon road in space above a planet (see RainbowDef). Looks only. */
+    rainbow?: RainbowDef;
   };
   /** Colors for this track's look. */
   /**
    * `mood` (optional) picks the lighting preset in src/render/scene.ts (sun colour and height, exposure,
    * bloom, colour grade, stars...). Default 'day'.
    */
-  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' };
+  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space' };
 
   // ---- v2 (all optional) ----
   terrain?: TerrainDef;
