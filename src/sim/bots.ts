@@ -334,8 +334,14 @@ export class Bot {
   private saidLast = false;
   private saidFinish = false;
   private saidOut = false;
-  /** A bold bot that is behind takes the shortcuts too (only changed away from junctions). */
+  /**
+   * Shortcuts are mainly for the player: a bot takes an optional shortcut / second route only while it is LAGGING (see
+   * `isLagging`), otherwise it stays on the main road. Re-decided only away from junctions, so a bot never changes its
+   * mind half way into a fork.
+   */
   private riskShortcut = false;
+  /** How far behind the leader (m) this bot has to be before it counts as lagging: fixed per bot (seeded), so some bots give up on the main road sooner. */
+  private lagGap = 60;
 
   constructor(
     readonly slot: number,
@@ -367,6 +373,7 @@ export class Bot {
     this.rocketAt = s.rocketEarly + (s.rocketLate - s.rocketEarly) * this.rnd();
     if (this.rnd() < s.stallChance) this.rocketAt = -2.5; // far too early: floods the engine
     this.nextMistake = s.mistakeEvery > 0 ? s.mistakeEvery * (0.4 + this.rnd()) : Infinity;
+    this.lagGap = 45 + 70 * this.rnd();
   }
 
   /** The controls for this tick. */
@@ -408,7 +415,7 @@ export class Bot {
     // --- Fighting: block the rival's line, dive down the inside (never near a junction) ---
     this.fightShift += ((nearFork ? 0 : this.fightTarget(world, k, track, sNow, lane, half, isHuman)) - this.fightShift) * 0.06;
     lane += this.fightShift;
-    if (!nearFork && sNow.route === 0) this.riskShortcut = this.skill.boldness > 0.4 && this.skill.skillful && (me?.progress ?? 0) < this.leaderProgress(race) - 40;
+    if (!nearFork && sNow.route === 0) this.riskShortcut = this.skill.skillful && this.isLagging(race, humanAhead);
     // --- Hazards (lava geysers...): swing to a free lane, or lift when every lane is blocked ---
     // The advice is a function of the race clock, so bots "see" the same eruptions as the players.
     // Easy bots react only partly (care 0.75), so they are sometimes caught; hard bots almost never.
@@ -422,9 +429,9 @@ export class Bot {
       ...this.style,
       pace: this.skill.pace * this.rubber,
       lane: clamp(lane, -half, half),
-      // Bold moves: brake later for the dive; and a bold bot that has fallen behind goes for the shortcuts.
+      // Bold moves: brake later for the dive. Shortcuts: only a bot that is lagging behind takes them (the player's toy otherwise).
       cornerSpeed: (this.style.cornerSpeed ?? 0.75) + (diving ? 0.1 : 0),
-      shortcutBias: this.riskShortcut ? Math.max(this.style.shortcutBias ?? 0, 0.6) : this.style.shortcutBias,
+      shortcutBias: this.riskShortcut ? Math.max(this.style.shortcutBias ?? 0, 0.6) : 0,
     };
 
     // --- Base driving ---------------------------------------------------------------------
@@ -531,6 +538,26 @@ export class Bot {
     let best = -Infinity;
     for (const r of race.racers.values()) if (!r.out) best = Math.max(best, r.progress);
     return best;
+  }
+
+  /**
+   * Is this bot lagging? It is in the back half of the field, or this bot's own gap (`lagGap`) behind the leader, or
+   * clearly behind the best human. (Pure function of the race state and the bot's seeded gap: deterministic.)
+   */
+  private isLagging(race: Race, humanAhead: number | null): boolean {
+    const me = race.racers.get(this.slot);
+    if (!me) return false;
+    let ahead = 0;
+    let total = 0;
+    for (const r of race.racers.values()) {
+      if (r.out) continue;
+      total++;
+      if (r.progress > me.progress) ahead++;
+    }
+    const backHalf = total >= 3 && ahead >= Math.ceil(total / 2);
+    const farBehind = me.progress < this.leaderProgress(race) - this.lagGap;
+    const behindHuman = humanAhead !== null && humanAhead < -this.lagGap * 0.6;
+    return backHalf || farBehind || behindHuman;
   }
 
   /** Choose (or re-choose) the rival: see `pickRival`. A rival that is out or finished no longer counts. */

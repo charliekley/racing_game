@@ -51,7 +51,7 @@ function arc(cx: number, cz: number, r: number, a0: number, a1: number, y0: numb
 }
 
 /** The Great Trunk: the spiral climbs round it. Centre, spiral radius and the heights at the bottom and top. */
-export const GREAT_TRUNK = { x: 180, z: 330, spiralRadius: 38, bottom: 28, top: 92 };
+export const GREAT_TRUNK = { x: 180, z: 330, spiralRadius: 30, bottom: 28, top: 66 };
 /** The Lantern Oak: the hairpin wraps round it. */
 export const LANTERN_OAK = { x: 285, z: 290, hairpinRadius: 28 };
 
@@ -73,17 +73,18 @@ const L = LANTERN_OAK;
 const route: RoutePoint[] = [
   // ---- 1. Mossy Hollow: the clearing on the forest floor, heading east ----
   pt(0, 0, 3, 'start'),
-  pt(30, 0, 3),
-  pt(62, 4, 3.2),
-  pt(92, 10, 3.6, 'hollowS'),
-  pt(118, 8, 4.2),
-  pt(142, 15, 5, 'rootRamp'),
-  // ---- 2. Root Ramp: an S-shaped climb north up a giant root onto the first branch ----
-  pt(162, 36, 8),
-  pt(164, 66, 12.5),
-  pt(152, 94, 17),
-  pt(144, 124, 21.5),
-  pt(152, 152, 25.5),
+  pt(20, 0, 3),
+  pt(40, -2, 3.2),
+  pt(57, 8, 3.4),
+  pt(75, 19, 3.6, 'hollowS'),
+  pt(94, 26, 4.2),
+  pt(112, 30, 5, 'rootRamp'),
+  // ---- 2. Root Ramp: a gentle S-shaped climb north up a giant root onto the first branch ----
+  pt(131, 42, 8),
+  pt(146, 66, 12),
+  pt(153, 95, 16.5),
+  pt(152, 124, 21),
+  pt(158, 152, 25.5),
   pt(168, 176, 28, 'branchRoad'),
   // ---- 3. Branch road, rope bridge (sagging), hairpin round the Lantern Oak ----
   pt(190, 198, 28.5),
@@ -94,26 +95,23 @@ const route: RoutePoint[] = [
   ...arc(L.x, L.z, L.hairpinRadius, 148, -5, 30, 31, 30, { 0: 'hairpin' }).slice(1),
   pt(248, 314, 30.5, 'hollowBranch'),
   pt(214, 298, 29.5),
-  // ---- 4. The spiral: 1.25 turns clockwise round the Great Trunk, from its south side (heading west) ----
-  ...arc(G.x, G.z, G.spiralRadius, 180, 630, G.bottom, G.top, 22.5, { 0: 'spiral', 20: 'spiralTop' }),
-  // ---- 5. Crown deck and the jump to the neighbouring crown ----
-  pt(140, 352, 92.5, 'crownDeck'),
-  pt(132, 374, 92.6, 'kicker'),
-  pt(120, 400, 91, 'landing'),
-  pt(100, 420, 89.5),
-  pt(70, 428, 88),
-  pt(40, 422, 86, 'plungeTop'),
-  // ---- 6. The Plunge: down to the floor on one long branch ----
-  pt(14, 404, 84),
-  pt(-8, 380, 76),
-  pt(-24, 352, 66),
-  pt(-34, 322, 56),
-  pt(-38, 292, 46),
-  pt(-36, 262, 36),
-  pt(-40, 232, 27),
-  pt(-50, 204, 19),
-  pt(-64, 178, 13),
-  pt(-80, 154, 9.5, 'plungeEnd'),
+  // ---- 4. The spiral: ONE turn clockwise round the Great Trunk, from its south side (heading west) back to the same
+  //         spot 38 m higher: the deck above carries straight on west, over the road that fed the spiral ----
+  ...arc(G.x, G.z, G.spiralRadius, 180, 540, G.bottom, G.top, 22.5, { 0: 'spiral', 16: 'spiralTop' }),
+  // ---- 5. Crown deck and the jump to the neighbouring crown (straight on west) ----
+  pt(152, 300, 66.2, 'crownDeck'),
+  pt(124, 300, 66.3, 'kicker'),
+  pt(96, 300, 65, 'landing'),
+  // ---- 6. The Plunge: a left bend off the crown, then one long diagonal branch down to the floor (about 55 m at up to ~33 %) ----
+  pt(70, 300, 64.6, 'plungeTop'),
+  pt(45, 288, 62.1),
+  pt(29, 267, 56.4),
+  pt(22, 237, 47.0),
+  pt(2, 220, 38.1),
+  pt(-29, 214, 28.0),
+  pt(-52, 200, 19.0),
+  pt(-60, 171, 12.4),
+  pt(-80, 154, 9.6, 'plungeEnd'),
   // ---- 7. Acorn Hollow: S-bends on the floor back to the line ----
   pt(-112, 134, 8),
   pt(-142, 106, 7, 'acornHollow'),
@@ -185,17 +183,17 @@ export const autumnSpeedway: TrackDef = {
       // Giant trees. The road winds between them, so each trunk stands just beyond the guard rail of the road
       // passing it (autumnSpeedway.test.ts checks the clearance). Heights are to the middle of the crown.
       giantTrees: [
-        { x: G.x, z: G.z, radius: 21, height: 150, crown: 62 }, // the Great Trunk (the spiral)
+        { x: G.x, z: G.z, radius: 14.5, height: 150, crown: 62 }, // the Great Trunk (the spiral)
         { x: L.x, z: L.z, radius: 11, height: 84, lanterns: 36 }, // the Lantern Oak (the hairpin), lanterns above the road
-        { x: 90, z: 388, radius: 11, height: 120, crown: 46 }, // the landing crown of the jump
+        { x: 98, z: 338, radius: 11, height: 120, crown: 46 }, // the landing crown of the jump
         { x: 186, z: 86, radius: 9, height: 70 }, // beside the root ramp
         { x: 212, z: 178, radius: 10, height: 76 }, // where the branch road leaves the root
         { x: 202, z: 246, radius: 9, height: 70 }, // the rope bridge's west anchor
         { x: 250, z: 352, radius: 10, height: 74 }, // above the hollow branch
-        { x: -4, z: 330, radius: 11, height: 110 }, // beside the top of the plunge
-        { x: -18, z: 206, radius: 9, height: 80 }, // halfway down the plunge
+        { x: 56, z: 334, radius: 11, height: 110 }, // beside the top of the plunge
+        { x: 38, z: 196, radius: 9, height: 80 }, // halfway down the plunge
         { x: -68, z: 262, radius: 11, height: 90 }, // west of the plunge
-        { x: 100, z: 180, radius: 16, height: 130, crown: 52 }, // the giant in the middle of the course
+        { x: 100, z: 180, radius: 14, height: 130, crown: 52 }, // the giant in the middle of the course
         { x: 30, z: 120, radius: 9, height: 75 },
         { x: 215, z: 105, radius: 10, height: 85 },
         { x: 110, z: 60, radius: 8, height: 60 }, // the clearing
@@ -241,7 +239,7 @@ export const autumnSpeedway: TrackDef = {
   // ACORN BEETLES: big beetles marching back and forth across the floor roads (one crossing every 4.5 s).
   // Bump one and you bounce off its shell (no spin-out). Staggered so the three never move in step.
   hazards: [
-    { kind: 'beetle', at: at('hollowS') + 2.5, period: 9, phase: 0 },
+    { kind: 'beetle', at: at('hollowS') + 0.5, period: 9, phase: 0 },
     { kind: 'beetle', at: at('acornHollow'), period: 9, phase: 3 },
     { kind: 'beetle', at: at('acornHollow') + 2.2, period: 9, phase: 6 },
   ],

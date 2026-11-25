@@ -102,7 +102,8 @@ Each track must be 1.2–2.0 km, include at least one signature feature from the
 * Rendering: the dirt is one transparent mesh, `DIRT_LIFT` above the terrain, with soft edges (vertex alpha), fading in/out over 5 m at its ends and hidden over the main road. The fork marker (chevron sign + cones) stands on the verge beside the main road before the opening.
 * Walls: `wallsAt(i, route)` / `sampleOf(route, i)`; `collideWalls` and the shot bounce use them. Branches have no cliffs, ramps, gaps or boost pads.
 * `track.routes` = main line + one `kind: 'shortcut'` `RouteLine` per branch (open polyline, ~8 m points, with y).
-* Bots: `BotStyle.shortcutBias` (slots 0 and 2 > 0.5 take every shortcut); `track.sampleAhead(route, i, k)` follows a branch back onto the main road.
+* Bots: `BotStyle.shortcutBias` says which slots LIKE shortcuts (slots 0 and 2 > 0.5; tests and the plain autopilot take them every time), but a `BotPack` bot only uses it
+  while it is LAGGING (see "Bots and shortcuts"); `track.sampleAhead(route, i, k)` follows a branch back onto the main road.
 * Scenery planning keeps clear of branch roads (`distToTrack`).
 
 ## Jumps (jump agent): what is implemented
@@ -241,22 +242,24 @@ export type HazardEvent =
 
 An original **treetop course**: wooden branch roads and plank walkways through a forest of giant autumn trees,
 a rope bridge, a spiral round the biggest trunk, a jump between two crowns and one long steep plunge back to
-the forest floor. 3 laps, about 1.73 km (trimmed by ~11 % so 3 laps take a person under 3 minutes: the Mossy Hollow run to the root and the
-hollow branch between the hairpin and the spiral were shortened; bots, 1 lap: hard ~57 s, normal ~64 s, easy ~71 s). Lobby index 4 (`?track=4`), 5th race of the Grand Prix.
+the forest floor. 3 laps, about 1.45 km (trimmed twice: 1.73 km / ~64 s per normal-bot lap before the second trim, now about 53-55 s, so 3 laps take a
+person about 2:30-2:40: the Mossy Hollow run is shorter, the spiral is ONE turn of radius 30 m with the crown at 66 m (the deck carries straight on west over
+the road that fed the spiral), and the plunge is one diagonal branch of about 230 m). Lobby index 4 (`?track=4`), 5th race of the Grand Prix.
 
 ### Layout (`src/track/tracks/autumnSpeedway.ts`, north = +z)
 
 | # | Section | Height | What happens |
 |---|---|---|---|
-| 1 | Mossy Hollow | 3-5 m | start on the floor, S-bends, an acorn beetle |
-| 2 | Root Ramp | 5 -> 28 m | S-shaped climb onto the first branch (~15 %) |
+| 1 | Mossy Hollow | 3-5 m | start on the floor, S-bends (min radius 16 m), an acorn beetle |
+| 2 | Root Ramp | 5 -> 28 m | S-shaped climb onto the first branch (~14 %) |
 | 3 | Branch road | 28-31 m | winding plank road, the ROPE BRIDGE (sags, no rails, three springy rope humps to trick off), a tight hairpin round the Lantern Oak (lanterns), an S-bend west |
-| 4 | The Spiral | 28 -> 92 m | 1.25 turns clockwise round the Great Trunk (radius 38 m), 21-22 % all the way up (25 % at the entry) |
-| 5 | Crown deck + jump | 92 m | boost pad, kicker, 12 m void gap to the neighbouring crown |
-| 6 | The Plunge | 86 -> 10 m | a crest, then one long branch dropping ~76 m at up to ~33 % |
+| 4 | The Spiral | 28 -> 66 m | one turn clockwise round the Great Trunk (radius 30 m, trunk radius 14.5 m), ~20 % all the way up |
+| 5 | Crown deck + jump | 66 m | boost pad, kicker, 12 m void gap to the neighbouring crown (the deck heads west, directly above the road that fed the spiral) |
+| 6 | The Plunge | 65 -> 10 m | a crest, then one winding diagonal branch dropping ~55 m at up to ~33 % |
 | 7 | Acorn Hollow | 3-9 m | S-bends on the floor, two acorn beetles, the ROOT RIDGE SHORTCUT |
 
 The spiral and the hairpin are exact circle arcs (`arc()` helper); important points are named (`at('spiral')`).
+The lap is 3 laps x ~1.45 km: bots (normal, 4 on the road) lap in about 53-55 s (the bot test bounds: 1.3 to 1.6 km).
 Everything above the floor is a `bridge` (natural forest floor underneath; fall off = respawn by the usual rule).
 Walls (wooden guard rails) line the high road except the rope bridge. The spiral's turns pass over each other
 40+ m apart (the >= 7 m rule).
@@ -321,8 +324,8 @@ scenery plan, class balance).
 
 An original **mountain trail over misty gorges**. Giant mushrooms rise out of the chasms: **orange caps are
 trampolines** (touch one and you are thrown along a big floaty arc), **green caps are solid ground** (platforms and
-bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.79 km (trimmed ~9 %: shorter foothills, switchback legs, ridge winds and descent S-bends), bots lap in about 57-74 s
-(Autumn Speedway: 57-71 s); climbs up to 16 % (the switchback legs), descents up to 11 %, height range ~41 m.
+bridges). Lobby index 5 (`?track=5`), 6th and last race of the Grand Prix. 3 laps, 1.60 km (trimmed twice, the second time by ~10 %: the long road home after the cave is gone, see "The cliff"), normal bots lap in
+about 55-58 s, so 3 laps take a person about 2:45; climbs up to 15 % (the switchback legs), descents up to 11 % (the cliff's gap is not driven), height range ~41 m.
 
 ### Layout (`src/track/tracks/mushroomValley.ts`, anticlockwise-ish lap, start line at the foot of the mountain)
 
@@ -335,15 +338,24 @@ lat)` ("so many metres along the road from a named point, so many metres to the 
 | # | Section | Height | What happens |
 |---|---|---|---|
 | 1 | Foothills | 30-32 m | start line, three bends, boost pad |
-| 2 | Switchbacks | 32-77 m | three hairpins (r 30) up the east face, legs of 14-15 % between them, the fence on the outside of every bend |
-| 3 | **Sky Leap** | 77 -> 74 m | ridge road with a boost pad, then a 50 m gorge with ONE huge orange cap (r 11): a single 1.8 s bounce, apex 10 m, lands on the far road |
+| 2 | Switchbacks | 32-72 m | three hairpins (r 30) up the east face, legs of 34 m and 14-15 % between them, the fence on the outside of every bend |
+| 3 | **Sky Leap** | 72 -> 69 m | the ridge turns north-west (`RIDGE_TILT`, 28 degrees), a boost pad, then a 50 m gorge with ONE huge orange cap (r 11): a single 1.8 s bounce, apex 10 m, lands on the far road |
 | 4 | **Stepping Stones** | 71 -> 69 m | the ridge winds on; a 62 m gorge crossed on a snaking path of five green caps (r 9.5) |
 | 5 | **Twin Spans** (choice 1) | 67 -> 64 m | down the west face to an 84 m gorge. Main road: seven overlapping green caps. Shortcut (left, `shortcuts[0]`): three orange caps held over a pit, hop, hop, land |
 | 6 | **The cave** (choice 2) | 63 -> 61 m | a long bend into a glowing cave; 126 m chasm with an S-bend inside. Main road: nine green caps. Shortcut (right, `shortcuts[1]`): four orange caps (hops of 40 m, 1.4 s) |
-| 7 | Descent | 59 -> 30 m | boost pad, a left up the mountain side, two sweeping S-bends (the 11 % chute), a final right that closes the lap |
+| 7 | **The cliff** | 57 -> 30 m | out of the cave a left bend swings the road back towards the start line, an S-curve, a boost pad, and a LIP: one huge orange cap (r 11, 2.1 s in the air, apex ~6 m) throws every kart over a 54 m gap and down 21 m onto the road below, which runs a short way to a last right bend that closes the lap 34 m before the start line |
 
-Item rows come every ~158 m (`TrackDef.itemRowSpacing`, default 260 m for other tracks; 160 m requested, 11 rows), so every chasm has a row of boxes
-before and after it.
+The lap is a compact loop (about 340 x 520 m): the ridge leaves the crest to the north-west so the west face (Twin Spans, the cave) starts high
+and its foot is close to the start line (a due-west ridge put the cave's exit 310 m south of the line and needed a 460 m road home). The way
+home is solved in code: a first left bend whose angle is the smallest one that leaves the last bend a radius of at least `MIN_HOME_R`, then a straight
+(run-up, cliff, landing) and the last right bend, with the straight's length and the bend's radius solved so the lap closes exactly (the file throws if not).
+
+**The cliff and entry speed**: the cliff cap's aim point is deep inside the landing (`CLIFF_LEN + 32` m past the lip), so a kart that carries a
+shortfall (entering slower than 20 m/s) still lands on the road, and one entering at up to 40 m/s (a boosted top speed) lands on the target.
+The gap's control points drop 21 m, far more steeply than any road: `layoutStats` leaves every grade window that touches a gap out of the slope figures.
+
+Item rows come every ~124 m (`TrackDef.itemRowSpacing` 130 m, default 260 m for other tracks, 13 rows; the test wants a row within 170 m before and after every chasm),
+and there are five chasms now (three gorges, the cave and the cliff).
 
 ### Fun rules of thumb
 
@@ -351,8 +363,11 @@ before and after it.
   the air pays out the usual boost on landing. The orange shortcut hops are flown at about 42 m/s (`SHORTCUT_SPEED`, flat 2-4 m arcs) on a
   full-speed hard-packed branch (`ShortcutDef.surface: 'road'`), so flown well (and tricked) the orange route is about 1.0 s (Twin Spans) /
   0.9 s (cave) quicker than the green crossing (a bot flying it; `airControl.test.ts`), and slower when flown badly.
-* Two **risk / reward** choices every lap (Twin Spans and the cave) plus the one forced leap (Sky Leap) and the green bridge
-  (Stepping Stones). Bots pick shortcuts by `shortcutBias`, all four bias slots have been run.
+* Two **risk / reward** choices every lap (Twin Spans and the cave) plus the two forced leaps (Sky Leap, the cliff) and the green bridge
+  (Stepping Stones). **Entry speed is forgiven** (`BOUNCE.fastFree` 12 / `slowFree` 8 m/s, see bouncers.ts): a straight, centred kart at
+  20, 28, 32 or 38 m/s lands every orange chain (Twin Spans, the cave) and the Sky Leap with no input at all (`airControl.test.ts`); the skill is lining up
+  sideways (off-centre or angled entries still miss), not crawling in or lifting off the gas. (An error that is carried from one hop of a chain to the next is not
+  forgiven again.) Bots take the shortcuts only when they lag, see "Bots and shortcuts" below.
 * The first cap of a shortcut is only about 20 m from the road's edge, so a bot (or a player) has to commit at the fork.
 
 ### The two shortcuts and the cave routes
@@ -449,8 +464,16 @@ Spans shortcut ledges. The renderer draws no side walls along an open gap (only 
   signpost before each fork (render in `branchView.ts`, solid circles in `sceneryPlan.ts`). The cave vault was centred on the wrong side of the
   road (`offset` is in the track's lateral axis, opposite to `local()`): it is now centred between the road and the orange route (valley `inner`
   swapped to match), so the orange route runs under the arch with clear openings at both ends.
-* **Descent**: the 360 m of r=200 near-straight after the cave is now S-bends of radius 80-110 m (34 / 26 / 22 degrees) with a small hump kicker
-  (`ramps`), the lap still closes (final bend r 62 m).
+* **Descent** (replaced by the cliff, see layout section 7): the 360 m of S-bends after the cave and the long final straight are gone.
+
+### Bots and shortcuts (all tracks)
+
+Shortcuts and optional routes are mainly for the player. A bot (`Bot.drive` in `bots.ts`) takes an optional shortcut / second route only while `isLagging`:
+it is in the back half of the field (3 or more racers), or more than its own `lagGap` (45 to 115 m, seeded per bot) behind the leader, or more than 0.6 x that behind the
+best human. Otherwise it stays on the main road (`shortcutBias` 0). Easy bots never leave the main road (they are not `skillful`); the decision is re-taken only away from
+junctions, so a bot never changes its mind half way into a fork. Mandatory routes (mandatory cannons, Sky Leap and the cliff cap) are not shortcuts and every bot takes
+them. Rainbow Route's high line is an ordinary branch: the main ribbon is the default and only a lagging bot takes the high line.
+Tests: `bots.test.ts` ("bots and shortcuts"): alone / in front, a normal or hard bot spends 0 ticks on a shortcut; held back 16 s a hard bot takes them and gets round; easy never.
 
 ## Rainbow Route (7th track): what is implemented
 

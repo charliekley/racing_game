@@ -36,10 +36,10 @@ interface ShotView {
 const DEFAULT_VIEW: ShotView = { at: 0, ahead: 40, back: 90, side: 65, up: 62, fov: 42 };
 /** Per-track viewpoints: the start line, or a signature feature where that is more recognisable. */
 const VIEWS: Record<string, Partial<ShotView>> = {
-  // The spiral round the Great Trunk, seen from outside (the trunk's centre is to the right of the road there).
-  'Autumn Speedway': { at: 0.405, ahead: 0, back: -10, side: -175, up: 55, fov: 40 },
-  // The orange mushroom chain across the first gorge, seen from the side (the camera stands to the right of the road).
-  'Mushroom Valley': { at: 0.485, ahead: 0, back: 20, side: 80, up: 38, fov: 42 },
+  // The crown jump: the boost pad and kicker on the deck at the top of the spiral, the gap and the far crown, seen from behind and above.
+  'Autumn Speedway': { at: 0.595, ahead: 18, back: 78, side: 28, up: 40, fov: 50 },
+  // The cliff at the end of the lap: the huge orange cap on the lip, the drop and the road below it (the camera stands to the left of the road).
+  'Mushroom Valley': { at: 0.896, ahead: 8, back: 45, side: -60, up: 40, fov: 48 },
   // The ribbon from far above and beside the start run, with the planet below and the fork ahead.
   'Rainbow Route': { at: 0.12, ahead: 0, back: 60, side: -190, up: 110, fov: 48 },
 };

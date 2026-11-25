@@ -6,16 +6,16 @@ import { botLoadoutFor } from '../../sim/classes';
 import { Track } from '../../sim/track';
 import { World } from '../../sim/world';
 import { layoutStats } from '../layoutStats';
-import { CAVE_LEN, G1_LEN, G2_LEN, G3_LEN, at, mushroomValley } from './mushroomValley';
+import { CAVE_LEN, CLIFF_DROP, CLIFF_LEN, G1_LEN, G2_LEN, G3_LEN, at, mushroomValley } from './mushroomValley';
 
 describe('Mushroom Valley', () => {
   const track = new Track(mushroomValley);
   const stats = layoutStats(track);
   const bouncers = new Bouncers(track);
 
-  it('is 1.5 to 1.85 km long, a real mountain: slopes up to about 16 % and a height range over 40 m', () => {
-    expect(track.length).toBeGreaterThan(1500);
-    expect(track.length).toBeLessThan(1850);
+  it('is 1.45 to 1.65 km long (trimmed: a lap of about 55 s), a real mountain: slopes up to about 16 % and a height range over 40 m', () => {
+    expect(track.length).toBeGreaterThan(1450);
+    expect(track.length).toBeLessThan(1650);
     expect(stats.heightRange).toBeGreaterThan(40);
     expect(stats.maxClimb).toBeGreaterThan(0.12); // switchbacks that really climb
     expect(stats.maxClimb).toBeLessThan(0.2);
@@ -30,9 +30,9 @@ describe('Mushroom Valley', () => {
     expect(low).toBeLessThan(0.25);
   });
 
-  it('has four chasms (void gaps): three gorges and the cave', () => {
+  it('has five chasms (void gaps): three gorges, the cave and the cliff', () => {
     const voids = track.gaps.filter((g) => g.kind === 'void');
-    expect(voids.length).toBe(4);
+    expect(voids.length).toBe(5);
     for (const g of voids) {
       const inside = bouncers.caps.filter((c) => {
         const p = track.project(c.x, c.z);
@@ -56,6 +56,7 @@ describe('Mushroom Valley', () => {
     expect([...kindsIn('g2a', G2_LEN)]).toEqual(['green']);
     expect([...kindsIn('g3a', G3_LEN)]).toEqual(['green']);
     expect([...kindsIn('caveIn', CAVE_LEN)]).toEqual(['green']);
+    expect([...kindsIn('cliffA', CLIFF_LEN)]).toEqual(['orange']); // the cliff: one huge orange cap
     // The two dirt shortcuts: orange caps hold them over the pits.
     expect(bouncers.caps.filter((c) => c.kind === 'orange' && track.project(c.x, c.z).route === 1).length).toBeGreaterThanOrEqual(3);
     expect(bouncers.caps.filter((c) => c.kind === 'orange' && track.project(c.x, c.z).route === 2).length).toBeGreaterThanOrEqual(4);
@@ -78,7 +79,7 @@ describe('Mushroom Valley', () => {
         expect(ground, `cap ${c.index} lands on ground`).not.toBeNull();
         // ...and the ground there is at the height the arc was worked out for (no landing in a pit)
         expect(Math.abs(ground!.height - c.target!.y)).toBeLessThan(0.5);
-        expect(c.target!.y, `cap ${c.index} lands near its own height`).toBeGreaterThan(c.y - 5);
+        expect(c.target!.y, `cap ${c.index} lands near its own height (the cliff: ${CLIFF_DROP} m lower)`).toBeGreaterThan(c.y - 5 - (c.y - c.target!.y > 10 ? CLIFF_DROP + 4 : 0));
       }
     }
     expect(biggest, 'one big dramatic bounce').toBeGreaterThan(8);

@@ -4,6 +4,7 @@ import { TRACKS } from '../track';
 import { BotPack, DIFFICULTIES, RIVAL_HUMAN_BIAS, nextDifficulty, pickRival, rubberBand, sanitizeDifficulty, type Difficulty } from './bots';
 import { botLoadoutFor } from './classes';
 import { BOTS } from './config';
+import { autopilot, botStyleFor } from './autopilot';
 import { Track } from './track';
 import { World } from './world';
 
@@ -187,4 +188,51 @@ describe('bot character: rivals and moods', () => {
     expect(moods.size).toBeGreaterThan(0);
     expect(world.race!.racers.get(1)!.place).not.toBeNull(); // placed (bot 1 may be the DNF last kart)
   }, 120_000);
+});
+
+describe('bots and shortcuts: for the player, bots only take them when they lag behind', () => {
+  const valley = tracks.find(([name]) => name === 'Mushroom Valley')![1];
+
+  /**
+   * One lap of a bot in slot 0 (the slot that used to love every shortcut) next to a car driven by the autopilot in slot 1 (a
+   * stand-in for a human). `held` seconds of standing still at the start make the bot lag. Returns the ticks the bot spent
+   * on the shortcut roads and the respawns it caused.
+   */
+  function lapOnShortcuts(difficulty: Difficulty, held: number, withRival: boolean) {
+    const world = new World(valley, valley);
+    const slots = withRival ? [0, 1] : [0];
+    world.startRace(slots, 1, new Map(slots.map((s) => [s, botLoadoutFor(s)])));
+    const pack = new BotPack(difficulty, (slot) => slot === 1);
+    const style = { ...botStyleFor(1), shortcutBias: 0, pace: 1 };
+    let onShortcut = 0;
+    let respawns = 0;
+    for (let i = 0; i < 60 * 150 && !world.race!.racers.get(0)!.finished; i++) {
+      const events = world.tick((slot) => {
+        if (slot === 1) return autopilot(world.karts.get(1)!, valley, style, world.configOf(1));
+        return world.race!.time < held ? NEUTRAL_INPUT : pack.input(world, slot);
+      });
+      for (const e of events) if (e.kind === 'respawn' && e.slot === 0) respawns++;
+      if (valley.onRoute(world.karts.get(0)!) > 0) onShortcut++;
+    }
+    return { onShortcut, respawns, finished: world.race!.racers.get(0)!.finished };
+  }
+
+  it('a bot that is not behind (alone, or in front) stays on the main road, even one of the "shortcut" slots', () => {
+    for (const difficulty of ['normal', 'hard'] as const) {
+      const alone = lapOnShortcuts(difficulty, 0, false);
+      expect(alone.finished, difficulty).toBe(true);
+      expect(alone.onShortcut, `${difficulty}: ticks on a shortcut`).toBe(0);
+    }
+  }, 60_000);
+
+  it('a bot that has fallen far behind takes the shortcuts (and still gets round)', () => {
+    const lag = lapOnShortcuts('hard', 16, true);
+    expect(lag.finished).toBe(true);
+    expect(lag.onShortcut).toBeGreaterThan(60 * 3);
+    expect(lag.respawns).toBeLessThan(3);
+  }, 60_000);
+
+  it('easy bots never take a shortcut, however far behind', () => {
+    expect(lapOnShortcuts('easy', 16, true).onShortcut).toBe(0);
+  }, 60_000);
 });

@@ -11,9 +11,9 @@ describe('Autumn Speedway', () => {
   const track = new Track(autumnSpeedway);
   const stats = layoutStats(track);
 
-  it('is between 1.2 and 1.85 km long', () => {
-    expect(track.length).toBeGreaterThan(1200);
-    expect(track.length).toBeLessThan(1850);
+  it('is between 1.3 and 1.6 km long (trimmed: a bot lap of about 54 s)', () => {
+    expect(track.length).toBeGreaterThan(1300);
+    expect(track.length).toBeLessThan(1600);
   });
 
   it('has the signature features: branch-road bridges, a void jump between crowns, humps and a boost pad', () => {
@@ -35,12 +35,12 @@ describe('Autumn Speedway', () => {
     }
   });
 
-  it('the spiral climbs at least 50 m round the Great Trunk, and its levels are far apart in height', () => {
+  it('the spiral climbs at least 35 m (one turn, ~21 %) round the Great Trunk, and its levels are far apart in height', () => {
     const s0 = track.sAt(at('spiral'));
     const s1 = track.sAt(at('spiralTop'));
     const y0 = track.pointAt(s0).y;
     const y1 = track.pointAt(s1).y;
-    expect(y1 - y0).toBeGreaterThan(50);
+    expect(y1 - y0).toBeGreaterThan(35);
     // Wherever the road passes over itself (the spiral's turns), the two levels are at least 7 m apart.
     const S = track.samples;
     for (let i = 0; i < S.length; i += 2) {

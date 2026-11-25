@@ -17,8 +17,9 @@
  *
  * AIR CONTROL (no guidance): the arc is aimed at the target from the cap, but the kart keeps part of how it arrived. Its
  * launch velocity is the ideal one plus BOUNCE.carryLateral / carryForward of the entry velocity's error (sideways, and
- * too fast / too slow), and half of its offset from the cap's centre stays. A well-aligned kart at racing speed lands on
- * the target; one that comes in off-centre, at a bad angle or too slowly drifts off it. In the air the steering moves the
+ * too fast / too slow), and half of its offset from the cap's centre stays. A straight, centred kart at ANY speed from 20 m/s
+ * up to a boosted top speed (40) lands on the target without a touch of the controls (forward error is forgiven within
+ * BOUNCE.slowFree / fastFree); one that comes in off-centre, at a bad angle or crawling drifts off it. In the air the steering moves the
  * kart sideways (lateral acceleration, capped) and gas / brake nudge it forward / back (see `BOUNCE.air*`), so the player
  * has to line the landing up. Missing the cap and the road means the abyss and a respawn. Bots fly with `Bouncers.pilot`.
  * (Tricks still work: a bounce counts as a ramp launch, so a trick gives its boost on landing.)
@@ -53,6 +54,14 @@ export const BOUNCE = {
   refSpeed: 28,
   /** The entry error that counts is capped at this (m/s). */
   carryMax: 14,
+  /**
+   * Forward entry error that is FORGIVEN (m/s). Too fast: a kart may arrive anywhere up to refSpeed + fastFree (40 m/s: a
+   * boosted kart's top speed) and the bounce still lands on the target: full racing speed and a boost pad must never cost
+   * the cap. Too slow: a kart down to refSpeed - slowFree (20 m/s) still makes it; below that the shortfall is carried.
+   * (The skill is lining up sideways and not crawling in, not lifting off the gas.)
+   */
+  fastFree: 12,
+  slowFree: 8,
   /** Share of the kart's offset from the cap's centre that is still there on landing (0 = always lands on the target). */
   keepOffset: 0.5,
   /** Air control: sideways acceleration at full steering and its cap (m/s^2, m/s); forward / back nudge from gas / brake. */
@@ -292,7 +301,11 @@ export class Bouncers {
       const ex = k.vel.x - refX;
       const ez = k.vel.z - refZ;
       const cap = (v: number) => Math.max(-BOUNCE.carryMax, Math.min(BOUNCE.carryMax, v));
-      const errF = cap(ex * ux + ez * uz) * BOUNCE.carryForward;
+      // Forward error: forgiven inside [-slowFree, +fastFree], carried beyond (see BOUNCE.fastFree).
+      const rawF = ex * ux + ez * uz;
+      // (Only for an entry from the road: a chained hop carries the error of the hop before in full, so a crawl stays a crawl.)
+      const outF = prev ? rawF : rawF > 0 ? Math.max(0, rawF - BOUNCE.fastFree) : Math.min(0, rawF + BOUNCE.slowFree);
+      const errF = cap(outF) * BOUNCE.carryForward;
       const errR = cap(ex * rx + ez * rz) * BOUNCE.carryLateral;
       const vx = ux * (arc.speed + errF) + rx * errR;
       const vz = uz * (arc.speed + errF) + rz * errR;

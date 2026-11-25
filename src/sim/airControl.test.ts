@@ -30,15 +30,16 @@ function setup(from: string, back: number, speed: number) {
 }
 
 describe('green bridges join the road flush', () => {
-  const bridges: [string, string][] = [
-    ['g2a', 'g2b'], // Stepping Stones
-    ['g3a', 'g3b'], // Twin Spans, main road
-    ['caveIn', 'caveOut'], // the cave, main route
+  // [bridge start, bridge end, how far before it the kart starts (m): the Stepping Stones follow the Sky Leap's landing closely]
+  const bridges: [string, string, number][] = [
+    ['g2a', 'g2b', 24], // Stepping Stones
+    ['g3a', 'g3b', 40], // Twin Spans, main road
+    ['caveIn', 'caveOut', 50], // the cave, main route
   ];
 
-  it.each(bridges)('a kart drives across the green bridge at %s at 20 and 30 m/s without leaving the surface', (from, to) => {
+  it.each(bridges)('a kart drives across the green bridge at %s at 20 and 30 m/s without leaving the surface', (from, to, back) => {
     for (const speed of [20, 30]) {
-      const { world, k } = setup(from, 50, speed);
+      const { world, k } = setup(from, back, speed);
       const style = { ...botStyleFor(0), shortcutBias: 0, pace: 1 };
       const ground = world.bouncers!.wrapGround(track);
       let airRun = 0;
@@ -56,7 +57,7 @@ describe('green bridges join the road flush', () => {
           if (e.kind === 'respawn') respawned = true;
         }
         const g = ground.sample(k.pos.x, k.pos.z, k.trackIndex);
-        if (track.deltaS(track.sAt(at(from)), track.project(k.pos.x, k.pos.z, k.trackIndex).s) < -25) continue; // (the kart settles on the road first)
+        if (i < 30 || track.deltaS(track.sAt(at(from)), track.project(k.pos.x, k.pos.z, k.trackIndex).s) < -25) continue; // (the kart settles on the road first)
         if (k.grounded) airRun = 0;
         else longestAir = Math.max(longestAir, ++airRun);
         if (g) maxRise = Math.max(maxRise, k.pos.y - g.height);
@@ -121,6 +122,30 @@ describe('orange caps need skill: air control', () => {
     const hops = world.bouncers!.caps.filter((c) => c.kind === 'orange' && track.project(c.x, c.z).route === route).length;
     return { respawned, bounces, landed: !respawned && bounces === hops && ends < 6 };
   }
+
+  // Full racing speed (and a boost) must never cost the cap: a straight, centred entry lands every chain with NO input.
+  for (const route of [1, 2]) {
+    const name = route === 1 ? 'Twin Spans' : 'the cave';
+    it.each([20, 28, 32, 38])(`${name}: a straight, centred entry at %i m/s lands the whole chain with no input at all`, (speed) => {
+      expect(fly(route, 0, 0, speed, 'none').landed).toBe(true);
+    });
+  }
+
+  it.each([20, 28, 32, 38])('Sky Leap: rolling onto the huge cap at %i m/s with no input at all lands on the far road', (speed) => {
+    const { world, k } = setup('g1a', 14, speed);
+    let bounces = 0;
+    let respawned = false;
+    for (let i = 0; i < 60 * 8; i++) {
+      for (const e of world.tick(() => ({ steer: 0, buttons: 0 }))) {
+        if (e.kind === 'bounce') bounces++;
+        if (e.kind === 'respawn') respawned = true;
+      }
+      if (bounces > 0 && k.grounded && !world.bouncers!.bouncing(0)) break;
+    }
+    expect(respawned).toBe(false);
+    expect(bounces).toBe(1);
+    expect(track.deltaS(track.sAt(at('g1a')) + 50, track.project(k.pos.x, k.pos.z, k.trackIndex).s), 'landed beyond the gorge').toBeGreaterThan(0);
+  });
 
   for (const route of [1, 2]) {
     const name = route === 1 ? 'Twin Spans' : 'the cave';

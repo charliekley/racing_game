@@ -8,17 +8,20 @@
  * The whole lap is a mountain road (north = +z, east = +x; the start line is at the foot of the mountain, heading east):
  *
  *   1. FOOTHILLS   (y 30)       a short warm-up through three bends, boost pad.
- *   2. SWITCHBACKS (30 -> 77)   three hairpins up the east face on a rock ledge (the cliff drops away on the outside
+ *   2. SWITCHBACKS (30 -> 72)   three hairpins up the east face on a rock ledge (the cliff drops away on the outside
  *                               of every bend), the legs between them as steep as 15 %.
- *   3. SKY LEAP    (y 77 -> 73) a ridge road with a drop on both sides, then a 50 m gorge with ONE huge orange cap: a
- *                               single big floaty bounce (apex 9 m) lands you on the far side.
- *   4. STEPPING STONES (73)     the ridge winds on, then a 62 m gorge crossed on a snaking path of GREEN caps.
- *   5. TWIN SPANS  (72)         a road down the west face. The gorge has a CHOICE: the main road crosses on a long
+ *   3. SKY LEAP    (y 72 -> 69) the ridge turns north-west (RIDGE_TILT) with a drop on both sides, then a 50 m gorge with ONE
+ *                               huge orange cap: a single big floaty bounce (apex 9 m) lands you on the far side.
+ *   4. STEPPING STONES (67)     a 62 m gorge crossed on a snaking path of GREEN caps.
+ *   5. TWIN SPANS  (65)         a road down the west face. The gorge has a CHOICE: the main road crosses on a long
  *                               green bridge; a rough dirt shortcut leaves to the left and hops over the same gorge on
  *                               three ORANGE caps (shorter, a trick on the last hop pays out a boost).
- *   6. THE CAVE    (68 -> 58)   a long bend into a huge glowing cave. The chasm inside has TWO ROUTES again: the main
+ *   6. THE CAVE    (60 -> 57)   a long bend into a huge glowing cave. The chasm inside has TWO ROUTES again: the main
  *                               road on green caps, or a dirt shortcut on a chain of five orange caps.
- *   7. DESCENT     (58 -> 30)   a fast run down the mountain (slopes up to 15 %) back to the foothills.
+ *   7. THE CLIFF   (57 -> 30)   out of the cave the road swings back left towards the start, runs to a lip and one huge orange
+ *                               cap throws you over a 54 m gap and 21 m down onto the road below (any entry speed lands), which
+ *                               leads in one bend to the start line. (The old 460 m road home is gone: the ridge leaves the
+ *                               crest to the north-west so the lap is a compact loop and the cave's exit is near the line.)
  *
  * HOW THE ROUTE IS WRITTEN: with a "turtle". A turtle stands on the road, heading somewhere, and obeys commands:
  * `line(len, dy)` drives straight, `turn(r, deg, dy)` drives a circle arc (positive = right turn, negative = left),
@@ -35,67 +38,99 @@ export const G1_LEN = 50;
 export const G2_LEN = 62;
 export const G3_LEN = 84;
 export const CAVE_LEN = 126;
+/** The cliff drop at the end of the lap: the gap (m) and how far the road below lies under the lip (m). */
+export const CLIFF_LEN = 54;
+export const CLIFF_DROP = 21;
 
 
 // ---------------------------------------------------------------------------
 // The route
 // ---------------------------------------------------------------------------
 
+/** The way home (see section 7): the smallest radius of the last bend (m), the run-up to the cliff lip and the road below the cliff before the last bend (m). */
+const MIN_HOME_R = 40;
+/** The ridge leaves the crest this many degrees north of west (and the road turns this much more to face south at its end): the west face then starts higher, so the lap closes sooner. */
+const RIDGE_TILT = 28;
+const CLIFF_RUN_UP = 30;
+const CLIFF_LANDING = 34;
+
 const t = new Turtle(0, 0, 30, 90).mark('start');
 
 // ---- 1. Foothills: a short warm-up through three bends, boost pad on the way to the first hairpin ----
-t.line(8, 0.3).turn(80, 15, 0.2).turn(80, -24, 0.3).turn(80, 9, 0.2).line(6, 0.2).mark('foot');
+t.line(4, 0.3).turn(70, 20, 0.2).turn(70, -34, 0.3).turn(70, 14, 0.2).line(2, 0.2).mark('foot');
 // ---- 2. Switchbacks up the east face: three hairpins (left, right, left), steep legs between ----
-t.turn(30, -180, 8.5).mark('hair1'); //  left hairpin: the cliff drops away on its outside (south)
-t.wiggle(50, 7.5, 21).mark('leg2'); //   15 % climb, a gentle S
-t.turn(30, 180, 8.5).mark('hair2'); //    right hairpin
-t.wiggle(50, 7.0, 21).mark('leg3'); //   14 % climb
-t.turn(30, -180, 8.5).mark('crest'); //   left hairpin: the crest, heading west
+t.turn(30, -180, 10).mark('hair1'); //  left hairpin: the cliff drops away on its outside (south)
+t.wiggle(34, 5.1, 30).mark('leg2'); //   15 % climb, a gentle S
+t.turn(30, 180, 10).mark('hair2'); //    right hairpin
+t.wiggle(34, 4.8, 30).mark('leg3'); //   14 % climb
+t.turn(30, -180, 10).mark('crest'); //   left hairpin: the crest, heading west
 // ---- 3. Sky Leap: the ridge road (a drop on both sides) and ONE huge bounce over a 50 m gorge ----
-t.line(19, 0); // a stretch of ridge (keeps everything from the Twin Spans on exactly where the mountain was built for it)
+t.turn(100, RIDGE_TILT, 0).mark('ridgeTurn'); //  the ridge leads off to the north-west: that lifts the whole west face, so the way home is short
 t.turn(200, 5, 0).mark('ridge1').turn(200, 5, 0).mark('g1a'); //  boost pad on the approach
 t.turn(200, -arcDeg(G1_LEN, 200), -2.5).mark('g1b'); //   the far side is 2.5 m lower: a long floaty descent
-t.turn(200, arcDeg(G1_LEN, 200) - 10, -1.5).mark('g1c');
-t.turn(150, 6, -0.5).mark('g1end').turn(150, -6, -0.5); // the ridge winds
+t.turn(200, arcDeg(G1_LEN, 200) - 10, -1.5).mark('g1c').mark('g1end');
 // ---- 4. Stepping Stones: a gorge crossed on a path of green caps ----
-t.turn(170, 8, -0.2).mark('g2pre');
-t.turn(170, 4, -0.1).mark('g2a');
+t.turn(170, 3, -0.2).mark('g2pre');
+t.turn(170, 3, -0.1).mark('g2a');
 t.turn(170, -arcDeg(G2_LEN, 170), -1.5).mark('g2b');
-t.turn(170, arcDeg(G2_LEN, 170) - 12, -0.5).mark('g2end');
+t.turn(170, arcDeg(G2_LEN, 170) - 6, -0.5).mark('g2end');
 // ---- 5. Twin Spans: round the corner and down the west face to the gorge with the choice ----
-t.turn(36, -90, -1.5).mark('turnSouth');
-t.line(14, -0.3);
+t.turn(36, -(90 + RIDGE_TILT), -1.5).mark('turnSouth');
 t.turn(200, 5, -0.2).mark('g3fork'); //  the dirt shortcut leaves here (about 36 m before the gorge)
 t.turn(200, 5, -0.2).turn(200, 5, -0.2).mark('g3a'); //     the gorge: 84 m
 t.turn(200, -arcDeg(G3_LEN, 200), -2).mark('g3b');
 t.turn(200, arcDeg(G3_LEN, 200) - 9, -0.3); //            back to heading south...
 t.turn(200, -6, -0.3).mark('g3join'); //                  ...and the shortcut rejoins
 // ---- 6. The cave: the road bends into a huge glowing cave; the chasm inside has two routes ----
-t.line(12, -0.4);
+t.line(2, -0.4);
 t.turn(200, -5, -0.2).mark('caveFork'); // the dirt shortcut leaves here
 t.turn(200, -5, -0.2).turn(200, -5, -0.2).mark('caveIn'); //  the chasm: 126 m (an S-bend inside)
 t.turn(200, arcDeg(CAVE_LEN / 2, 200), -1);
 t.turn(200, -arcDeg(CAVE_LEN / 2, 200), -1).mark('caveOut');
 t.turn(200, 15, -0.4).mark('caveEnd'); //                  ...and the shortcut rejoins
-t.turn(40, -90, -1.5).mark('turnEast'); // the road comes out of the mountain heading east
-// ---- 7. Descent: up the mountain side, two sweeping S-bends, then a right turn that closes the lap at the start line ----
+// ---- 7. THE CLIFF: out of the cave the road sweeps back round towards the start and runs to a lip; one huge orange cap
+//         throws you off it, down onto the road 21 m below, and a short run brings you to the start line ----
 {
-  const total = t.y - 30; // the height still to lose
-  // Sweeping S-bends (radius 70 to 120 m: bends you carve, not a straight you wait out), with a dip and a crest between them.
-  const sBend = (r: number, side: 1 | -1, deg: number, dy: number) => t.turn(r, side * deg, dy / 2).turn(r, -side * deg, dy / 2);
-  t.turn(36, -90, -0.1 * total).mark('chuteTop');
-  sBend(90, 1, 26, -0.25 * total).mark('chute');
-  sBend(110, -1, 20, -0.15 * total);
-  sBend(80, 1, 18, -0.1 * total).mark('chuteS3');
-  // The last turn is a circle arc whose radius is whatever puts its end exactly 34 m before the start line.
-  const r = -34 - t.x;
-  const run = -t.z - r; // metres to drive straight north before it
-  if (run < 0 || r < 28) throw new Error(`mushroomValley: the lap does not close (run ${run.toFixed(0)}, r ${r.toFixed(0)}; at ${t.x.toFixed(0)}, ${t.z.toFixed(0)})`);
-  const rest = t.y - 30; // what is left to lose, spread evenly over the last stretch
-  const lenRun = run;
-  const lenTurn = (Math.PI / 2) * r;
-  t.line(run, (-rest * lenRun) / (lenRun + lenTurn)).mark('chuteBend');
-  t.turn(r, 90, (-rest * lenTurn) / (lenRun + lenTurn)).mark('chuteEnd');
+  // The way home. A left bend (radius r1) points the road back at the start line; then comes a straight (the run-up to the
+  // cliff, the cliff and the road below it) and a last RIGHT bend whose radius r2 and the straight's length L are solved so
+  // that the lap closes exactly 34 m before the start line, heading east:
+  //   end = (turtle after the first bend) + L (sin h, cos h) + r2 (cos h, 1 - sin h),   h = the heading there.
+  // The first bend's angle is the smallest one that leaves the last bend a radius of at least MIN_HOME_R.
+  const r1 = 42;
+  const closure = (c: { x: number; z: number; heading: number }) => {
+    const h = (c.heading * Math.PI) / 180;
+    const [sn, cs] = [Math.sin(h), Math.cos(h)];
+    const dx = -34 - c.x;
+    const dz = 0 - c.z;
+    const det = sn * (1 - sn) - cs * cs;
+    return { L: (dx * (1 - sn) - cs * dz) / det, r2: (sn * dz - cs * dx) / det };
+  };
+  const lead = CLIFF_RUN_UP + 2 + CLIFF_LEN + CLIFF_LANDING; // lip, gap and landing
+  let deg = 90;
+  while (deg < 179 && closure(new Turtle(t.x, t.z, t.y, t.heading).turn(r1, -deg)).r2 < MIN_HOME_R) deg += 0.25;
+  t.turn(r1, -deg, -1.2).mark('returnBend');
+  const { L, r2 } = closure(t);
+  const turnDeg = (((90 - t.heading + 540) % 360) + 360) % 360 - 180; // the last bend: from the heading we have to east (positive = right)
+  if (L < lead + 10 || r2 < 28) throw new Error(`mushroomValley: the lap does not close (L ${L.toFixed(0)}, r ${r2.toFixed(0)}, turn ${turnDeg.toFixed(0)}; at ${t.x.toFixed(0)}, ${t.z.toFixed(0)})`);
+  const lenTurn = (Math.abs(turnDeg) * Math.PI * r2) / 180;
+  const rest = t.y - CLIFF_DROP - 30; // height still to lose after the cliff, spread evenly over the road below
+  const before = L - lead; // (what is left of the straight before the run-up: a fast run to the cliff)
+  // ...an S-curve (a bend one way, two the other, one back: the line and the heading come out unchanged) so that the run to the
+  // cliff is not a straight; the last 12 m before the lip are straight.
+  const sLen = before + CLIFF_RUN_UP - 12;
+  if (sLen >= 40) {
+    const rc = 36; // radius of the bends (m)
+    const bend = Math.min(30, ((sLen / 4 / rc) * 180) / Math.PI); // degrees
+    t.turn(rc, bend, -0.2).turn(rc, -2 * bend, -0.2).turn(rc, bend, -0.2);
+    t.line(12, -0.2).mark('cliffRun');
+  } else {
+    t.line(before, -0.2);
+    t.line(CLIFF_RUN_UP, -0.2).mark('cliffRun');
+  }
+  t.line(2, 0).mark('cliffA'); //                             the lip
+  t.line(CLIFF_LEN, -CLIFF_DROP).mark('cliffB'); //           the gap (the spline drops 21 m across it)
+  t.line(CLIFF_LANDING, (-rest * CLIFF_LANDING) / (CLIFF_LANDING + lenTurn)).mark('cliffLand');
+  t.turn(r2, turnDeg, (-rest * lenTurn) / (CLIFF_LANDING + lenTurn)).mark('homeEnd');
 }
 
 const route: RoutePoint[] = t.route;
@@ -149,6 +184,11 @@ const add = (c: CapDef): number => caps.push(c) - 1;
 // SKY LEAP: ONE huge orange cap on the lip of the gorge. It throws you across the whole gap in a single, long, floaty
 // arc (1.8 s in the air, apex about 9 m, landing on the far road 4 m lower).
 add({ kind: 'orange', radius: 11, at: at('g1a'), ds: 7, dy: -0.4, air: 1.8, to: { at: at('g1a'), ds: G1 + 12 } });
+// THE CLIFF: one more huge orange cap, on the lip of the last drop. Whatever speed a kart arrives with it is thrown out
+// over the edge and comes down on the road 21 m below (the aim point is deep inside the landing, so even a slow kart that
+// carries a shortfall still lands on the road). Big, floaty, 2.1 s in the air.
+const CLIFF_Y = route[at('cliffA')].p[2] - 0.1;
+add({ kind: 'orange', radius: 11, x: local('cliffA', 3).x, z: local('cliffA', 3).z, y: CLIFF_Y, air: 2.1, to: { at: at('cliffA'), ds: CLIFF_LEN + 32 } });
 // STEPPING STONES: a snaking path of big green caps (they overlap, so it is one continuous bridge).
 for (let k = 0; k < 5; k++) {
   const off = [0, 4.5, -3.5, 3.5, 0][k];
@@ -250,15 +290,15 @@ function massif(radius: number, below: number, extra: { x: number; z: number; y:
  * road: the nearest is over 150 m away), so the mountain stands in mountain country, not on a flat plain.
  */
 const FOOTHILLS: Bump[] = [
-  { x: 0, z: -60, radius: 620, height: 6 }, // (low: the cloud sea hides the valleys, the course stands high above)
-  { x: 470, z: -40, radius: 190, height: 70 },
-  { x: 450, z: 230, radius: 170, height: 85 },
-  { x: 150, z: 480, radius: 190, height: 80 },
-  { x: -220, z: 430, radius: 180, height: 95 },
-  { x: -520, z: 120, radius: 200, height: 85 },
-  { x: -500, z: -250, radius: 190, height: 90 },
-  { x: -170, z: -560, radius: 200, height: 80 },
-  { x: 240, z: -480, radius: 190, height: 70 },
+  { x: -70, z: 80, radius: 640, height: 6 }, // (low: the cloud sea hides the valleys, the course stands high above)
+  { x: 318, z: 248, radius: 190, height: 70 },
+  { x: 91, z: 487, radius: 170, height: 85 },
+  { x: -231, z: 487, radius: 190, height: 80 },
+  { x: -458, z: 248, radius: 180, height: 95 },
+  { x: -458, z: -88, radius: 200, height: 85 },
+  { x: -231, z: -327, radius: 190, height: 90 },
+  { x: 91, z: -327, radius: 200, height: 80 },
+  { x: 318, z: -88, radius: 190, height: 70 },
 ];
 
 /** Spots beside the road where the dirt shortcuts run: the mountain has to carry them too (see `massif`). */
@@ -304,19 +344,22 @@ export const mushroomValley: TrackDef = {
     { from: at('g3b'), to: at('g3join') - BRANCH_GAP, side: 'right' },
     { from: at('caveFork') + BRANCH_GAP, to: at('caveIn'), side: 'left' },
     { from: at('caveOut'), to: at('caveEnd') - BRANCH_GAP, side: 'left' },
+    // The cliff: a fence on both sides of the run to the lip, and of the road below it.
+    { from: at('cliffRun'), to: at('cliffA'), side: 'both' },
+    { from: at('cliffB'), to: at('cliffLand'), side: 'both' },
   ],
-  // A small rock kicker on the way down (a smooth crest, no gap: a trick off it pays a boost) in the S-bends that replaced the long run-in.
-  ramps: [{ at: at('chute') + 0.5, length: 9, height: 1.2, shape: 'hump' }],
+  ramps: [],
   boostPads: [
-    { at: at('foot') - 0.4, offset: 0, length: 8, width: 5 }, // up the first climb
+    { at: at('foot') - 2.2, offset: 0, length: 8, width: 5 }, // up the first climb
     { at: at('ridge1') + 0.4, offset: 0, length: 8, width: 5 }, // speed into the Sky Leap
     { at: at('g2pre') - 0.2, offset: 0, length: 8, width: 5 }, // ...and into the green bridge
-    { at: at('turnEast') + 0.4, offset: 0, length: 8, width: 5 }, // into the cave
-    { at: at('chuteTop') + 1.2, offset: 0, length: 8, width: 5 }, // down the chute
+    { at: at('returnBend') + 0.3, offset: 0, length: 8, width: 5 }, // out of the bend, towards the cliff
+    { at: at('cliffRun') - 0.4, offset: 0, length: 8, width: 5 }, // speed for the cliff (boosted karts land fine too)
+    { at: at('cliffLand') + 0.6, offset: 0, length: 8, width: 5 }, // ...and a boost for the run home
   ],
   laps: 3,
   checkpoints: 20,
-  itemRowSpacing: 160, // eleven rows of boxes about 158 m apart: one before and one after every crossing
+  itemRowSpacing: 130, // twelve rows of boxes: one before and one after every crossing
   scenery: {
     seed: 61,
     trees: 320,
@@ -326,6 +369,7 @@ export const mushroomValley: TrackDef = {
         { from: at('g1a'), to: at('g1b') },
         { from: at('g2a'), to: at('g2b') },
         { from: at('g3a'), to: at('g3b') },
+        { from: at('cliffA'), to: at('cliffB') },
       ],
       cave: { from: at('caveIn'), to: at('caveOut'), halfWidth: 58, roof: 46, offset: -CAVE_SIDE * 0.42 }, // the vault is centred between the main road and the orange route (NB: `offset` is in the track's own lateral axis `d`, which is the opposite of `local()`'s `lat`: the route at local lat +30 is at d -30)
       glow: 130,
@@ -351,6 +395,7 @@ export const mushroomValley: TrackDef = {
       { from: at('g1a'), to: at('g1b'), pad: 14, fade: 45 },
       { from: at('g2a'), to: at('g2b'), pad: 14, fade: 45 },
       { from: at('g3a'), to: at('g3b'), pad: 6, fade: 40 },
+      { from: at('cliffA'), to: at('cliffB'), pad: 14, fade: 45 },
       // The cave: the hill (the rock shell, +-58 m round its axis) stands as a mesa of its own; only the ground OUTSIDE it falls away.
       { from: at('caveIn'), to: at('caveOut'), pad: 26, fade: 40, inner: [74, 44], open: false },
     ],
@@ -393,6 +438,7 @@ export const mushroomValley: TrackDef = {
     { at: at('g2a'), length: G2 },
     { at: at('g3a'), length: G3 },
     { at: at('caveIn'), length: CAVE },
+    { at: at('cliffA'), length: CLIFF_LEN },
   ],
   // No `cliffs`: a cliff would cut the ground away on that whole side (and in a wedge reaching out to the horizon). The
   // mountain's own steep flanks fall away outside the rope-fence walls instead; the gorges are `chasms`.

@@ -96,6 +96,9 @@ export function layoutStats(track: Track): LayoutStats {
 
   // Grades: height change over GRADE_WINDOW metres ahead, for every driven sample whose window is driven too.
   const w = Math.max(1, Math.round(GRADE_WINDOW / ds));
+  // (A chasm's gap is not driven either: its control points may drop far more steeply than any road, e.g. Mushroom Valley's
+  // cliff; a window that touches a gap is left out of the grades.)
+  const inGap = S.map((p) => track.inGap(p.s));
   let maxClimb = 0;
   let maxDrop = 0;
   let gradeSum = 0;
@@ -104,6 +107,9 @@ export function layoutStats(track: Track): LayoutStats {
   for (let i = 0; i < n; i++) {
     const j = (i + w) % n;
     if (!driven[i] || !driven[j]) continue;
+    let touchesGap = false;
+    for (let k = 0; k <= w && !touchesGap; k++) touchesGap = inGap[(i + k) % n];
+    if (touchesGap) continue;
     const g = (S[j].y - S[i].y) / (w * ds);
     maxClimb = Math.max(maxClimb, g);
     maxDrop = Math.max(maxDrop, -g);
