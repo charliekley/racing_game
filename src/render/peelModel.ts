@@ -2,8 +2,8 @@
  * The Peel: a yellow fruit-peel lying on the road, built from code (no model files).
  *
  *   - a low rounded cap in the middle with a darker stem on top,
- *   - four strips that run outward along the ground and then curl back up and over (like a peeled fruit),
- *   - brown speckles and browner tips, smooth shading.
+ *   - three strips (120 degrees apart) that run outward along the ground and then curl back up and over (like a peeled fruit),
+ *   - bright yellow all over, with only a hint of warm gold at the tips and a few tiny tan freckles (little brown), smooth shading.
  *
  * Maths, since this is the interesting part: each strip is a "ribbon". Its centre line lives in a
  * 2-D plane (distance r from the middle, height y). We walk along it in small steps; at each step the
@@ -23,10 +23,9 @@ export const PEEL_RADIUS = 1.05;
 
 const STRIPS = [
   // angle (rad) around the middle, length (m), maximum curl (rad), base width (m)
-  { angle: 0.35, length: 1.0, curl: 2.7, width: 0.46 },
-  { angle: 1.85, length: 0.88, curl: 2.3, width: 0.42 },
-  { angle: 3.3, length: 1.02, curl: 3.0, width: 0.47 },
-  { angle: 4.75, length: 0.9, curl: 2.5, width: 0.43 },
+  { angle: 0.4, length: 1.05, curl: 2.7, width: 0.55 },
+  { angle: 0.4 + (Math.PI * 2) / 3, length: 0.95, curl: 2.4, width: 0.52 },
+  { angle: 0.4 + (Math.PI * 4) / 3, length: 1.05, curl: 2.9, width: 0.55 },
 ];
 
 const smoothstep = (a: number, b: number, x: number) => {
@@ -55,10 +54,10 @@ function paint(source: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGe
 
 const U = 20; // steps along a strip
 const V = 6; // steps across it
-const OUTER = new THREE.Color('#f5d21c');
-const OUTER_DEEP = new THREE.Color('#e3ad10');
-const TIP = new THREE.Color('#8b5e16');
-const INNER = new THREE.Color('#f2e4a4');
+const OUTER = new THREE.Color('#ffe81a');
+const OUTER_DEEP = new THREE.Color('#ffd400');
+const TIP = new THREE.Color('#e0a812');
+const INNER = new THREE.Color('#fff4a8');
 
 /** Point on a strip's surface: u = 0..1 along, v = 0..1 across, `lift` = distance out of the surface (m). */
 function stripPoint(s: (typeof STRIPS)[number], u: number, v: number, lift: number, out: THREE.Vector3): THREE.Vector3 {
@@ -102,7 +101,7 @@ function stripSkin(s: (typeof STRIPS)[number], lift: number, inner: boolean): TH
       stripPoint(s, u, j / V, lift, p);
       pos.push(p.x, p.y, p.z);
       if (inner) c.copy(INNER);
-      else c.copy(OUTER).lerp(OUTER_DEEP, u).lerp(TIP, smoothstep(0.78, 1, u) * 0.8);
+      else c.copy(OUTER).lerp(OUTER_DEEP, u).lerp(TIP, smoothstep(0.78, 1, u) * 0.55);
       col.push(c.r, c.g, c.b);
     }
   }
@@ -144,17 +143,17 @@ export function buildPeelGeometry(): THREE.BufferGeometry {
   stem.translate(0, 0.15, 0);
   stem.rotateZ(0.28);
   stem.translate(0.02, 0.1, 0.0);
-  parts.push(paint(stem, new THREE.Color('#5b3b12')));
+  parts.push(paint(stem, new THREE.Color('#a8841a')));
   const stemEnd = new THREE.CircleGeometry(0.055, 10).rotateX(-Math.PI / 2).rotateZ(0.28);
   stemEnd.translate(0.02 - Math.sin(0.28) * 0.3, 0.1 + Math.cos(0.28) * 0.3 + 0.002, 0); // top centre of the tilted stem
-  parts.push(paint(stemEnd, new THREE.Color('#2e1c08')));
+  parts.push(paint(stemEnd, new THREE.Color('#7a5a10')));
 
   // Speckles: tiny flattened dark blobs on the flat start of each strip, and a few on the cap.
   const rnd = lcg(11);
   const p = new THREE.Vector3();
-  const speck = new THREE.Color('#4d3009');
+  const speck = new THREE.Color('#c79a1c');
   for (const s of STRIPS) {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       const u = 0.1 + rnd() * 0.38;
       const v = 0.2 + rnd() * 0.6;
       stripPoint(s, u, v, 0.006, p);

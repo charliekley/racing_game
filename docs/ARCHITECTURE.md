@@ -87,8 +87,8 @@ racing_game/
    │  ├─ race.ts               ✅ countdown/rocket start, checkpoints, laps, ranking, finish
    │  ├─ world.ts              ✅ track + karts + race, respawn carrier, tick() → events
    │  ├─ autopilot.ts          ✅ computer driver (bots, tests)
-   │  ├─ items/                ✅ types.ts (ids, names, shared shapes), odds.ts (position-
-   │  │                           weighted rolls), items.ts (boxes, roulette, the seven items,
+   │  ├─ items/                ✅ types.ts (ids, names, shared shapes), odds.ts (place table-
+   │  │                           weighted rolls), items.ts (boxes, roulette, the ten items (Hunter, Decoy and the triple packs included),
    │  │                           hits, shields, Nova bumps; bot item button),
    │  │                           groundPose.ts (height + tilt of a flat object on the road)
    │  └─ items/                one file per item behind an `ItemBehavior` interface

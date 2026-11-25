@@ -26,6 +26,11 @@ export const Buttons = {
   ITEM: 1 << 3,
   /** Pulsed for a few frames when the phone detects a flick/shake. */
   TRICK: 1 << 4,
+  /**
+   * Sent together with ITEM while the player swipes DOWN on the ITEM button: "use the item BACKWARD"
+   * (a backward Ricochet; Peels and Decoys drop behind anyway). Holding BRAKE while using ITEM means the same.
+   */
+  BACK: 1 << 5,
 } as const;
 export type ButtonName = keyof typeof Buttons;
 export const BUTTON_NAMES = Object.keys(Buttons) as ButtonName[];

@@ -80,6 +80,14 @@ export class KartView {
   private shownHeld: THREE.Object3D | null = null;
   /** Set by the game each frame: the item currently dragged behind this kart (shots only; a dragged Slick is a world entity). */
   trailingItem: ItemId | null = null;
+  /**
+   * Set by the game each frame: the triple pack this kart carries. Ricochet x3 = that many green orbs orbiting
+   * the kart (they block hits); Peel x3 = that many small peels in a line behind it (null while the real peels are dragged).
+   */
+  pack: { id: 'ricochet' | 'slick'; count: number } | null = null;
+  private packGroup: THREE.Group | null = null;
+  private orbs: THREE.Object3D[] = [];
+  private peels: THREE.Object3D[] = [];
   private tmp = new THREE.Vector3();
   private back = new THREE.Vector3();
   /** Interpolated pose from the last `update` (the camera reads this). */
@@ -277,11 +285,45 @@ export class KartView {
     this.shell.update(dt, now, cur.rocketTime > 0, cur.rocketTime);
     this.cloud.update(dt, p.x, p.y, p.z, cur.zapTime, ITEMS.stormZapSeconds);
     this.showTrailing(this.trailingItem);
+    this.showPack(now);
 
     // Respawn carrier: hovers above and lowers the kart back onto the track.
     this.tmp.set(p.x, p.y, p.z);
     const lowering = cur.respawnTime > 0;
     this.drone.update(this.tmp, p.heading, lowering ? 2.4 + CARRIER_HEIGHT * 0.15 : 0, dt, lowering);
+  }
+
+  /** Ricochet x3 orbiting the kart, Peel x3 lined up behind it (up to `count` of each; the rest are hidden). */
+  private showPack(t: number): void {
+    if (!this.packGroup) {
+      if (!this.pack) return; // nothing to show, nothing built
+      const g = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const orb = buildHeldItemMesh('ricochet')!;
+        const peel = buildHeldItemMesh('slick')!;
+        orb.visible = peel.visible = false;
+        g.add(orb, peel);
+        this.orbs.push(orb);
+        this.peels.push(peel);
+      }
+      this.model.root.add(g);
+      this.packGroup = g;
+    }
+    const rico = this.pack?.id === 'ricochet' ? this.pack.count : 0;
+    const peel = this.pack?.id === 'slick' ? this.pack.count : 0;
+    for (let i = 0; i < 3; i++) {
+      const orb = this.orbs[i];
+      orb.visible = i < rico;
+      if (orb.visible) {
+        // Evenly spaced round the kart, one lap every ~2 s; each orb faces along its path.
+        const a = t * 3.2 + (i * Math.PI * 2) / Math.max(1, rico);
+        orb.position.set(Math.sin(a) * 1.55, 0.6 + Math.sin(t * 5 + i) * 0.05, Math.cos(a) * 1.55);
+        orb.rotation.y = a + Math.PI / 2;
+      }
+      const pl = this.peels[i];
+      pl.visible = i < peel;
+      if (pl.visible) pl.position.set(0, 0.05, -ITEMS.trailDistance - i * ITEMS.tripleTrailGap);
+    }
   }
 
   /** Show the small item mesh dragged behind the kart (or hide it). */

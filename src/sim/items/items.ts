@@ -28,7 +28,13 @@ import { angleDiff, railAim, steerToward } from './rail';
 import { rollItem } from './odds';
 import { ROULETTE_SECONDS, type HeldItem, type ItemBox, type ItemEntity, type ItemId } from './types';
 
-export type HitSource = 'slick' | 'ricochet' | 'seeker' | 'nova' | 'rocket' | 'storm';
+export type HitSource = 'slick' | 'ricochet' | 'seeker' | 'decoy' | 'hunter' | 'nova' | 'rocket' | 'storm';
+
+/** What a Ricochet x3 orbiting a kart can block (one charge per hit). The Hunter's blast, Nova, Rocket and Storm go through. */
+const SHIELDABLE: readonly HitSource[] = ['slick', 'ricochet', 'seeker', 'decoy'];
+
+/** Things dropped on the road (or dragged behind the owner): the Peel and the Decoy box. */
+const isTrap = (e: { kind: string }) => e.kind === 'slick' || e.kind === 'decoy';
 
 /** Shots are the fast projectiles; the other entity kinds are traps (peel) or effects tied to a kart. */
 const isShot = (e: { kind: string }) => e.kind === 'ricochet' || e.kind === 'seeker';
@@ -46,7 +52,9 @@ export type ItemEvent =
   | { kind: 'itemGet'; slot: number; item: HeldItem }
   | { kind: 'itemUse'; slot: number; id: ItemId }
   | { kind: 'hit'; slot: number; by: HitSource; attacker: number | null }
-  | { kind: 'blocked'; slot: number; by: HitSource }
+  | { kind: 'blocked'; slot: number; by: HitSource; /** True when an orbiting Ricochet x3 took the hit (one charge used up). */ shield?: boolean }
+  /** `attacker`'s Hunter exploded at (x, y, z) (`target` = the leader it was after, if it got there). */
+  | { kind: 'blast'; x: number; y: number; z: number; attacker: number; target: number | null }
   /** `slot`'s steering was flipped by `attacker`'s Jumble. */
   | { kind: 'jumbled'; slot: number; attacker: number }
   /** `attacker`'s Storm struck `slot`: it loses its item, spins out and shrinks. */
@@ -72,6 +80,8 @@ export interface ItemState {
   holdTime: number;
   /** Item is being dragged behind the kart. */
   trailing: boolean;
+  /** BACK (swipe down on the phone's ITEM button) or BRAKE was seen while ITEM was down: use the item backward on release. */
+  backward: boolean;
 }
 
 /** Internal entity: the public ItemEntity plus simulation data. */
@@ -83,6 +93,8 @@ interface Entity extends ItemEntity {
   /** Seconds before it can hurt its owner. */
   grace: number;
   trackIndex: number;
+  /** Hunter: distance to its target last tick (m), to explode when it starts to fly past. */
+  lastDist?: number;
 }
 
 type Standings = number[]; // slots, first place first
@@ -127,6 +139,16 @@ export class ItemSystem {
     if (st.roulette > 0) return { kind: 'roulette' };
     if (st.held) return { kind: 'item', id: st.held.id, count: st.held.count };
     return { kind: 'none' };
+  }
+
+  /**
+   * The triple pack this player carries (Ricochet x3 orbiting the kart, Peel x3 trailing it), or null.
+   * Stays set while charges are left, even when only one is left.
+   */
+  packOf(slot: number): { id: 'ricochet' | 'slick'; count: number } | null {
+    const h = this.states.get(slot)?.held;
+    if (!h || !h.pack || (h.id !== 'ricochet' && h.id !== 'slick')) return null;
+    return { id: h.id, count: h.count };
   }
 
   /**
@@ -204,7 +226,9 @@ export class ItemSystem {
       }
 
       const id = st.held.id;
-      const trailable = id === 'slick' || id === 'ricochet' || id === 'seeker';
+      const trailable = id === 'slick' || id === 'ricochet' || id === 'seeker' || id === 'decoy';
+      if (pressedNow) st.backward = false;
+      if (down && input && (input.buttons & Buttons.BACK) !== 0) st.backward = true; // (BRAKE counts only on the tick of release, below)
       if (pressedNow) {
         if (trailable) {
           st.pressing = true;
@@ -216,10 +240,13 @@ export class ItemSystem {
         st.holdTime += dt;
         if (st.holdTime >= ITEMS.tapSeconds && !st.trailing) {
           st.trailing = true;
-          if (id === 'slick') this.spawnSlick(slot, k, true);
+          // Dragged traps hang behind the kart: a Peel x3 drags all its remaining peels in a line.
+          if (id === 'slick') for (let i = 0; i < st.held.count; i++) this.spawnTrap('slick', slot, k, true, i);
+          if (id === 'decoy') this.spawnTrap('decoy', slot, k, true, 0);
         }
       } else if (st.pressing && releasedNow) {
-        const backward = !!input && (input.buttons & Buttons.BRAKE) !== 0;
+        // Backward: swiped down on ITEM (BACK), or BRAKE held when letting go (the older way).
+        const backward = st.backward || (!!input && (input.buttons & (Buttons.BRAKE | Buttons.BACK)) !== 0);
         this.use(slot, k, st, events, backward, karts);
       }
     }
@@ -240,6 +267,18 @@ export class ItemSystem {
       events.push({ kind: 'blocked', slot, by });
       return false;
     }
+    // An orbiting Ricochet x3 shields its kart: each hit from a shot or a trap uses up one of the three.
+    const own = this.states.get(slot);
+    if (SHIELDABLE.includes(by) && own?.held?.id === 'ricochet' && own.held.pack) {
+      own.held.count -= 1;
+      if (own.held.count <= 0) {
+        own.held = null;
+        own.pressing = false;
+        own.trailing = false;
+      }
+      events.push({ kind: 'blocked', slot, by, shield: true });
+      return false;
+    }
     spinOut(k, this.configOf(slot));
     // A hit while dragging an item loses it (a dragged Slick is left on the road).
     const st = this.states.get(slot);
@@ -251,11 +290,13 @@ export class ItemSystem {
   /** Stop dragging. If `lose`, the dragged item is gone (a dragged Slick stays where it is). */
   private cancelHold(slot: number, st: ItemState, lose: boolean): void {
     if (!st.trailing && !st.pressing) return;
-    if (st.trailing && st.held?.id === 'slick') {
-      const e = this.entities.find((x) => x.kind === 'slick' && x.owner === slot && x.trailing);
-      if (e) {
-        e.trailing = false;
-        e.grace = ITEMS.ownerGrace;
+    if (st.trailing && (st.held?.id === 'slick' || st.held?.id === 'decoy')) {
+      // Every dragged trap (a Peel x3 drags up to three) is left lying where it is.
+      for (const e of this.entities) {
+        if (isTrap(e) && e.owner === slot && e.trailing) {
+          e.trailing = false;
+          e.grace = ITEMS.ownerGrace;
+        }
       }
     }
     st.pressing = false;
@@ -296,16 +337,24 @@ export class ItemSystem {
       case 'nova':
         k.starTime = KART.novaTime;
         break;
-      case 'slick': {
-        const trailing = this.entities.find((e) => e.kind === 'slick' && e.owner === slot && e.trailing);
-        if (trailing) {
-          trailing.trailing = false; // drop where it is
-          trailing.grace = ITEMS.ownerGrace;
+      case 'slick':
+      case 'decoy': {
+        // Drop the nearest dragged one where it is (the others close up); with nothing dragged, drop a new one behind.
+        const mine = this.entities.filter((e) => e.kind === held.id && e.owner === slot && e.trailing);
+        const nearest = mine.reduce<Entity | undefined>((a, e) => (!a || (e.trailIndex ?? 0) < (a.trailIndex ?? 0) ? e : a), undefined);
+        if (nearest) {
+          nearest.trailing = false;
+          nearest.grace = ITEMS.ownerGrace;
+          for (const e of mine) if (e !== nearest) e.trailIndex = Math.max(0, (e.trailIndex ?? 0) - 1);
+          st.trailing = mine.length > 1 && held.count > 1; // the rest of a Peel x3 keeps trailing
         } else if (!wasTrailing) {
-          this.spawnSlick(slot, k, false);
+          this.spawnTrap(held.id, slot, k, false, 0);
         }
         break;
       }
+      case 'hunter':
+        this.spawnHunter(slot, k);
+        break;
       case 'jumble':
         this.jumbleAhead(slot, karts, events);
         break;
@@ -328,18 +377,18 @@ export class ItemSystem {
     if (held.count <= 0) st.held = null;
   }
 
-  private spawnSlick(owner: number, k: KartState, trailing: boolean): void {
-    // Keep the number of slicks on the road bounded: the oldest one goes first.
-    const slicks = this.entities.filter((e) => e.kind === 'slick' && !e.trailing);
-    if (slicks.length >= ITEMS.maxSlicks) this.remove(slicks[0]);
-    const fx = Math.sin(k.heading);
-    const fz = Math.cos(k.heading);
-    const x = k.pos.x - fx * ITEMS.trailDistance;
-    const z = k.pos.z - fz * ITEMS.trailDistance;
+  /** A Peel or a Decoy box on the road behind the kart (or, with `trailing`, hanging behind it at place `index` of the line). */
+  private spawnTrap(kind: 'slick' | 'decoy', owner: number, k: KartState, trailing: boolean, index: number): void {
+    // Keep the number of traps on the road bounded: the oldest one goes first.
+    const traps = this.entities.filter((e) => isTrap(e) && !e.trailing);
+    if (traps.length >= ITEMS.maxSlicks) this.remove(traps[0]);
+    const back = ITEMS.trailDistance + index * ITEMS.tripleTrailGap;
+    const x = k.pos.x - Math.sin(k.heading) * back;
+    const z = k.pos.z - Math.cos(k.heading) * back;
     const pose = groundPose(this.track, x, z, k.heading, k.trackIndex, k.pos.y);
     this.entities.push({
       uid: this.nextUid++,
-      kind: 'slick',
+      kind,
       x,
       y: pose.y,
       z,
@@ -348,11 +397,32 @@ export class ItemSystem {
       heading: k.heading,
       owner,
       trailing,
+      trailIndex: index,
       speed: 0,
       age: 0,
       bounces: 0,
       target: null,
       grace: ITEMS.ownerGrace,
+      trackIndex: k.trackIndex,
+    });
+  }
+
+  /** The Hunter takes off just in front of the kart; it picks its target (the current leader) as it flies. */
+  private spawnHunter(owner: number, k: KartState): void {
+    this.entities.push({
+      uid: this.nextUid++,
+      kind: 'hunter',
+      x: k.pos.x + Math.sin(k.heading) * ITEMS.muzzleDistance,
+      y: k.pos.y,
+      z: k.pos.z + Math.cos(k.heading) * ITEMS.muzzleDistance,
+      heading: k.heading,
+      owner,
+      trailing: false,
+      speed: ITEMS.hunterSpeed,
+      age: 0,
+      bounces: 0,
+      target: null,
+      grace: 0,
       trackIndex: k.trackIndex,
     });
   }
@@ -396,22 +466,27 @@ export class ItemSystem {
   // --- Objects: movement and collisions -------------------------------------------------------
   private updateEntities(karts: Map<number, KartState>, events: ItemEvent[], dt: number, ground: Ground): void {
     const dead = new Set<Entity>();
-    const slicks = this.entities.filter((e) => e.kind === 'slick');
+    const slicks = this.entities.filter(isTrap);
     this.applyShoves(karts, dt);
 
     for (const e of this.entities) {
       e.age += dt;
       e.grace = Math.max(0, e.grace - dt);
 
-      if (e.kind === 'slick') {
+      if (e.kind === 'hunter') {
+        this.updateHunter(e, karts, events, dt, ground, dead);
+        continue;
+      }
+      if (isTrap(e)) {
         if (e.trailing) {
           const owner = karts.get(e.owner);
           if (!owner) {
             dead.add(e);
             continue;
           }
-          e.x = owner.pos.x - Math.sin(owner.heading) * ITEMS.trailDistance;
-          e.z = owner.pos.z - Math.cos(owner.heading) * ITEMS.trailDistance;
+          const back = ITEMS.trailDistance + (e.trailIndex ?? 0) * ITEMS.tripleTrailGap;
+          e.x = owner.pos.x - Math.sin(owner.heading) * back;
+          e.z = owner.pos.z - Math.cos(owner.heading) * back;
           e.heading = owner.heading;
           const pose = groundPose(this.track, e.x, e.z, e.heading, owner.trackIndex, owner.pos.y);
           e.y = pose.y;
@@ -428,7 +503,7 @@ export class ItemSystem {
           e.pitch = pose.pitch;
           e.roll = pose.roll;
         }
-        if (e.age > ITEMS.slickLifetime) dead.add(e);
+        if (e.age > (e.kind === 'decoy' ? ITEMS.decoyLifetime : ITEMS.slickLifetime)) dead.add(e);
         continue;
       }
       // Shots
@@ -473,11 +548,7 @@ export class ItemSystem {
           dead.add(e);
           dead.add(sl);
           events.push({ kind: 'itemDestroyed', x: sl.x, z: sl.z });
-          if (sl.trailing) {
-            // The shield took the hit: the owner's Slick is used up.
-            const st = this.states.get(sl.owner);
-            if (st) Object.assign(st, { held: null, trailing: false, pressing: false });
-          }
+          if (sl.trailing) this.useUpTrailing(sl);
           break;
         }
       }
@@ -485,12 +556,12 @@ export class ItemSystem {
 
     // Objects vs karts.
     for (const e of this.entities) {
-      if (dead.has(e) || e.trailing) continue;
-      const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
+      if (dead.has(e) || e.trailing || e.kind === 'hunter') continue;
+      const r = e.kind === 'slick' ? ITEMS.slickRadius : e.kind === 'decoy' ? ITEMS.decoyRadius : e.kind === 'ricochet' ? ITEMS.ricochetRadius : ITEMS.seekerRadius;
       for (const [slot, k] of karts) {
         if (k.respawnTime > 0 || k.spinTime > 0 || k.invulnTime > 0 || k.flight) continue; // protected karts: shots and slicks pass through
         if (slot === e.owner && e.grace > 0) continue;
-        if (e.kind === 'slick' && !k.grounded) continue; // jumping over a slick is fine
+        if (isTrap(e) && !k.grounded) continue; // jumping over a peel or a decoy is fine
         if (Math.abs(k.pos.y - e.y) > 2.2) continue;
         const d = Math.hypot(k.pos.x - e.x, k.pos.z - e.z);
         if (d < r + KART.radius * 0.6 * k.size) {
@@ -501,6 +572,107 @@ export class ItemSystem {
       }
     }
     for (const e of dead) this.remove(e);
+  }
+
+  /** A shot hit a dragged Peel / Decoy: that one is used up and the rest of the line closes up (a Peel x3 has three shields). */
+  private useUpTrailing(hit: Entity): void {
+    const st = this.states.get(hit.owner);
+    if (!st) return;
+    const idx = hit.trailIndex ?? 0;
+    for (const e of this.entities) {
+      if (e !== hit && e.kind === hit.kind && e.owner === hit.owner && e.trailing && (e.trailIndex ?? 0) > idx) e.trailIndex = (e.trailIndex ?? 0) - 1;
+    }
+    if (st.held) st.held.count -= 1;
+    if (!st.held || st.held.count <= 0) Object.assign(st, { held: null, trailing: false, pressing: false });
+  }
+
+  // --- Hunter ----------------------------------------------------------------------------------------
+  /** The racer a Hunter fired by `owner` goes for: the first racer in the standings that is still in play (never the owner). */
+  private hunterTarget(owner: number, karts: Map<number, KartState>): number | null {
+    for (const slot of this.lastStandings) {
+      const k = karts.get(slot);
+      if (slot === owner || !k || this.lastFinished.has(slot) || k.respawnTime > 0) continue;
+      return slot;
+    }
+    return null;
+  }
+
+  /**
+   * One tick of a Hunter. It flies along the ROAD (rail.ts, like the Seeker) at a speed no kart can match,
+   * straight past everybody (it only has eyes for the leader), and once the leader is close it dives onto it
+   * and explodes. If it runs out of time first it bursts where it is.
+   */
+  private updateHunter(e: Entity, karts: Map<number, KartState>, events: ItemEvent[], dt: number, ground: Ground, dead: Set<Entity>): void {
+    const track = this.track;
+    const tslot = this.hunterTarget(e.owner, karts);
+    e.target = tslot;
+    const tk = tslot !== null ? karts.get(tslot) : undefined;
+    if (e.age > ITEMS.hunterLifetime) {
+      dead.add(e);
+      this.explodeHunter(e, null, karts, events);
+      return;
+    }
+    const here = track.project(e.x, e.z, e.trackIndex);
+    const tp = tk && !tk.flight ? track.project(tk.pos.x, tk.pos.z, tk.trackIndex) : null;
+    const hdist = tk ? Math.hypot(tk.pos.x - e.x, tk.pos.z - e.z) : Infinity;
+    const diving = !!(tk && tp && hdist < ITEMS.hunterDiveRange && track.deltaS(here.s, tp.s) < ITEMS.hunterDiveRange + 6);
+    if (diving && tk) {
+      // Dive: turn onto the target, slow down so the turn is tight enough, and sink toward it from above.
+      e.speed = Math.min(ITEMS.hunterSpeed, Math.max(tk.speed + 8, hdist * 2.2 + 10));
+      e.heading = steerToward(e.heading, e.x, e.z, tk.pos.x, tk.pos.z, ITEMS.hunterTurnRate * dt);
+      const want = tk.pos.y + 0.4 + Math.min(ITEMS.hunterDiveHeight, hdist * 0.3);
+      const step = 30 * dt;
+      e.y += Math.max(-step, Math.min(step, want - e.y));
+    } else {
+      e.speed = ITEMS.hunterSpeed;
+      // Follow the road, lined up with the target's side of it (and onto its branch if it took a shortcut).
+      const half = here.width / 2 - 1.2;
+      const lane = tp && tp.route === 0 ? Math.max(-half, Math.min(half, tp.d)) : 0;
+      const aim = railAim(track, e.x, e.z, e.trackIndex, ITEMS.hunterLookahead + e.speed * 0.15, lane, tp ? tp.route : 0);
+      e.heading = steerToward(e.heading, e.x, e.z, aim.x, aim.z, ITEMS.hunterRailTurnRate * dt);
+    }
+    e.x += Math.sin(e.heading) * e.speed * dt;
+    e.z += Math.cos(e.heading) * e.speed * dt;
+    e.trackIndex = track.project(e.x, e.z, e.trackIndex).index;
+    if (!diving) e.y = followGround(ground, e, dt);
+    else {
+      const g = ground.sample(e.x, e.z, e.trackIndex);
+      if (g) e.y = Math.max(e.y, g.height); // never into the ground
+    }
+    // Fuse: close enough to the target, or starting to fly past it.
+    if (diving && tk) {
+      const d = Math.hypot(tk.pos.x - e.x, tk.pos.z - e.z);
+      const passing = d < ITEMS.hunterFuseRange * 2 && d > (e.lastDist ?? Infinity);
+      e.lastDist = d;
+      if (d < ITEMS.hunterFuseRange || passing) {
+        dead.add(e);
+        this.explodeHunter(e, tslot, karts, events);
+      }
+    } else {
+      e.lastDist = undefined;
+    }
+  }
+
+  /**
+   * The Hunter's blast: every kart within `hunterBlastRadius` metres (except the owner) spins out and is hopped up
+   * a little; the target (the leader) is thrown much higher and spins longer. Nova, Rocket and cannon flights are immune.
+   */
+  private explodeHunter(e: Entity, target: number | null, karts: Map<number, KartState>, events: ItemEvent[]): void {
+    events.push({ kind: 'blast', x: e.x, y: e.y, z: e.z, attacker: e.owner, target });
+    for (const [slot, k] of karts) {
+      if (slot === e.owner || k.respawnTime > 0) continue;
+      if (Math.hypot(k.pos.x - e.x, k.pos.z - e.z) > ITEMS.hunterBlastRadius || Math.abs(k.pos.y - e.y) > 6) continue;
+      if (!this.hitKart(slot, karts, 'hunter', e.owner, events)) continue;
+      const isTarget = slot === target;
+      if (isTarget) {
+        // The leader is hit hardest: a longer spin and a big hop.
+        const c = this.configOf(slot);
+        k.spinTime = c.spinTime * ITEMS.hunterTargetSpinFactor;
+        k.invulnTime = k.spinTime + c.hitInvulnTime;
+      }
+      k.vel.y = Math.max(0, k.vel.y) + (isTarget ? ITEMS.hunterLaunchTarget : ITEMS.hunterLaunchOthers);
+      k.grounded = false;
+    }
   }
 
   // --- Rocket --------------------------------------------------------------------------------------
@@ -861,7 +1033,7 @@ function followGround(ground: Ground, e: { x: number; z: number; heading: number
 }
 
 function newState(): ItemState {
-  return { held: null, roulette: 0, heldFor: 0, wasDown: false, pressing: false, holdTime: 0, trailing: false };
+  return { held: null, roulette: 0, heldFor: 0, wasDown: false, pressing: false, holdTime: 0, trailing: false, backward: false };
 }
 
 /**

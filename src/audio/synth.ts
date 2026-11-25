@@ -313,6 +313,28 @@ export const SYNTHS: Record<SoundId, SynthFn> = {
     tone(e, t, { type: 'square', f0: 600, f1: 200, dur: 0.1, gain: 0.15 * g, cutoff: 2500 });
     return 0.2;
   },
+  // Hunter launch: a rising, fluttering whine (wings) that climbs away.
+  useHunter: (e, t, g) => {
+    tone(e, t, { type: 'sawtooth', f0: 260, f1: 1500, dur: 0.55, gain: 0.22 * g, cutoff: 3000, vib: [60, 28] });
+    tone(e, t + 0.05, { type: 'triangle', f0: 520, f1: 2400, dur: 0.45, gain: 0.14 * g });
+    noiseBurst(e, t, { dur: 0.25, gain: 0.2 * g, filter: 'bandpass', f0: 1800, f1: 4200, q: 1.2 });
+    return 0.55;
+  },
+  // Decoy dropped: a sly two-note "plink" with a squeaky pitch drop (a fake box).
+  useDecoy: (e, t, g) => {
+    tone(e, t, { type: 'square', f0: 700, f1: 520, dur: 0.1, gain: 0.16 * g, cutoff: 2600 });
+    tone(e, t + 0.09, { type: 'square', f0: 440, f1: 300, dur: 0.16, gain: 0.16 * g, cutoff: 2000 });
+    noiseBurst(e, t, { dur: 0.05, gain: 0.15 * g, filter: 'highpass', f0: 3500 });
+    return 0.28;
+  },
+  // Hunter explosion: a deep boom, a violet crackle and a falling whistle of debris.
+  hunterBlast: (e, t, g) => {
+    tone(e, t, { type: 'sine', f0: 150, f1: 30, dur: 0.7, gain: 0.95 * g });
+    noiseBurst(e, t, { dur: 0.8, gain: 0.75 * g, filter: 'lowpass', f0: 3200, f1: 120, q: 0.8 });
+    tone(e, t, { type: 'sawtooth', f0: 900, f1: 120, dur: 0.5, gain: 0.2 * g, cutoff: 2200 });
+    tone(e, t + 0.1, { type: 'triangle', f0: 1800, f1: 400, dur: 0.6, gain: 0.12 * g, vib: [80, 24] });
+    return 0.85;
+  },
   // Mushroom trampoline: a springy "boing": a low sine that leaps up, a squeaky overtone and a wobbling tail.
   bounce: (e, t, g) => {
     tone(e, t, { type: 'sine', f0: 140, f1: 640, dur: 0.26, gain: 0.55 * g });

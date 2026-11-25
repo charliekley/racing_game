@@ -50,8 +50,9 @@ function setup(karts: KartState[], t: Track = track) {
 describe('new item ids', () => {
   it('are appended at the end (indices go over the network) and have player-facing names', () => {
     expect(ITEM_IDS.slice(0, 6)).toEqual(['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble']);
-    expect(ITEM_IDS.slice(6)).toEqual(['storm', 'rocket']); // they took over the slots of the retired Magnet and Bumper
-    expect(ITEM_IDS.length).toBe(8);
+    expect(ITEM_IDS.slice(6, 8)).toEqual(['storm', 'rocket']); // they took over the slots of the retired Magnet and Bumper
+    expect(ITEM_IDS.slice(8)).toEqual(['hunter', 'decoy']); // appended later (see hunterDecoy.test.ts)
+    expect(ITEM_IDS.length).toBe(10);
     expect(ITEM_INFO.slick.name).toBe('Peel'); // the id stays `slick`, players see "Peel"
     expect(ITEM_INFO.storm.name).toBe('Storm');
     expect(ITEM_INFO.rocket.name).toBe('Rocket');

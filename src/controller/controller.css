@@ -291,6 +291,9 @@ body.playing.need-rotate .rotate { display: flex; }
 .btn.item .btn-icon { display: none; }
 .btn.item.has-item .btn-icon { display: block; }
 .btn.item.has-item .item-label { display: none; }
+/* Swipe down on ITEM = use backward: a small arrow while a Ricochet is held, a big flash while swiping. */
+.btn.item.hint-back::after { content: '\2193'; position: absolute; left: 8px; bottom: 4px; font-size: 18px; font-weight: 900; color: #fff; opacity: 0.75; pointer-events: none; text-shadow: 0 1px 3px #000; }
+.btn.item.back::after { content: '\2193'; position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); font-size: 44px; font-weight: 900; color: #fff; opacity: 1; pointer-events: none; text-shadow: 0 2px 6px #000; }
 .chips { display: flex; gap: 8px; }
 
 /* ---------- Pre-race flow: name -> character -> kart -> ready (built in selectFlow.ts) ---------- */

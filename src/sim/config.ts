@@ -152,7 +152,7 @@ export const ITEMS = {
   /** Item box pick-up radius (m) and how long a collected box stays away (s). */
   boxRadius: 1.9,
   boxRespawn: 5,
-  /** Item-box rows per track: one row every this many metres, 3 boxes per row. */
+  /** Item-box rows per track: one row every this many metres, 4 boxes per row. */
   rowSpacing: 260,
   /** ITEM pressed for less than this counts as a "tap" (use at once); longer = drag it behind you (s). */
   tapSeconds: 0.18,
@@ -251,6 +251,36 @@ export const ITEMS = {
 
   /** Shots spawn this far in front of / behind the kart (m). */
   muzzleDistance: 2.4,
+
+  // --- Triple packs (Ricochet x3, Peel x3) --------------------------------------------------------
+  /** Spacing (m) between the peels of a dragged Peel x3 (a line behind the kart; the first sits at `trailDistance`). */
+  tripleTrailGap: 2.3,
+
+  // --- Decoy: a fake item box (red tinted) that spins out whoever touches it ------------------------
+  decoyRadius: 1.5,
+  decoyLifetime: 60,
+
+  // --- Hunter: flies along the road to the CURRENT LEADER, drops on it and explodes ------------------
+  /** Speed (m/s) and lifetime (s). It outruns every kart; 62 m/s x 22 s covers about 1.3 km of road. */
+  hunterSpeed: 62,
+  hunterLifetime: 22,
+  /** Turn rate (rad/s) while following the road line, and on the final dive onto the target. */
+  hunterRailTurnRate: 6,
+  hunterTurnRate: 7,
+  hunterLookahead: 9,
+  /** The dive starts when the leader is this close (m) and on the same stretch of road. */
+  hunterDiveRange: 38,
+  /** Height (m) the hunter keeps above the leader at the start of the dive (it sinks onto it while closing in). */
+  hunterDiveHeight: 5,
+  /** It explodes when it is this close (m, sideways) to its target. */
+  hunterFuseRange: 2.4,
+  /** Blast radius (m): every kart inside spins out; the leader (the target) is also thrown up in the air. */
+  hunterBlastRadius: 7,
+  /** Launch speed (m/s, upwards) of the target and of other victims. */
+  hunterLaunchTarget: 11,
+  hunterLaunchOthers: 5,
+  /** The target spins for this many times a normal spin-out (the leader is hit hardest), and loses this fraction of its speed. */
+  hunterTargetSpinFactor: 1.6,
 } as const;
 
 /**

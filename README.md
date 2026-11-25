@@ -156,17 +156,21 @@ serves the files.
 
 You can slide your thumb between GAS and BRAKE without lifting it.
 
-**Items:** drive through the rainbow **item boxes** (rows of three; they come back
+**Items:** drive through the rainbow **item boxes** (rows of four across the road; they come back
 5 s later). A roulette spins for about 1.6 s on the phone and the TV, then you
 get an item. **The further back you are, the better your items** (leaders mostly
-get Peels and Ricochets and never the strongest ones). You can only hold one
+get Peels, Decoys and Ricochets and never the strongest ones; the odds are a 12-place table in `src/sim/items/odds.ts`). You can only hold one
 at a time. On the phone the item's icon appears in the **ITEM button** itself.
 
 | Item | What it does |
 |---|---|
 | **Dash** (single or pack of 3) | Instant speed boost. The pack gives three boosts, one per tap. |
-| **Peel** (internal id `slick`) | A 3-D fruit peel that lies on the road (it follows banking, hills and ramps) and spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
-| **Ricochet** | A fast shot that bounces off walls a few times. **Tap** to fire forward, or hold **BRAKE** while you let go to fire **backward**. Hold ITEM to drag it behind you first. |
+| **Peel x3** | Three peels in a line behind you. A tap drops one; hold ITEM to drag all three (each blocks one shot), release to drop the nearest. |
+| **Decoy** | A fake item box, **tinted red**. Tap to drop it behind you, or hold ITEM to drag it as a shield; whoever touches it spins out like on a Peel. Mostly for front-runners. |
+| **Ricochet x3** | Three **green** ricochets orbit your kart: each one blocks a hit (shots, peels, decoys), or fire them one at a time. |
+| **Hunter** | A spiky, winged violet orb that flies along the road **past everybody** to the **current leader**, drops on it and **explodes**: every kart within ~7 m spins out, the leader is also thrown into the air and spins longer. Nova and Rocket are immune. **Rare, only from mid-pack back, never for the leader.** |
+| **Peel** (internal id `slick`) | A bright yellow 3-flap fruit peel that lies on the road (it follows banking, hills and ramps) and spins out whoever drives over it (jumping over it is safe). **Tap** to drop it behind you. **Hold** ITEM to drag it behind you as a shield: it blocks shots from behind. Release to drop it. |
+| **Ricochet** | A fast **green** shot that bounces off walls a few times. **Tap** to fire forward, or **swipe down on the ITEM button** (press and drag down; a small arrow shows on the button while you hold a Ricochet) to fire **backward** (holding **BRAKE** while you let go also works). Hold ITEM to drag it behind you first. |
 | **Seeker** | A homing shot that **follows the road** to the racer directly ahead of you (round corners and hairpins, and over jumps, ravines and cannon gaps through the air), then homes in when it is close. If you're in the lead it follows the road and hits whoever it meets. |
 | **Nova** | 7 s of invincibility: faster, ignores grass, immune to hits, and bumping a rival spins them out. |
 | **Jumble** | Sprays ink on the **two racers just ahead of you**: their steering is flipped left/right for 4.5 s and an ink splat covers part of a human's screen. Computer drivers have to re-learn the controls (they veer, over-correct, wobble and lift; easy bots suffer most, hard bots least) and can run wide. **Rare, and only for karts well behind** (nothing in the front half of the field); Nova blocks it. |

@@ -26,6 +26,8 @@ export const SOUND_IDS = [
   'hitBeetle',
   // Mushroom trampoline (Mushroom Valley). Only ever append to this list.
   'bounce',
+  // Hunter and Decoy (and the Hunter's explosion). Only ever append to this list.
+  'useHunter', 'useDecoy', 'hunterBlast',
 ] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
@@ -117,7 +119,7 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
     case 'itemUse': {
       const map: Record<string, SoundId> = {
         dash: 'useDash', slick: 'useSlick', ricochet: 'useRicochet', seeker: 'useSeeker', nova: 'useNova', jumble: 'useJumble',
-        storm: 'useStorm', rocket: 'useRocket',
+        storm: 'useStorm', rocket: 'useRocket', hunter: 'useHunter', decoy: 'useDecoy',
       };
       const id = map[String(ev.id)];
       return id ? [cue(id)] : [];
@@ -133,6 +135,8 @@ export function soundsForEvent(e: Ev, ctx: MapContext): Cue[] {
       return [cue('zap')];
     case 'squashed':
       return [cue('squash')];
+    case 'blast':
+      return [cue('hunterBlast')];
     case 'itemDestroyed':
       return [{ id: 'itemDestroyed', gain: 0.6, rate: 1 }];
     case 'bounce':

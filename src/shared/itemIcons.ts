@@ -115,10 +115,9 @@ function peelStrip(ctx: CanvasRenderingContext2D, length: number, width: number)
 
 const slick = unit((ctx) => {
   const strips = [
-    { a: -2.55, len: 0.4, w: 0.2 },
-    { a: -0.6, len: 0.42, w: 0.2 },
-    { a: 0.75, len: 0.4, w: 0.19 },
-    { a: 2.3, len: 0.38, w: 0.19 },
+    { a: -2.6, len: 0.44, w: 0.23 },
+    { a: -0.5, len: 0.46, w: 0.23 },
+    { a: 1.6, len: 0.44, w: 0.22 },
   ];
   ctx.save();
   ctx.translate(0.5, 0.56);
@@ -127,13 +126,13 @@ const slick = unit((ctx) => {
     ctx.save();
     ctx.rotate(st.a);
     peelStrip(ctx, st.len, st.w);
-    fillOutline(ctx, '#f7d51f');
+    fillOutline(ctx, '#ffe81a');
     // Cream inside of the curled tip, and brown speckles.
     ctx.beginPath();
     ctx.ellipse(st.len * 0.82, st.w * 0.12, st.len * 0.14, st.w * 0.2, 0.3, 0, TAU);
     ctx.fillStyle = '#f4e7a8';
     ctx.fill();
-    ctx.fillStyle = '#6a4512';
+    ctx.fillStyle = '#d6a512';
     for (const [dx, dy] of [[0.45, -0.02], [0.3, 0.03], [0.58, 0.0]]) {
       ctx.beginPath();
       ctx.arc(st.len * dx, st.w * dy, 0.012, 0, TAU);
@@ -144,10 +143,10 @@ const slick = unit((ctx) => {
   // Middle cap and stem.
   ctx.beginPath();
   ctx.arc(0, 0, 0.12, 0, TAU);
-  fillOutline(ctx, '#eab912');
+  fillOutline(ctx, '#ffd400');
   ctx.beginPath();
   ctx.roundRect(-0.035, -0.2, 0.07, 0.16, 0.03);
-  fillOutline(ctx, '#6a4512', 0.035);
+  fillOutline(ctx, '#b98a14', 0.035);
   ctx.restore();
   shine(ctx, 0.42, 0.5, 0.05, 0.022, -0.5);
 });
@@ -168,7 +167,7 @@ const ricochet = unit((ctx) => {
   ctx.stroke();
   path();
   ctx.lineWidth = 0.085;
-  ctx.strokeStyle = '#7fe7ff';
+  ctx.strokeStyle = '#8dff9e';
   ctx.stroke();
 
   // Motion lines behind the ball
@@ -184,8 +183,8 @@ const ricochet = unit((ctx) => {
   // Ball
   const bx = 0.7, by = 0.32, br = 0.22;
   const g = ctx.createRadialGradient(bx - 0.07, by - 0.08, 0.02, bx, by, br);
-  g.addColorStop(0, '#9be7ff');
-  g.addColorStop(1, '#1e7bff');
+  g.addColorStop(0, '#b6ffb0');
+  g.addColorStop(1, '#14b83a');
   ctx.beginPath();
   ctx.arc(bx, by, br, 0, TAU);
   fillOutline(ctx, g);
@@ -554,11 +553,86 @@ const rocket = unit((ctx, t) => {
   ctx.restore();
 });
 
-export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble, storm, rocket };
+// ---------------------------------------------------------------------------
+// hunter: a violet spiky orb with golden wings and a glaring eye, shown mid-flight
+// ---------------------------------------------------------------------------
+const hunter = unit((ctx, t) => {
+  const flap = Math.sin(t / 110) * 0.05;
+  // Wings (gold), one each side, beating a little.
+  for (const sgn of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(0.5 + sgn * 0.14, 0.5);
+    ctx.bezierCurveTo(0.5 + sgn * 0.3, 0.3 - flap, 0.5 + sgn * 0.42, 0.22 - flap, 0.5 + sgn * 0.48, 0.14 - flap);
+    ctx.bezierCurveTo(0.5 + sgn * 0.5, 0.36, 0.5 + sgn * 0.44, 0.5, 0.5 + sgn * 0.4, 0.56);
+    ctx.bezierCurveTo(0.5 + sgn * 0.34, 0.5, 0.5 + sgn * 0.26, 0.58, 0.5 + sgn * 0.14, 0.6);
+    ctx.closePath();
+    fillOutline(ctx, '#ffc933');
+  }
+  // Spikes round the orb.
+  ctx.beginPath();
+  for (let i = 0; i < 16; i++) {
+    const a = (i * Math.PI) / 8 + Math.PI / 16;
+    const r = i % 2 === 0 ? 0.33 : 0.2;
+    const x = 0.5 + r * Math.cos(a);
+    const y = 0.56 + r * Math.sin(a);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  fillOutline(ctx, '#e9e2ff');
+  // Orb
+  const g = ctx.createRadialGradient(0.44, 0.5, 0.02, 0.5, 0.56, 0.2);
+  g.addColorStop(0, '#c9a6ff');
+  g.addColorStop(1, '#5a22d6');
+  ctx.beginPath();
+  ctx.arc(0.5, 0.56, 0.19, 0, TAU);
+  fillOutline(ctx, g, 0.04);
+  // Glaring eye: white almond with a dark pupil.
+  ctx.beginPath();
+  ctx.ellipse(0.5, 0.56, 0.12, 0.065, 0, 0, TAU);
+  fillOutline(ctx, '#ffffff', 0.025);
+  ctx.beginPath();
+  ctx.arc(0.5, 0.56, 0.035, 0, TAU);
+  ctx.fillStyle = '#c4122f';
+  ctx.fill();
+});
+
+// ---------------------------------------------------------------------------
+// decoy: a RED item box (a fake one) with a "?" and a wicked little spark
+// ---------------------------------------------------------------------------
+const decoy = unit((ctx, t) => {
+  const wob = Math.sin(t / 300) * 0.03;
+  ctx.save();
+  ctx.translate(0.5, 0.52);
+  ctx.rotate(-0.12 + wob);
+  ctx.beginPath();
+  ctx.roundRect(-0.3, -0.3, 0.6, 0.6, 0.12);
+  const g = ctx.createLinearGradient(-0.3, -0.3, 0.3, 0.3);
+  g.addColorStop(0, '#ff7a6e');
+  g.addColorStop(1, '#c4141f');
+  fillOutline(ctx, g);
+  // A paler inner panel, like the face of an item box.
+  ctx.beginPath();
+  ctx.roundRect(-0.21, -0.21, 0.42, 0.42, 0.08);
+  ctx.fillStyle = 'rgba(255,225,215,0.55)';
+  ctx.fill();
+  ctx.font = '900 0.44px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 0.06;
+  ctx.strokeStyle = '#ffffff';
+  ctx.strokeText('?', 0, 0.02);
+  ctx.fillStyle = '#7a0a14';
+  ctx.fillText('?', 0, 0.02);
+  ctx.restore();
+  shine(ctx, 0.3, 0.3, 0.06, 0.03, -0.7);
+});
+
+export const ITEM_ICONS: Record<ItemId, IconPainter> = { dash, slick, ricochet, seeker, nova, jumble, storm, rocket, hunter, decoy };
 
 /** Icons that move over time, so the host view must keep redrawing them. */
 export function isIconAnimated(id: string): boolean {
-  return id === 'dash' || id === 'nova' || id === 'seeker' || id === 'jumble' || id === 'storm' || id === 'rocket';
+  return id === 'dash' || id === 'hunter' || id === 'decoy' || id === 'nova' || id === 'seeker' || id === 'jumble' || id === 'storm' || id === 'rocket';
 }
 
 /** Draw `id` (any string; unknown ids get a "?"), plus a "×N" badge if count > 1. Clears nothing. */
