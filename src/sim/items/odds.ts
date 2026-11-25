@@ -1,54 +1,88 @@
 /**
  * Which item an item box gives you, depending on your race position.
  *
- * Idea ("rubber banding"): whoever is in front mostly gets defensive items
- * (traps, rear-firing shots) and rarely anything powerful; whoever is behind
- * gets the strong stuff (homing shots, Nova, dash packs) to catch up.
+ * Idea ("rubber banding"): whoever is in front mostly gets defensive items (peels, decoys, single shots) and
+ * never anything powerful; whoever is behind gets the strong stuff (Dash packs, Nova, Rocket, Storm) to catch up.
  *
- * Seeker, Jumble, Storm and Rocket only come out when someone is ahead of you. Jumble, Storm and Rocket are
- * also rare and only for karts well behind (each weight ramps from 0 at its own starting point in the field
- * up to the "last place" value; the leaders never see them).
- * Weights are given for the leader and for last place; every position in
- * between interpolates linearly, so the same table works for 2, 3 or 4 racers.
+ * The odds are written as a TABLE for a field of 12: one row per place, one column per pick, every row adding up
+ * to 100 (percent). Smaller fields (2 to 11 racers) read the same table by FRACTION of the field: the leader
+ * always reads row 1, last place always row 12, and a place in between reads a blend of the two rows around it.
+ * So "last of 4" gets what "last of 12" gets, and 2nd of 4 gets a mix of places 8 and 9 of the table.
  * Pure functions: deterministic given the random-number source.
  */
 import type { HeldItem } from './types';
 
-/** What can come out of a box. 'dash3' is the three-charge Dash pack. */
-export type ItemPick = 'dash' | 'dash3' | 'slick' | 'ricochet' | 'seeker' | 'nova' | 'jumble' | 'storm' | 'rocket';
-export const ITEM_PICKS: readonly ItemPick[] = ['dash', 'dash3', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'storm', 'rocket'];
+/** What can come out of a box. The `...3` picks are triple packs (3 charges). */
+export type ItemPick =
+  | 'slick'
+  | 'slick3'
+  | 'decoy'
+  | 'ricochet'
+  | 'ricochet3'
+  | 'seeker'
+  | 'dash'
+  | 'dash3'
+  | 'nova'
+  | 'jumble'
+  | 'hunter'
+  | 'storm'
+  | 'rocket';
+export const ITEM_PICKS: readonly ItemPick[] = [
+  'slick', 'slick3', 'decoy', 'ricochet', 'ricochet3', 'seeker', 'dash', 'dash3', 'nova', 'jumble', 'hunter', 'storm', 'rocket',
+];
 
 type Weights = Record<ItemPick, number>;
 
-/** Relative likelihoods (they don't need to add up to 100). */
-export const LEADER_WEIGHTS: Weights = { dash: 24, dash3: 2, slick: 40, ricochet: 32, seeker: 0, nova: 0, jumble: 0, storm: 0, rocket: 0 };
-export const LAST_WEIGHTS: Weights = { dash: 10, dash3: 20, slick: 3, ricochet: 6, seeker: 20, nova: 26, jumble: 6, storm: 5, rocket: 14 };
+/**
+ * THE TABLE: percent chance of each pick for each place of a 12-racer field (row 0 = 1st place ... row 11 = 12th).
+ * Columns follow ITEM_PICKS:
+ *
+ *   peel  peel3 decoy  rico rico3 seeker  dash dash3  nova jumble hunter storm rocket
+ *
+ * Shape, in words:
+ *   - Peel, Peel x3, Decoy and the single Ricochet are for the front (1st-4th) and fade out by about 6th;
+ *   - Seeker (homing) and Ricochet x3 fill 2nd-7th;
+ *   - Dash (single) lives in the middle, Dash x3 grows through the back half and peaks around 8th-9th;
+ *   - Jumble 4th-9th and the rare Hunter 4th-8th (never the leader);
+ *   - Nova from 7th, Rocket from 8th rising toward last, Storm only 9th-12th rising toward last.
+ */
+export const ITEM_TABLE: readonly (readonly number[])[] = [
+  //  peel peel3 decoy rico rico3 seeker dash dash3 nova jumble hunter storm rocket
+  [30, 8, 22, 28, 4, 0, 8, 0, 0, 0, 0, 0, 0], //  1st: only defensive stuff
+  [22, 8, 18, 20, 8, 10, 12, 2, 0, 0, 0, 0, 0], //  2nd
+  [16, 8, 12, 18, 12, 16, 14, 4, 0, 0, 0, 0, 0], //  3rd
+  [10, 6, 8, 12, 14, 22, 16, 6, 0, 4, 2, 0, 0], //  4th: first Jumble and Hunter
+  [5, 3, 4, 7, 14, 24, 20, 12, 0, 8, 3, 0, 0], //  5th
+  [2, 1, 2, 3, 12, 25, 22, 18, 0, 10, 5, 0, 0], //  6th
+  [1, 0, 1, 1, 8, 20, 20, 27, 6, 10, 6, 0, 0], //  7th: Nova starts
+  [0, 0, 0, 0, 4, 12, 16, 34, 12, 10, 6, 0, 6], //  8th: Rocket starts
+  [0, 0, 0, 0, 1, 8, 10, 36, 19, 8, 2, 4, 12], //  9th: Storm starts, Dash x3 peaks
+  [0, 0, 0, 0, 0, 4, 6, 32, 24, 4, 0, 8, 22], // 10th
+  [0, 0, 0, 0, 0, 2, 3, 22, 27, 0, 0, 12, 34], // 11th
+  [0, 0, 0, 0, 0, 0, 0, 16, 28, 0, 0, 14, 42], // 12th: Rocket, Storm and Nova
+];
+
+/** The picks that only make sense when somebody is ahead of you (a lone leader never gets them). */
+const NEEDS_SOMEONE_AHEAD: readonly ItemPick[] = ['seeker', 'jumble', 'hunter', 'storm', 'rocket'];
 
 /**
- * The comeback items are for karts well behind. Each one has a "from" point on the field scale f
- * (0 = leader, 1 = last place): nothing before it, then a linear ramp up to the last-place weight.
- *   Jumble from the middle, Storm from the back third, Rocket from the back 40 %.
+ * Weights (percent, adding up to 100) for `position` (1-based; may be fractional) out of `racers`.
+ * A lone racer gets the middle of the table.
  */
-export const JUMBLE_FROM = 0.5;
-export const STORM_FROM = 0.6;
-export const ROCKET_FROM = 0.6;
-const ramp = (f: number, from: number) => Math.max(0, (f - from) / (1 - from));
-
-/** Weights for 1-based `position` out of `racers`. */
 export function itemWeights(position: number, racers: number): Weights {
-  // f = 0 for the leader, 1 for last place. A lone racer gets the middle of the table.
+  // Where in the table: 0 = first row ... 11 = last row.
   const f = racers <= 1 ? 0.5 : Math.min(1, Math.max(0, (position - 1) / (racers - 1)));
+  const x = f * (ITEM_TABLE.length - 1);
+  const lo = Math.floor(x);
+  const hi = Math.min(ITEM_TABLE.length - 1, lo + 1);
+  const t = x - lo;
   const out = {} as Weights;
-  for (const k of ITEM_PICKS) out[k] = LEADER_WEIGHTS[k] + (LAST_WEIGHTS[k] - LEADER_WEIGHTS[k]) * f;
-  out.jumble = LAST_WEIGHTS.jumble * ramp(f, JUMBLE_FROM);
-  out.storm = LAST_WEIGHTS.storm * ramp(f, STORM_FROM);
-  out.rocket = LAST_WEIGHTS.rocket * ramp(f, ROCKET_FROM);
-  // Items that target "the racer(s) ahead of you" are pointless in the lead.
+  ITEM_PICKS.forEach((k, c) => (out[k] = ITEM_TABLE[lo][c] + (ITEM_TABLE[hi][c] - ITEM_TABLE[lo][c]) * t));
+  // Nobody ahead of you (1st place, or a lone racer in the lead): the targeting items are pointless; share their odds out.
   if (position <= 1) {
-    out.seeker = 0;
-    out.jumble = 0;
-    out.storm = 0;
-    out.rocket = 0;
+    for (const k of NEEDS_SOMEONE_AHEAD) out[k] = 0;
+    const total = ITEM_PICKS.reduce((a, k) => a + out[k], 0);
+    for (const k of ITEM_PICKS) out[k] = (out[k] * 100) / total;
   }
   return out;
 }
@@ -66,7 +100,10 @@ export function rollPick(position: number, racers: number, rnd: () => number): I
 }
 
 export function pickToItem(pick: ItemPick): HeldItem {
-  return pick === 'dash3' ? { id: 'dash', count: 3 } : { id: pick, count: 1 };
+  if (pick === 'dash3') return { id: 'dash', count: 3 };
+  if (pick === 'slick3') return { id: 'slick', count: 3, pack: true };
+  if (pick === 'ricochet3') return { id: 'ricochet', count: 3, pack: true };
+  return { id: pick, count: 1 };
 }
 
 export function rollItem(position: number, racers: number, rnd: () => number): HeldItem {

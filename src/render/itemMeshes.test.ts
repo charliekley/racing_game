@@ -44,9 +44,9 @@ describe('item meshes', () => {
   });
 
   it('builds every entity kind and held mesh', () => {
-    for (const k of ['slick', 'ricochet', 'seeker'] as const) {
+    for (const k of ['slick', 'ricochet', 'seeker', 'hunter', 'decoy'] as const) {
       expect(meshCount(buildEntityMesh(k))).toBeGreaterThan(0);
-      expect(buildHeldItemMesh(k)).not.toBeNull();
+      if (k !== 'decoy') expect(buildHeldItemMesh(k)).not.toBeNull(); // (a dragged decoy is a world entity, like the peel)
     }
     expect(buildHeldItemMesh('dash')).toBeNull();
     expect(buildHeldItemMesh('nova')).toBeNull();

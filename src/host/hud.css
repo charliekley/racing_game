@@ -34,14 +34,6 @@
   -webkit-text-stroke: 0.7cqh var(--ink);
   paint-order: stroke fill;
 }
-.pos-of {
-  font-size: 7cqh;
-  vertical-align: top;
-  margin-left: 0.2cqh;
-  opacity: 0.85;
-  -webkit-text-stroke: 0.7cqh var(--ink);
-  paint-order: stroke fill;
-}
 .hud-pos.pop-up { animation: pos-up 0.7s cubic-bezier(0.2, 1.6, 0.4, 1); }
 .hud-pos.pop-down { animation: pos-down 0.6s ease-out; }
 .hud-pos.pop-up .pos-num { color: #9dffb8; }

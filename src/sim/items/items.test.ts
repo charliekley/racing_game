@@ -51,11 +51,28 @@ function setup(karts: KartState[]) {
 const kinds = (ev: ItemEvent[]) => ev.map((e) => e.kind);
 
 describe('item boxes and roulette', () => {
+  it('every row has 4 boxes spread across the road width, all on the road', () => {
+    for (const def of TRACKS) {
+      const t = new Track(def);
+      const byRow = new Map<number, typeof t.itemBoxes>();
+      for (const b of t.itemBoxes) byRow.set(b.s, [...(byRow.get(b.s) ?? []), b]);
+      for (const row of byRow.values()) {
+        expect(row.length, def.name).toBe(4);
+        const proj = row.map((b) => t.project(b.x, b.z));
+        if (proj.some((q) => q.route !== 0)) continue; // a row next to a branch road: `d` would be measured from the other road
+        const d = proj.map((q) => q.d).sort((a, b) => a - b);
+        expect(d[3] - d[0], def.name).toBeGreaterThan(def.width * 0.35); // spread out, not bunched (a narrow stretch gets a narrower row)
+        for (let i = 1; i < 4; i++) expect(d[i] - d[i - 1], def.name).toBeGreaterThan(ITEMS.boxRadius); // no two boxes overlap
+        for (const v of d) expect(Math.abs(v), def.name).toBeLessThan(def.width / 2);
+      }
+    }
+  });
+
   it('every track has rows of boxes on drivable road', () => {
     for (const def of TRACKS) {
       const t = new Track(def);
-      expect(t.itemBoxes.length).toBeGreaterThanOrEqual(9);
-      expect(t.itemBoxes.length % 3).toBe(0);
+      expect(t.itemBoxes.length).toBeGreaterThanOrEqual(12);
+      expect(t.itemBoxes.length % 4).toBe(0);
       for (const b of t.itemBoxes) {
         expect(t.inGap(b.s)).toBe(false);
         const p = t.project(b.x, b.z);

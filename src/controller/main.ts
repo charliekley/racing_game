@@ -613,6 +613,8 @@ function handleHostMessage(msg: HostToController) {
       $('lap').textContent = msg.lap ? `LAP ${msg.lap}/${msg.totalLaps}` : 'LAP –';
       itemView.set(msg.item);
       document.querySelector('.btn.item')!.classList.toggle('has-item', msg.item.kind !== 'none');
+      // A tiny down-arrow reminds that swiping down on ITEM fires a Ricochet backward.
+      document.querySelector('.btn.item')!.classList.toggle('hint-back', msg.item.kind === 'item' && msg.item.id === 'ricochet');
       break;
     case 'haptic':
       vibrate(msg.pattern);

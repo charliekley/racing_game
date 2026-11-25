@@ -157,6 +157,9 @@ const smoothUnit = (t: number): number => {
   return u * u * (3 - 2 * u);
 };
 
+/** Sideways positions of the 4 boxes of a row, as fractions of the road width (0 = centerline). */
+const ITEM_ROW_LATERALS = [-0.375, -0.125, 0.125, 0.375];
+
 export class Track implements Ground {
   readonly samples: TrackSample[] = [];
   readonly length: number;
@@ -349,7 +352,7 @@ export class Track implements Ground {
   }
 
   /**
-   * Rows of 3 item boxes spread evenly around the lap, nudged out of the way of
+   * Rows of 4 item boxes spread evenly around the lap, nudged out of the way of
    * the start line, jumps, water and boost pads.
    */
   private placeItemBoxes(): void {
@@ -366,8 +369,10 @@ export class Track implements Ground {
       // Slide forward in small steps until the spot is clear (bounded search).
       for (let tries = 0; tries < 40 && !clear(s); tries++) s = (s + 5) % this.length;
       if (!clear(s)) continue;
-      for (const lateral of [-0.3, 0, 0.3]) {
-        const p = this.pointAt(s, lateral * this.def.width);
+      // Four boxes spread over the road width at THIS spot (a narrow stretch gets a narrower row).
+      const w = Math.min(this.def.width, this.samples[Math.floor(s / this.spacing) % this.samples.length].width);
+      for (const lateral of ITEM_ROW_LATERALS) {
+        const p = this.pointAt(s, lateral * w);
         const ground = this.sample(p.x, p.z, p.index);
         if (!ground) continue;
         this.itemBoxes.push({ x: p.x, y: ground.height, z: p.z, s });

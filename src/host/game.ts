@@ -368,7 +368,7 @@ export class Game {
     const camera = this.views[0]?.chase.camera;
     if (!camera) return;
     const temp = new THREE.Group();
-    for (const kind of ['slick', 'ricochet', 'seeker'] as const) {
+    for (const kind of ['slick', 'ricochet', 'seeker', 'decoy', 'hunter'] as const) {
       temp.add(buildEntityMesh(kind));
       const held = buildHeldItemMesh(kind);
       if (held) temp.add(held);
@@ -383,6 +383,13 @@ export class Game {
     this.scene.add(temp);
     const done = () => this.scene.remove(temp);
     this.pipeline.compileAsync(this.scene, camera).then(done, done);
+  }
+
+  /** The triple pack to show on a kart: Ricochet x3 always, Peel x3 only while it is not being dragged (then the real peels show). */
+  private packToShow(items: NonNullable<World['items']>, slot: number): { id: 'ricochet' | 'slick'; count: number } | null {
+    const pack = items.packOf(slot);
+    if (pack && pack.id === 'slick' && items.states.get(slot)?.trailing) return null;
+    return pack;
   }
 
   /** PERF: hide the terrain tiles and scenery chunks that are beyond the fog distance for this camera (see TerrainView.cullToFog, env/fogCull.ts). */
@@ -576,7 +583,7 @@ export class Game {
       if (this.boxWasActive[i] && !b.active) this.fx.shatterBox(b.x, b.y + 1, b.z);
       this.boxWasActive[i] = b.active;
     });
-    for (const e of items.entityList) if (e.kind === 'ricochet' || e.kind === 'seeker') this.fx.itemTrail(e.kind, e.x, e.y, e.z, e.heading);
+    for (const e of items.entityList) if (e.kind === 'ricochet' || e.kind === 'seeker' || e.kind === 'hunter') this.fx.itemTrail(e.kind, e.x, e.y, e.z, e.heading);
 
     // Update every kart's interpolated pose, then each player's camera.
     let cx = 0;
@@ -584,7 +591,8 @@ export class Game {
     for (const v of this.views) {
       const ist = items.states.get(v.slot);
       // A dragged shot shows behind the kart (a dragged Slick is its own world object).
-      v.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' ? ist.held.id : null;
+      v.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' && ist.held.id !== 'decoy' && !ist.held.pack ? ist.held.id : null;
+      v.kart.pack = this.packToShow(items, v.slot);
       v.kart.update(this.world.prevKarts.get(v.slot)!, this.world.karts.get(v.slot)!, alpha, dt, this.track);
       this.fx.kartTick(v.slot, v.kart, this.world.karts.get(v.slot)!, dt); // smoke, sparks, skid marks, flames...
       cx += v.kart.pose.x;
@@ -594,7 +602,8 @@ export class Game {
     for (const b of this.botKarts) {
       const k = this.world.karts.get(b.slot)!;
       const ist = items.states.get(b.slot);
-      b.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' ? ist.held.id : null;
+      b.kart.trailingItem = ist?.trailing && ist.held && ist.held.id !== 'slick' && ist.held.id !== 'decoy' && !ist.held.pack ? ist.held.id : null;
+      b.kart.pack = this.packToShow(items, b.slot);
       b.kart.update(this.world.prevKarts.get(b.slot)!, k, alpha, dt, this.track);
       this.fx.kartTick(b.slot, b.kart, k, dt);
     }
@@ -882,6 +891,14 @@ export class Game {
     // Events that carry a player slot get the kart's position for their effects.
     if (!('slot' in e)) {
       if (e.kind === 'itemDestroyed') this.fx.itemPop(e.x, (this.track.sample(e.x, e.z)?.height ?? 0) + 0.2, e.z);
+      if (e.kind === 'blast') {
+        this.fx.hunterBlast(e.x, e.y, e.z);
+        for (const v of this.views) {
+          // Every human screen shakes, more the closer the explosion.
+          const k = this.world.karts.get(v.slot);
+          if (k) this.shake(v.slot, Math.max(0.1, 0.9 - Math.hypot(k.pos.x - e.x, k.pos.z - e.z) / 45));
+        }
+      }
       return;
     }
     const kv = this.kartViewOf(e.slot);
@@ -986,6 +1003,8 @@ export class Game {
           this.fx.rocketStart(p.x, p.y, p.z, p.heading);
           hud?.flash('boost');
           this.shake(e.slot, 0.5);
+        } else if (e.id === 'hunter') {
+          hud?.flash('item');
         } else if (e.id === 'storm') {
           hud?.flash('item'); // the user's own screen blinks: the lightning is on its way to the others
           this.shake(e.slot, 0.25);
@@ -1137,7 +1156,7 @@ export class Game {
           this.sendStatus();
           break;
         case 'hit': {
-          this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : HAPTICS.spunOut);
+          this.haptic(e.slot, e.by === 'nova' ? HAPTICS.novaHit : e.by === 'hunter' ? HAPTICS.zapped : HAPTICS.spunOut); // a Hunter's blast buzzes hard
           this.players.sendTo(e.slot, { t: 'drift', tier: null });
           if (e.attacker !== null && e.attacker !== e.slot) this.attackToast(e.attacker, e.slot, 1.2);
           this.sendStatus();

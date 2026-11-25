@@ -737,7 +737,7 @@ export class Bot {
       consider(o.pos.x, o.pos.z, o.pos.y, 11, 2.6);
     }
     if (this.skill.dodge >= 0.85 && world.items) {
-      for (const e of world.items.entityList) if (e.kind === 'slick' && !e.trailing) consider(e.x, e.z, e.y, 16, 1.9);
+      for (const e of world.items.entityList) if ((e.kind === 'slick' || e.kind === 'decoy') && !e.trailing) consider(e.x, e.z, e.y, 16, 1.9);
     }
     this.avoid += (target - this.avoid) * 0.12;
     return this.avoid;
@@ -836,6 +836,8 @@ export class Bot {
         if (!ready) return 0;
         if (inLineFront) return tap();
         if (inLineBack && (this.personality.aggression > 0.5 || rivalBack)) return tap(true);
+        // A Ricochet x3 already orbits the kart as a shield: keep it for targets, one shot at a time (blind only after a long wait).
+        if (st.held.pack) return st.heldFor > 14 ? tap() : 0;
         // Nothing to shoot at: when leading keep it as a shield, otherwise wait for a target (fire blind after a while).
         if (rank === 0 && this.skill.holdShields) {
           this.holding = true;
@@ -843,7 +845,12 @@ export class Bot {
         }
         return st.heldFor > 10 ? tap() : 0;
       }
+      case 'hunter':
+        // It always flies to the leader, so any bot that is not leading (it never comes to the leader) fires it when ready.
+        return ready && rank > 0 ? tap() : 0;
+      case 'decoy':
       case 'slick': {
+        // Peel x3 / Decoy: dragged behind as a shield while someone is near behind, dropped (one at a time) when they close in.
         const inLineBack = back !== null && back.d < 12 && Math.abs(back.side) < 2.8;
         if (this.holding) {
           if (inLineBack || st.heldFor > 25) return release();

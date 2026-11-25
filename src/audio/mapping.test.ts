@@ -14,8 +14,9 @@ describe('soundsForEvent', () => {
   });
 
   it('uses a different sound per item and per hit type', () => {
-    const used = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'storm', 'rocket'].map((id) => ids({ kind: 'itemUse', slot: 0, id })[0]);
-    expect(new Set(used).size).toBe(8);
+    const used = ['dash', 'slick', 'ricochet', 'seeker', 'nova', 'jumble', 'storm', 'rocket', 'hunter', 'decoy'].map((id) => ids({ kind: 'itemUse', slot: 0, id })[0]);
+    expect(new Set(used).size).toBe(10);
+    expect(ids({ kind: 'blast', x: 0, y: 0, z: 0, attacker: 1, target: 0 })).toEqual(['hunterBlast']);
     expect(ids({ kind: 'hit', slot: 0, by: 'nova', attacker: 1 })).toEqual(['hitNova']);
     expect(ids({ kind: 'hit', slot: 0, by: 'slick', attacker: 1 })).toEqual(['hit']);
     expect(ids({ kind: 'itemUse', slot: 0, id: 'storm' })).toEqual(['useStorm']);

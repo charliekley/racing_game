@@ -51,7 +51,7 @@ describe('Rainbow Route', () => {
   it('has lots of boost pads, many under a star-ring arch, and an item row for every big section', () => {
     expect(rainbowRoute.boostPads.length).toBeGreaterThanOrEqual(15);
     expect(rainbowRoute.boostPads.filter((b) => b.arch).length).toBeGreaterThanOrEqual(8);
-    expect(track.itemBoxes.length / 3).toBeGreaterThanOrEqual(10);
+    expect(track.itemBoxes.length / 4).toBeGreaterThanOrEqual(10);
   });
 
   it('is dramatic climbs and descents the physics handles: grades of 10 to 20 %, a big height range', () => {

@@ -96,11 +96,11 @@ describe('item odds in a bigger field', () => {
     const mid12 = itemWeights(6.5, 12);
     const mid4 = itemWeights(2.5, 4);
     for (const k of Object.keys(mid12) as (keyof typeof mid12)[]) expect(mid12[k]).toBeCloseTo(mid4[k], 9);
-    // 4th of 12 is still in the front part (little Nova), 10th of 12 is far back (lots of it)
+    // 4th of 12 is still in the front part (no Nova yet), 10th of 12 is far back (lots of it)
     expect(itemWeights(4, 12).nova).toBeLessThan(itemWeights(10, 12).nova);
-    // Jumble stays out of the front half of any field
-    expect(itemWeights(6, 12).jumble).toBe(0);
-    expect(itemWeights(7, 12).jumble).toBeGreaterThan(0);
+    // Jumble stays out of the front quarter of any field (it starts at 4th of 12)
+    expect(itemWeights(3, 12).jumble).toBe(0);
+    expect(itemWeights(4, 12).jumble).toBeGreaterThan(0);
   });
 });
 

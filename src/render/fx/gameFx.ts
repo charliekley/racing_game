@@ -506,12 +506,37 @@ export class GameFx {
     }
   }
 
+  /** The Hunter's explosion: a big violet-white flash, a ring of gold sparks, a rising shock ring of smoke and stars. */
+  hunterBlast(x: number, y: number, z: number): void {
+    this.glow.emit(x, y + 0.6, z, 0, 0, 0, 0.5, 3.5, 11, 0xffffff, 0.95);
+    this.glow.emit(x, y + 0.6, z, 0, 0, 0, 0.7, 2, 9, 0xa070ff, 0.7);
+    for (let i = this.n(44); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      const sp = rand(4, 14);
+      this.glow.emit(x, y + 0.6, z, Math.cos(a) * sp, rand(1, 9), Math.sin(a) * sp, rand(0.4, 0.9), rand(0.25, 0.5), 0.05, Math.random() < 0.5 ? 0xffd24a : 0xb58cff, 1, 1.5, 10);
+    }
+    for (let i = this.n(18); i > 0; i--) {
+      const a = (i / 18) * 6.28;
+      this.smoke.emit(x, y + 0.3, z, Math.cos(a) * 7, rand(0.5, 2.5), Math.sin(a) * 7, rand(0.8, 1.4), 0.9, 2.8, 0x3b2a66, 0.55, 1.5, -0.2);
+    }
+    for (let i = this.n(12); i > 0; i--) {
+      const a = Math.random() * 6.28;
+      this.stars.emit(x, y + 0.8, z, Math.cos(a) * rand(2, 7), rand(4, 9), Math.sin(a) * rand(2, 7), rand(0.6, 1.0), 0.55, 0.15, 0xffffff, 1, 0.8, 8);
+    }
+  }
+
   /** Trails for flying items (called every frame per shot). */
-  itemTrail(kind: 'ricochet' | 'seeker', x: number, y: number, z: number, heading: number): void {
+  itemTrail(kind: 'ricochet' | 'seeker' | 'hunter', x: number, y: number, z: number, heading: number): void {
     const bx = -Math.sin(heading);
     const bz = -Math.cos(heading);
     if (kind === 'ricochet') {
-      this.glow.emit(x, y + 0.6, z, bx * 1 + rand(-0.3, 0.3), rand(-0.2, 0.4), bz * 1 + rand(-0.3, 0.3), 0.35, 0.5, 0.05, Math.random() < 0.5 ? 0xffb84a : 0x35e0ff, 0.7, 2);
+      this.glow.emit(x, y + 0.6, z, bx * 1 + rand(-0.3, 0.3), rand(-0.2, 0.4), bz * 1 + rand(-0.3, 0.3), 0.35, 0.5, 0.05, Math.random() < 0.5 ? 0x6dff5a : 0xd6ff6a, 0.7, 2);
+    } else if (kind === 'hunter') {
+      // Violet and gold sparks streaming off the wings, plus a thin smoke ribbon.
+      for (let i = 0; i < 2; i++) {
+        this.glow.emit(x + bx * 0.8 + rand(-0.6, 0.6), y + 1.5 + rand(-0.3, 0.3), z + bz * 0.8 + rand(-0.6, 0.6), bx * 3, rand(-0.3, 0.5), bz * 3, 0.5, 0.55, 0.06, Math.random() < 0.6 ? 0x9a5cff : 0xffd24a, 0.85, 2);
+      }
+      if (Math.random() < 0.5 * this.scale + 0.1) this.smoke.emit(x + bx * 1.2, y + 1.5, z + bz * 1.2, bx, 0.3, bz, rand(0.6, 1), 0.35, 1.3, 0x5a3a9a, 0.4, 1.5, -0.2);
     } else {
       this.glow.emit(x + bx * 0.6, y + 0.6, z + bz * 0.6, bx * 2, rand(-0.2, 0.3), bz * 2, 0.3, 0.4, 0.05, 0xffb347, 0.85, 2);
       if (Math.random() < 0.5 * this.scale + 0.1) this.smoke.emit(x + bx * 0.9, y + 0.6, z + bz * 0.9, bx, 0.3, bz, rand(0.5, 0.9), 0.3, 1.1, 0xc8ccd6, 0.4, 1.5, -0.2);

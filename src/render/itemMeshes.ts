@@ -11,6 +11,8 @@
  *   peel       1   (one merged, vertex-coloured geometry: see peelModel.ts; internal id `slick`)
  *   ricochet   3   (ball + ring + trail)
  *   seeker     4   (body + nose + fins + exhaust)
+ *   hunter     5   (orb + spikes + two wings + eye + trail; a spiky winged violet orb)
+ *   decoy      3   (a RED-tinted copy of the item box: cube + glow shell + core)
  *   nova aura  3   (two shells + one Points object for sparkles)
  *   rocket     ~8  (capsule + glow + bands + nose + fins + flame; shown only on a kart that is a Rocket)
  *   storm      8   (cloud puffs + bolt; shown over a kart for about a second after the strike)
@@ -141,11 +143,13 @@ export function animateItemBox(obj: THREE.Object3D, timeSeconds: number, phase =
 // ---------------------------------------------------------------------------
 
 const peelGeo = buildPeelGeometry();
-const peelMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: '#2b2200' });
+const peelMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: '#4a3d00' });
 
 /** The peel sits exactly on the ground: the sim's `y` already includes a 2 cm gap (see sim/items/groundPose.ts). */
 const PEEL_HEIGHT = 0;
 const PROJECTILE_HEIGHT = 0.6;
+/** The Hunter flies higher: it hovers over the road like a bird of prey. */
+const HUNTER_HEIGHT = 1.5;
 
 function buildSlick(): THREE.Object3D {
   const g = new THREE.Group();
@@ -161,10 +165,11 @@ const ricoBallGeo = new THREE.SphereGeometry(0.35, 16, 12);
 const ricoRingGeo = new THREE.TorusGeometry(0.42, 0.06, 6, 20);
 // Streak is a cone behind the ball (toward -Z), tip pointing away from the direction of travel.
 const ricoTrailGeo = new THREE.ConeGeometry(0.3, 1.3, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.95);
-const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#ff8a00', emissiveIntensity: 3 });
-const ricoRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#35e0ff').multiplyScalar(3) });
+// Ricochet is GREEN (the Decoy is red, the Hunter violet, the Seeker pink-white).
+const ricoBallMat = new THREE.MeshLambertMaterial({ color: '#56e04a', emissive: '#12b81e', emissiveIntensity: 3 });
+const ricoRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#d6ff6a').multiplyScalar(3) });
 const ricoTrailMat = new THREE.MeshBasicMaterial({
-  color: '#ffb84a',
+  color: '#4dff7a',
   transparent: true,
   opacity: 0.45,
   blending: THREE.AdditiveBlending,
@@ -226,6 +231,106 @@ function buildSeeker(): THREE.Object3D {
 }
 
 // ---------------------------------------------------------------------------
+// Hunter: a spiky, winged violet orb with a glaring eye (it flies nose-first along +Z)
+// ---------------------------------------------------------------------------
+
+const hunterOrbGeo = new THREE.IcosahedronGeometry(0.42, 1);
+// Twelve gold spikes sticking out of the orb in all directions, merged into one geometry.
+const hunterSpikesGeo = (() => {
+  const dirs: THREE.Vector3[] = [];
+  const phi = (1 + Math.sqrt(5)) / 2;
+  for (const [a, b] of [[1, phi], [-1, phi], [1, -phi], [-1, -phi]]) {
+    dirs.push(new THREE.Vector3(0, a, b), new THREE.Vector3(a, b, 0), new THREE.Vector3(b, 0, a));
+  }
+  const parts = dirs.map((d) => {
+    const g = new THREE.ConeGeometry(0.1, 0.38, 6).translate(0, 0.42 + 0.1, 0);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize()));
+    return g;
+  });
+  return mergeGeometries(parts)!;
+})();
+// One wing: a swept feather shape in the XZ plane of the wing's own space (+x outward, -z toward the tail).
+const hunterWingGeo = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0.3, 0, 0.2, 1.05, 0.12, 0.05, 0.9, 0.1, -0.3, 0.3, 0, -0.35, 0.45, 0.05, -0.7], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3, 3, 2, 4]);
+  g.computeVertexNormals();
+  return g;
+})();
+const hunterEyeGeo = new THREE.SphereGeometry(0.17, 10, 8).scale(1, 0.8, 0.5).translate(0, 0.02, 0.38);
+const hunterTrailGeo = new THREE.ConeGeometry(0.34, 2.2, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -1.5);
+const hunterOrbMat = new THREE.MeshLambertMaterial({ color: '#7a3cff', emissive: '#4318b8', emissiveIntensity: 2 });
+const hunterSpikeMat = new THREE.MeshLambertMaterial({ color: '#ffd24a', emissive: '#b57a00' });
+const hunterWingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffcf40').multiplyScalar(1.6), side: THREE.DoubleSide });
+const hunterEyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff2a4a').multiplyScalar(2.5) });
+const hunterTrailMat = new THREE.MeshBasicMaterial({
+  color: '#9a5cff',
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+function buildHunter(): THREE.Object3D {
+  const g = new THREE.Group();
+  const spin = new THREE.Group(); // the spiky ball rolls; the wings and eye do not
+  spin.name = 'spin';
+  spin.add(new THREE.Mesh(hunterOrbGeo, hunterOrbMat), new THREE.Mesh(hunterSpikesGeo, hunterSpikeMat));
+  const wingL = new THREE.Mesh(hunterWingGeo, hunterWingMat);
+  wingL.name = 'wingL';
+  const wingR = new THREE.Mesh(hunterWingGeo, hunterWingMat);
+  wingR.name = 'wingR';
+  wingR.scale.x = -1; // mirror (the double-sided material hides the flipped winding)
+  g.add(spin, wingL, wingR, new THREE.Mesh(hunterEyeGeo, hunterEyeMat), new THREE.Mesh(hunterTrailGeo, hunterTrailMat));
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// Decoy: a fake item box. Same crate, but tinted RED (subtle: the rainbow vertex colours still shimmer through)
+// ---------------------------------------------------------------------------
+
+let decoyCubeMat: THREE.MeshBasicMaterial | undefined;
+const decoyShellMat = new THREE.MeshBasicMaterial({
+  color: '#ff4a3a',
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.3,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.BackSide,
+});
+const decoyCoreMat = new THREE.MeshBasicMaterial({
+  color: new THREE.Color('#ff7a5a').multiplyScalar(3),
+  transparent: true,
+  opacity: 0.85,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+
+/** The Decoy: looks like `buildItemBox` but red. Its group has the same `pivot` / `shell` / `core` parts, so `animateItemBox` animates it. */
+export function buildDecoyBox(): THREE.Object3D {
+  decoyCubeMat ??= new THREE.MeshBasicMaterial({
+    color: '#ff5a48', // multiplies the rainbow: only the red end survives, with a little hue wobble
+    vertexColors: true,
+    map: getQuestionTexture(),
+    transparent: true,
+    opacity: 0.8,
+  });
+  const root = new THREE.Group();
+  const pivot = new THREE.Group();
+  pivot.position.y = BOX_HOVER;
+  pivot.name = 'pivot';
+  const shell = new THREE.Mesh(boxShellGeo, decoyShellMat);
+  shell.name = 'shell';
+  const core = new THREE.Mesh(boxCoreGeo, decoyCoreMat);
+  core.name = 'core';
+  pivot.add(new THREE.Mesh(boxCubeGeo, decoyCubeMat), shell, core);
+  root.add(pivot);
+  return root;
+}
+
+// ---------------------------------------------------------------------------
 // Entity API
 // ---------------------------------------------------------------------------
 
@@ -240,9 +345,12 @@ export function buildEntityMesh(kind: ItemEntityKind): THREE.Object3D {
   if (kind === 'slick') {
     body.position.y = PEEL_HEIGHT;
     body.add(buildSlick());
+  } else if (kind === 'decoy') {
+    body.position.y = 0; // the box hovers by itself (see buildDecoyBox)
+    body.add(buildDecoyBox());
   } else {
-    body.position.y = PROJECTILE_HEIGHT;
-    body.add(kind === 'ricochet' ? buildRicochet() : buildSeeker());
+    body.position.y = kind === 'hunter' ? HUNTER_HEIGHT : PROJECTILE_HEIGHT;
+    body.add(kind === 'ricochet' ? buildRicochet() : kind === 'hunter' ? buildHunter() : buildSeeker());
   }
   root.add(body);
   root.userData.kind = kind;
@@ -269,6 +377,27 @@ export function updateEntityMesh(obj: THREE.Object3D, entity: ItemEntity, timeSe
         body.position.y = PEEL_HEIGHT;
         body.rotation.set(0, 0, 0);
       }
+      break;
+    }
+    case 'decoy': {
+      // A dragged decoy hangs low and bounces; a dropped one floats and spins like a real box.
+      animateItemBox(body, timeSeconds, entity.uid);
+      if (entity.trailing) body.position.y = -0.35 + Math.abs(Math.sin(t * 8)) * 0.1;
+      else body.position.y = 0;
+      break;
+    }
+    case 'hunter': {
+      const spin = body.getObjectByName('spin');
+      if (spin) {
+        spin.rotation.z = timeSeconds * 9 + entity.uid;
+        spin.rotation.x = timeSeconds * 4;
+      }
+      const flap = Math.sin(t * 22) * 0.55;
+      const wl = body.getObjectByName('wingL');
+      const wr = body.getObjectByName('wingR');
+      if (wl) wl.rotation.z = flap;
+      if (wr) wr.rotation.z = -flap;
+      body.position.y = HUNTER_HEIGHT + Math.sin(t * 7) * 0.08;
       break;
     }
     case 'ricochet': {
@@ -593,18 +722,24 @@ export function buildHeldItemMesh(id: ItemId): THREE.Object3D | null {
   switch (id) {
     case 'slick': {
       const m = buildSlick();
-      m.scale.setScalar(0.25);
+      m.scale.setScalar(0.5);
       wrap.add(m);
       break;
     }
     case 'ricochet': {
       const m = buildRicochet();
-      m.scale.setScalar(0.7);
+      m.scale.setScalar(0.55);
       wrap.add(m);
       break;
     }
     case 'seeker': {
       const m = buildSeeker();
+      m.scale.setScalar(0.6);
+      wrap.add(m);
+      break;
+    }
+    case 'hunter': {
+      const m = buildHunter();
       m.scale.setScalar(0.6);
       wrap.add(m);
       break;
