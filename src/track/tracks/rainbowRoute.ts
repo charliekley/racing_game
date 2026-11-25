@@ -316,7 +316,7 @@ export const rainbowRoute: TrackDef = {
   width: RIBBON_WIDTH,
   offroadWidth: 2,
   // Bots on a wide, grip-everywhere ribbon would be far quicker than a person: see docs/TRACKS.md (Rainbow Route, bots).
-  botTuning: { pace: 0.97, cornerCurvature: 0.022, wander: 4.5, trickScale: 0.5, noDrift: true },
+  botTuning: { pace: 0.92, cornerCurvature: 0.022, wander: 4.5, trickScale: 0.5, noDrift: true },
   bankPerCurvature: 16,
   maxBankDeg: 20,
   // Rainbow rails ONLY on the sharpest corners: the dive's middle swing, the half-pipe (outside), the climb's middle swing, the

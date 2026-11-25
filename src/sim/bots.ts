@@ -844,6 +844,13 @@ export class Bot {
         return ready && (rank > 0 || rivalFront) ? tap() : 0;
       case 'rocket':
         // The Rocket drives itself: use it as soon as it is ready (it only comes to karts far back anyway).
+        // ...but a rocket flies the main road only: a bot that is lagging and wants the shortcuts keeps it until it has passed
+        // the junctions within the reach of one flight (it would be carried past them at 50 m/s), unless it has waited long.
+        if (this.riskShortcut && st.heldFor < 12) {
+          const tr = world.track!;
+          const sHere = tr.project(k.pos.x, k.pos.z, k.trackIndex);
+          if (sHere.route === 0 && tr.branches.some((b) => tr.deltaS(sHere.s, b.s0) > -15 && tr.deltaS(sHere.s, b.s0) < ITEMS.rocketTime * ITEMS.rocketSpeed)) return 0;
+        }
         return ready && rank > 0 ? tap() : 0;
       case 'storm':
         // Lightning hits everybody AHEAD: worth it as soon as someone is. The more racers ahead, the better, so a

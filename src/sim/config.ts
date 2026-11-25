@@ -337,7 +337,7 @@ export const BOTS = {
    * `backBoost`: the weakest bot gets only this share of the "catch up with the human" rubber-band boost (the best
    * bot gets all of it); otherwise the boost would drag the back tier up towards the humans and flatten the tiers.
    */
-  tier: { spread: 0.9, backBoost: 0.25 },
+  tier: { spread: 1.0, backBoost: 0.25 },
 } as const;
 
 /** Camera feel (render-only, doesn't affect the sim). */
