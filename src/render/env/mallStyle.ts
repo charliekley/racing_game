@@ -355,47 +355,6 @@ export function hedgeTexture(): THREE.CanvasTexture {
   return tex(c);
 }
 
-/** The Boutique's walls (12 m x 6 m per repeat): shelves of folded clothes, hanging dresses, a sale tag. */
-export function boutiqueWallTexture(): THREE.CanvasTexture {
-  const [c, g] = canvas(512, 256);
-  const rnd = rand(63);
-  g.fillStyle = '#f9dbe8';
-  g.fillRect(0, 0, 512, 256);
-  g.fillStyle = '#e04f8a';
-  g.fillRect(0, 232, 512, 24); // plinth
-  for (let r = 0; r < 3; r++) {
-    const y = 40 + r * 62;
-    g.fillStyle = '#fffaf5';
-    g.fillRect(0, y + 44, 512, 6);
-    for (let k = 0; k < 14; k++) {
-      const x = 8 + k * 36;
-      if (r === 1) {
-        // Hanging dresses.
-        g.fillStyle = PALETTE[Math.floor(rnd() * 8)];
-        g.beginPath();
-        g.moveTo(x + 6, y + 6);
-        g.lineTo(x + 24, y + 6);
-        g.lineTo(x + 32, y + 46);
-        g.lineTo(x - 2, y + 46);
-        g.fill();
-      } else {
-        // A stack of folded clothes.
-        for (let s = 0; s < 3; s++) {
-          g.fillStyle = PALETTE[Math.floor(rnd() * 8)];
-          g.fillRect(x, y + 36 - s * 11, 30, 10);
-        }
-      }
-    }
-  }
-  g.fillStyle = '#e04f8a';
-  g.fillRect(224, 6, 64, 24);
-  g.fillStyle = '#fff';
-  g.font = 'bold 18px sans-serif';
-  g.textAlign = 'center';
-  g.fillText('SALE', 256, 24);
-  return tex(c);
-}
-
 /** Water ripples (the fountain pool and the tiers). */
 export function waterTexture(): THREE.CanvasTexture {
   const [c, g] = canvas(128, 128);

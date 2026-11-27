@@ -3,28 +3,29 @@
  * procedural (canvas textures and primitives, no asset files) and ORIGINAL: the store names, signs, posters and their
  * mascots are made up for this game.
  *
- *   - the BUILDING SHELL (mallShell.ts): outer walls with a shop zone and a glass clerestory on both sides of the indoor part of
- *     the lap, two gates, a glass skylight roof with sunbeams. From the road you never see the world outside.
- *   - FLOORS: a polished terracotta/cream tile floor for the ground floor and the garden, a thick upper-floor slab (with a
- *     walkway, shops and columns) along the upper-floor stretches, the store floor, the parking-deck ramp, and asphalt with
- *     painted bays for the outdoor parking lot. (The terrain mesh is not drawn on this track: these floors replace it.)
- *   - the DECK LANES (the store aisle and the second escalator lane: `deck` branches): tiled road ribbons with glass rails.
+ *   - the BUILDING SHELL (mallShell.ts): walls along the building's footprint (with gates where the roads pass through, see
+ *     track/mallPlan.ts), a glass skylight roof with sunbeams.
+ *   - FLOORS: a polished terracotta/cream tile floor for the ground floor and the garden, the upper-floor slab (as far as the
+ *     plan lets it reach: never over a road on another level), the spiral's helical slab round its sculpture column, the lower
+ *     route's raised start and ledge, the deck ramp, and the parking deck (asphalt with bays). (The terrain mesh is not drawn
+ *     on this track: these floors replace it.)
+ *   - the DECK LANES (the second escalator lanes and the lower route: `deck` branches): tiled road ribbons with glass rails.
  *   - SHOPFRONTS: coloured bodies, three display windows each (a canvas atlas of 8 made-up shop scenes), striped awnings,
  *     neon-style sign boards (a canvas atlas of made-up names), product crates; POSTERS (abstract ads with made-up mascots)
  *     on the columns and the walls.
  *   - PALMS in round planters (pinnate fronds; from the scenery plan, solid), FLOWER PLANTERS, festive STRING LIGHTS on wires.
  *   - the GARDEN: lawns with stone edging and hedges, flower beds, grass patches on the road, the FOUNTAIN (a round water
  *     surface in a rim, two tiered stone fountains with jets and a spray of droplets).
- *   - the PARKING LOT: bays, kerbs, hedges, lamp posts, garage gates with roll-up doors and "P" signs, parked cars of three
- *     body shapes, a row of palms and the city behind.
+ *   - the PARKING DECK: bays, parapets, hedges, lamp posts, garage gates with roll-up doors and "P" signs, parked cars of three
+ *     body shapes, the city behind.
  *
- * Cost: about 40 draw calls (instancing for palms, columns, cars, lamps, bulbs, planters; one merged mesh per material).
+ * Cost: about 40 draw calls (instancing for palms, columns, cars, lamps, bulbs, planters; static ribbons merged per material).
  * The escalators and the guide robot are drawn by render/hazards/escalatorView.ts, the moving cars by carView.ts.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planScenery } from '../../track/sceneryPlan';
-import type { MallPlan } from '../../track/mallPlan';
+import { allRoadSamples, insidePolygon, segDist, type MallPlan, type SlabSpan } from '../../track/mallPlan';
 import { CURB_WIDTH, type Track, type TrackSample } from '../../sim/track';
 import { grassMaps } from '../textures';
 import { ENV_TIME } from './materials';
@@ -33,13 +34,11 @@ import { boxPart } from './parts';
 import { noise3 } from './noise';
 import type { RibbonTools } from './rainbow';
 import { buildShell, SHOP_ZONE } from './mallShell';
-import { awningAtlas, boutiqueWallTexture, canvas, displayAtlas, hedgeTexture, PALETTE, rand, tex, waterTexture } from './mallStyle';
+import { awningAtlas, canvas, displayAtlas, hedgeTexture, PALETTE, rand, tex, waterTexture } from './mallStyle';
 
 /** Does this track use the shopping-mall look? */
 export const isMall = (track: Track): boolean => track.def.scenery.mall !== undefined;
 
-/** Height of the skylight roof above the upper floor (m). */
-const ROOF_ABOVE_UPPER = 17;
 
 const _c = new THREE.Color();
 
@@ -514,22 +513,31 @@ export class MallView {
     const hw = def.width / 2;
     const outer = hw + def.offroadWidth;
     const S = track.samples;
-    const roofY = mall.upper + ROOF_ABOVE_UPPER;
+    const shellPlan = mp.shell;
+    const roofY = shellPlan.roofY;
     const inRange = (s: number, from: number, to: number) => track.deltaS(track.sAt(from), s) >= 0 && track.deltaS(s, track.sAt(to)) >= 0;
-    const onUpper = (p: TrackSample) => mall.upperFloor.some((r) => inRange(p.s, r.from, r.to));
-    const inLot = (p: TrackSample) => track.deltaS(track.sAt(mall.lot.from) - 30, p.s) >= 0 && track.deltaS(p.s, track.sAt(mall.lot.to) + 160) >= 0;
+    const onUpper = (p: TrackSample) => mall.upperFloor.some((r) => inRange(p.s, r.from, r.to)) && p.y > mall.upper - 0.6;
+    const onDeck = (p: TrackSample) => inRange(p.s, mall.deck.from, mall.deck.to);
     const inGarden = (p: TrackSample) => inRange(p.s, mall.garden.from, mall.garden.to);
-    // The building: from the start of the upper floor to the end of the garden.
-    const mallFrom = mall.upperFloor[0].from;
-    const inMall = (s: number) => inRange(s, mallFrom, mall.garden.to);
+    const inSpiral = (p: TrackSample) => !!mall.spiral && track.deltaS(track.sAt(mall.spiral.from) - 4, p.s) >= 0 && track.deltaS(p.s, track.sAt(mall.spiral.to) + 4) >= 0;
+    const indoors = (x: number, z: number, margin = 0) => insidePolygon(mall.building, x, z) && shellPlan.walls.every((w) => segDist(w, x, z) > margin);
     const escRanges = (def.hazards ?? []).filter((h) => h.kind === 'escalator').map((h) => [track.sAt(h.from) - 50, track.sAt(h.to) + 50]);
     const nearEsc = (s: number) => escRanges.some(([a, b]) => track.deltaS(a, s) >= 0 && track.deltaS(s, b) >= 0);
+    const roads = allRoadSamples(track);
     /** Distance to the nearest road sample (main or branch) at about the same level as y. */
     const roadDist = (x: number, z: number, y: number) => {
       let best = Infinity;
-      for (let i = 0; i < S.length; i += 2) if (Math.abs(S[i].y - y) < 5) best = Math.min(best, Math.hypot(S[i].x - x, S[i].z - z));
-      for (const b of track.branches) for (let i = 0; i < b.samples.length; i += 2) if (Math.abs(b.samples[i].y - y) < 5) best = Math.min(best, Math.hypot(b.samples[i].x - x, b.samples[i].z - z));
+      for (let i = 0; i < roads.length; i += 2) if (Math.abs(roads[i].y - y) < 5) best = Math.min(best, Math.hypot(roads[i].x - x, roads[i].z - z));
       return best;
+    };
+    /** Is anything of another level (a road below or above) within `r` (+ its half width) of (x, z) between heights y0 and y1? */
+    const blocked = (x: number, z: number, r: number, y0: number, y1: number) => roads.some((q) => q.y >= y0 && q.y <= y1 && Math.hypot(q.x - x, q.z - z) < r + q.width / 2 + def.offroadWidth);
+    /** The slab span (upper floor or deck) at main sample p, if any. */
+    const spans = new Map<TrackSample, SlabSpan>();
+    for (const sp of [...shellPlan.upper, ...shellPlan.deck]) spans.set(S[sp.i], sp);
+    const onSlab = (p: TrackSample, d: number) => {
+      const sp = spans.get(p);
+      return !!sp && (d < 0 ? -d < sp.left : d < sp.right);
     };
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, shadow = false) => {
       const m = new THREE.Mesh(geo, mat);
@@ -551,6 +559,19 @@ export class MallView {
       return mesh;
     };
     const glowParts: THREE.BufferGeometry[] = []; // HDR vertex colours, drawn unlit (they bloom)
+    /** Static ribbons and faces, merged into one mesh per material at the end (draw calls). */
+    const batch = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    const addB = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+      if (geo.index) geo = geo.toNonIndexed();
+      if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+      for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') geo.deleteAttribute(name);
+      if (!geo.getAttribute('uv')) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((geo.getAttribute('position').count) * 2), 2));
+      const list = batch.get(mat) ?? [];
+      list.push(geo);
+      batch.set(mat, list);
+    };
+    const glassM = mallGlassMaterial();
+    const metalM = railMetal();
 
     // ---- Floors -------------------------------------------------------------------------------
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -573,77 +594,118 @@ export class MallView {
     ground.receiveShadow = true;
     this.group.add(ground);
 
-    // Upper-floor slabs (walkway, shops and columns stand on them), the store floor, the parking-deck ramp.
+    // Upper-floor slabs (walkway, shops and columns stand on them; they reach as far as the plan lets them: never over a
+    // road on another level), the parking deck, the ramps, the spiral and the lower route's raised start.
     const slabTex = floorTexture([226, 176, 128], 8);
     slabTex.repeat.set(4, 1);
     const slabMat = new THREE.MeshStandardMaterial({ map: slabTex, roughness: 0.3, metalness: 0.05 });
     const sideMat = new THREE.MeshStandardMaterial({ color: '#e3d6c2', roughness: 0.7 });
-    const SLAB_W = 30;
-    const slab = (run: TrackSample[], half: number, drop: (p: TrackSample) => number, lift = -0.03) => {
-      add(tools.ribbon(run, false, () => [{ d: -half, h: lift }, { d: half, h: lift }], 16), slabMat);
-      for (const side of [-1, 1]) {
-        add(tools.ribbon(run, false, (p) => (side < 0 ? [{ d: -half, h: -drop(p) }, { d: -half, h: lift }] : [{ d: half, h: lift }, { d: half, h: -drop(p) }]), 8), sideMat);
-      }
+    /** A slab under `run`: top at the road (+ lift), `left`/`right` m wide, with faces down `drop(p)` m on both sides. */
+    const slab = (run: TrackSample[], left: (p: TrackSample) => number, right: (p: TrackSample) => number, drop: (p: TrackSample) => number, mat: THREE.Material = slabMat, lift = -0.03) => {
+      addB(tools.ribbon(run, false, (p) => [{ d: -left(p), h: lift }, { d: right(p), h: lift }], 16), mat);
+      addB(tools.ribbon(run, false, (p) => [{ d: -left(p), h: -drop(p) }, { d: -left(p), h: lift }], 8), sideMat);
+      addB(tools.ribbon(run, false, (p) => [{ d: right(p), h: lift }, { d: right(p), h: -drop(p) }], 8), sideMat);
     };
-    for (const run of tools.runs(S, (p) => onUpper(p) && !nearEsc(p.s - 30))) slab(run, SLAB_W, () => 0.9);
-    // The parking-deck ramp (concrete, walls down to the ground).
-    const rampRuns = tools.runs(S, (p) => p.y > 0.4 && !onUpper(p) && !nearEsc(p.s));
-    for (const run of rampRuns) slab(run, outer + 0.6, (p) => p.y, -0.03);
-    // The store floor (its aisle is a deck branch at the upper floor's height).
-    const storeIdx = mall.storeBranch;
-    const store = storeIdx !== undefined ? track.branches[storeIdx] : null;
-    if (store) slab(store.samples, 16, () => 0.9, -0.05);
+    const spanL = (p: TrackSample) => spans.get(p)?.left ?? outer;
+    const spanR = (p: TrackSample) => spans.get(p)?.right ?? outer;
+    for (const run of tools.runs(S, (p) => onUpper(p) && spans.has(p))) slab(run, spanL, spanR, () => 0.9);
+    // The ramps outside (and anything else between the floors that is not an escalator or the spiral): walls to the ground.
+    for (const run of tools.runs(S, (p) => p.y > 0.4 && !onUpper(p) && !onDeck(p) && !nearEsc(p.s) && !inSpiral(p))) slab(run, () => outer + 0.6, () => outer + 0.6, (p) => p.y);
+    // The spiral and the deck road still inside the building: a slab with a deep fascia (no walls to the ground: the road
+    // passes over its own entry there).
+    const spiralRuns = tools.runs(S, (p) => inSpiral(p));
+    for (const run of tools.runs(S, (p) => inSpiral(p) || (onDeck(p) && !spans.has(p) && p.y > 0.4))) slab(run, () => outer + 0.6, () => outer + 0.6, (p) => Math.min(1.4, p.y));
+    // The lower route's raised start: on the upper floor up to the kicker, then the ledge (a face down to the ground floor).
+    const lowB = mall.low !== undefined ? track.branches[mall.low] : null;
+    if (lowB) {
+      const raised = lowB.samples.filter((p) => p.y > 1);
+      const lw = lowB.samples[0].width / 2 + def.offroadWidth + 0.6;
+      if (raised.length > 2) {
+        slab(raised, () => lw, () => lw, (p) => p.y);
+        // The ledge's face: across the end of the raised part, from the ground to the lip (a stripe of hazard paint on top).
+        const lip = raised[raised.length - 1];
+        const face = new THREE.PlaneGeometry(2 * lw, lip.y).translate(0, lip.y / 2, 0).applyMatrix4(matrix(lip.x + lip.tx * 0.3, 0, lip.z + lip.tz * 0.3, 1, 1, 1, Math.atan2(lip.tx, lip.tz)));
+        addB(face, sideMat);
+        addB(new THREE.BoxGeometry(2 * lw, 0.2, 0.5).applyMatrix4(matrix(lip.x, lip.y - 0.05, lip.z, 1, 1, 1, Math.atan2(lip.tx, lip.tz))), new THREE.MeshStandardMaterial({ color: '#f5c518', roughness: 0.5 }));
+      }
+    }
 
     // The deck lanes' road ribbons and kerbs (the main road is drawn by trackView with the same material).
     const roadMat = new THREE.MeshStandardMaterial({ map: mallRoadTexture(), roughness: 0.3, metalness: 0.05 });
     const kerbMat = new THREE.MeshStandardMaterial({ color: '#8d99a6', roughness: 0.5 });
     for (const b of track.branches) {
       const bw = b.samples[0].width / 2;
-      add(tools.ribbon(b.samples, false, () => [{ d: -bw, h: 0.025 }, { d: bw, h: 0.025 }], 12), roadMat);
-      for (const side of [-1, 1]) add(tools.ribbon(b.samples, false, () => (side < 0 ? [{ d: -bw - CURB_WIDTH, h: 0.03 }, { d: -bw, h: 0.03 }] : [{ d: bw, h: 0.03 }, { d: bw + CURB_WIDTH, h: 0.03 }]), 3), kerbMat);
+      addB(tools.ribbon(b.samples, false, () => [{ d: -bw, h: 0.025 }, { d: bw, h: 0.025 }], 12), roadMat);
+      for (const side of [-1, 1]) addB(tools.ribbon(b.samples, false, () => (side < 0 ? [{ d: -bw - CURB_WIDTH, h: 0.03 }, { d: -bw, h: 0.03 }] : [{ d: bw, h: 0.03 }, { d: bw + CURB_WIDTH, h: 0.03 }]), 3), kerbMat);
       // Glass rails where the branch has walls (same look as the main road's, see trackView).
       const off = bw + def.offroadWidth;
       for (const side of [-1, 1]) {
         for (const run of tools.runs(b.samples, (p) => (side < 0 ? p.wallLeft : p.wallRight))) {
           if (run.length < 2) continue;
-          add(tools.ribbon(run, false, (): Edge[] => [{ d: side * off, h: 0 }, { d: side * off, h: 1.15 }], 6), mallGlassMaterial());
-          add(tools.ribbon(run, false, (): Edge[] => [{ d: side * off - 0.06, h: 1.15 }, { d: side * off + 0.06, h: 1.15 }], 6), railMetal());
+          addB(tools.ribbon(run, false, (): Edge[] => [{ d: side * off, h: 0 }, { d: side * off, h: 1.15 }], 6), glassM);
+          addB(tools.ribbon(run, false, (): Edge[] => [{ d: side * off - 0.06, h: 1.15 }, { d: side * off + 0.06, h: 1.15 }], 6), metalM);
         }
       }
     }
 
-    // ---- The building shell: walls on both sides, gates, glass roof, sunbeams -------------------------
-    const shell = buildShell({ track, tools, group: this.group, inMall, roadDist, roofY });
+    // ---- The building shell: walls along the footprint (with gates), glass roof, sunbeams -------------------------
+    const shell = buildShell({ track, group: this.group, plan: shellPlan, upper: mall.upper });
 
-    // ---- Parking lot: asphalt with bays, kerbs and hedges, parked cars, lamps, garage gates, palms -------------------
+    const spiralPalms: [THREE.Matrix4][] = [];
+    // ---- The spiral's sculpture column: a tall tiled column in the middle of the helix, ringed by planters -------------
+    if (mall.spiral && spiralRuns.length) {
+      const pts = spiralRuns.flat();
+      let cx = 0;
+      let cz = 0;
+      for (const p of pts) {
+        // Centre of curvature of each sample (the helix is a circle arc): r = 1 / curvature, towards the inside.
+        const r = 1 / (p.curvature || 1e-6);
+        cx += p.x + p.rx * r;
+        cz += p.z + p.rz * r;
+      }
+      cx /= pts.length;
+      cz /= pts.length;
+      const colMat = new THREE.MeshStandardMaterial({ color: '#1fb6a6', roughness: 0.25, metalness: 0.35 });
+      add(new THREE.CylinderGeometry(3.2, 3.6, roofY, 24, 1).translate(cx, roofY / 2, cz), colMat, true);
+      // Gold rings up the column and a round planter of palms at its foot.
+      const rings: THREE.BufferGeometry[] = [];
+      for (let y = 3; y < roofY; y += 5.5) rings.push(new THREE.TorusGeometry(3.45, 0.18, 6, 32).rotateX(Math.PI / 2).translate(cx, y, cz));
+      add(mergeGeometries(rings)!, new THREE.MeshStandardMaterial({ color: '#f2c230', roughness: 0.3, metalness: 0.8 }));
+      add(new THREE.CylinderGeometry(9, 9.4, 0.9, 32, 1).translate(cx, 0.45, cz), new THREE.MeshStandardMaterial({ color: '#f4efe4', roughness: 0.5 }), true);
+      const list: [THREE.Matrix4][] = [];
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        list.push([matrix(cx + Math.cos(a) * 6.5, 0.9, cz + Math.sin(a) * 6.5, 1.1, 1.1, 1.1, a)]);
+      }
+      spiralPalms.push(...list);
+      // Slim pillars under the helix's outer edge, where nothing passes below.
+      const pillars: THREE.BufferGeometry[] = [];
+      pts.forEach((p, i) => {
+        if (i % 12 !== 6 || p.y < 3) return;
+        for (const side of [-1, 1]) {
+          const x = p.x + p.rx * side * (outer - 0.5);
+          const z = p.z + p.rz * side * (outer - 0.5);
+          if (blocked(x, z, 0.8, -1, p.y - 2)) continue;
+          pillars.push(new THREE.CylinderGeometry(0.45, 0.5, p.y - 1.2, 10, 1).translate(x, (p.y - 1.2) / 2, z));
+        }
+      });
+      if (pillars.length) add(mergeGeometries(pillars)!, new THREE.MeshStandardMaterial({ color: '#f5f3ee', roughness: 0.4 }), true);
+    }
+
+    // ---- Parking deck: asphalt with bays on a slab (walls to the ground), parked cars, lamps, garage gates -------------
     const lotMat = new THREE.MeshStandardMaterial({ map: lotTexture(), roughness: 0.9 });
     const hedgeMat = new THREE.MeshStandardMaterial({ map: hedgeTexture(), roughness: 1, side: THREE.DoubleSide });
     const curbMat = new THREE.MeshStandardMaterial({ color: '#d8d4ca', roughness: 0.6 });
     const palmMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide });
     const palmGeo = palmGeometry();
-    for (const run of tools.runs(S, (p) => inLot(p))) {
-      add(tools.ribbon(run, false, () => [{ d: -44, h: 0.0 }, { d: 44, h: 0.0 }], 12), lotMat);
+    for (const run of tools.runs(S, (p) => onDeck(p) && spans.has(p))) {
+      slab(run, spanL, spanR, (p) => p.y, lotMat, 0.0);
+      // A parapet along both edges of the deck (a finished edge, and the city beyond).
       for (const side of [-1, 1]) {
-        // A kerb along each edge, then a clipped hedge: a finished edge to the lot.
-        add(tools.ribbon(run, false, () => [{ d: side * 44, h: 0 }, { d: side * 44, h: 0.22 }, { d: side * 45, h: 0.22 }, { d: side * 45, h: 0 }], 4), curbMat);
-        add(tools.ribbon(run, false, () => [{ d: side * 45.6, h: 0 }, { d: side * 45.6, h: 1.5 }, { d: side * 47, h: 1.5 }, { d: side * 47, h: 0 }], 6), hedgeMat);
+        const e = (p: TrackSample) => (side < 0 ? -spanL(p) : spanR(p));
+        addB(tools.ribbon(run, false, (p) => [{ d: e(p), h: 0 }, { d: e(p), h: 1.1 }, { d: e(p) - side * 0.4, h: 1.1 }, { d: e(p) - side * 0.4, h: 0 }], 6), curbMat);
+        addB(tools.ribbon(run, false, (p) => [{ d: e(p) - side * 0.5, h: 0 }, { d: e(p) - side * 0.5, h: 1.3 }, { d: e(p) - side * 1.6, h: 1.3 }, { d: e(p) - side * 1.6, h: 0 }], 6), hedgeMat);
       }
-    }
-    // The backdrop of the lot: a row of palms behind each hedge, with the city skyline behind them (see scenery.ts).
-    {
-      const list: [THREE.Matrix4][] = [];
-      const step = Math.max(1, Math.round(34 / track.spacing));
-      S.forEach((p, i) => {
-        if (i % step !== 0 || !inLot(p)) return;
-        for (const side of [-1, 1]) {
-          const x = p.x + p.rx * side * (52 + ((i * 5) % 7));
-          const z = p.z + p.rz * side * (52 + ((i * 5) % 7));
-          if (roadDist(x, z, p.y) < 49) continue;
-          const sc = 1.05 + ((i * 13) % 5) * 0.08;
-          list.push([matrix(x, p.y, z, sc, sc, sc, (i * 1.7) % 6.28)]);
-        }
-      });
-      if (list.length) instances(palmGeo, palmMat, list, true);
     }
     const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.35 });
     for (let shape = 0; shape < CAR_SHAPES; shape++) {
@@ -713,13 +775,15 @@ export class MallView {
     const placedShops: [number, number][] = [];
     for (let i = 0; i < S.length; i += step) {
       const p = S[i];
-      const indoor = (onUpper(p) || inGarden(p)) && !nearEsc(p.s);
+      const indoor = (onUpper(p) || inGarden(p)) && !nearEsc(p.s) && !inSpiral(p);
       if (!indoor) continue;
       for (const side of [-1, 1]) {
         const d = side * (SHOP_FRONT + SHOP_D / 2);
         const x = p.x + p.rx * d;
         const z = p.z + p.rz * d;
         if (roadDist(x, z, p.y) < SHOP_FRONT + SHOP_D / 2 - 1.5) continue;
+        // On a floor (the upper floor's slab reaches that far), inside the building, nothing of another level in the way.
+        if ((onUpper(p) && !onSlab(p, side * (SHOP_FRONT + SHOP_D + 0.5))) || !indoors(x, z, SHOP_W / 2 + 1) || blocked(x, z, SHOP_W / 2 + 1, p.y - 30, p.y - 1.5) || blocked(x, z, SHOP_W / 2 + 1, p.y + 1.5, p.y + 11)) continue;
         if (placedShops.some(([px, pz]) => Math.hypot(px - x, pz - z) < SHOP_W)) continue;
         placedShops.push([x, z]);
         // Facing the road: local +z points at it.
@@ -759,7 +823,7 @@ export class MallView {
         const d = side * (outer + 4.2);
         const x = p.x + p.rx * d;
         const z = p.z + p.rz * d;
-        if (roadDist(x, z, p.y) < outer + 4) continue;
+        if (roadDist(x, z, p.y) < outer + 4 || !onSlab(p, side * (outer + 5)) || blocked(x, z, 1, -1, p.y - 1.5)) continue;
         colPos.push([x, z, p.y, Math.atan2(-side * p.rx, -side * p.rz)]);
       }
     }
@@ -785,72 +849,24 @@ export class MallView {
     if (posterQuads.length) add(mergeGeometries(posterQuads)!, new THREE.MeshBasicMaterial({ map: posters.map, color: new THREE.Color(1.1, 1.1, 1.1) }));
     // The mall's name over both gates (each seen from outside the gate and from inside it).
     for (const g of shell.gates) {
-      for (const flip of [0, Math.PI]) signQuads.push(quad(18, 4.5, matrix(g.x, g.y + 10.8, g.z, 1, 1, 1, g.rotY + flip).multiply(matrix(0, 0, 0.1)), signs.uv(GATE_SIGN)));
+      for (const flip of [0, Math.PI]) signQuads.push(quad(Math.min(18, g.w - 2), Math.min(18, g.w - 2) / 4, matrix(g.x, g.y + 2.4, g.z, 1, 1, 1, g.rotY + flip).multiply(matrix(0, 0, 0.1)), signs.uv(GATE_SIGN)));
     }
 
-    // ---- The Boutique: the store the shortcut runs through (walls with shelves of clothes, racks, a sign over each door) ----------
-    if (store) {
-      const bw = store.samples[0].width / 2 + def.offroadWidth + 0.3;
-      const wallMat = new THREE.MeshStandardMaterial({ map: boutiqueWallTexture(), roughness: 0.6, side: THREE.DoubleSide });
-      const walled = store.samples.filter((p) => p.wallLeft || p.wallRight);
-      if (walled.length > 2) {
-        for (const side of [-1, 1]) {
-          // (The ribbon's uv runs (across = 0..1, along = metres / repeat); the texture wants them the other way round: 12 m x 6 m.)
-          const g = tools.ribbon(walled, false, (): Edge[] => [{ d: side * bw, h: 0 }, { d: side * bw, h: 6 }], 12);
-          const uv = g.getAttribute('uv') as THREE.BufferAttribute;
-          for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getY(k), uv.getX(k));
-          add(g, wallMat);
-        }
-        // Display racks along both walls: three shelves of colourful products on slim pink uprights.
-        const racks: THREE.BufferGeometry[] = [];
-        const rrnd = rand(19);
-        for (let i = 0; i + 2 < walled.length; i += 2) {
-          const a = walled[i];
-          const b = walled[i + 2];
-          const len = Math.hypot(b.x - a.x, b.z - a.z);
-          const rot = Math.atan2(b.x - a.x, b.z - a.z);
-          for (const side of [-1, 1]) {
-            const cx = (a.x + b.x) / 2 + a.rx * side * (bw - 0.4);
-            const cz = (a.z + b.z) / 2 + a.rz * side * (bw - 0.4);
-            racks.push(boxPart(cx, a.y + 0.12, cz, 0.6, 0.24, len, new THREE.Color('#e04f8a'), rot, 1));
-            for (let sh = 0; sh < 3; sh++) {
-              const y = a.y + 1.1 + sh * 1.1;
-              racks.push(boxPart(cx, y, cz, 0.5, 0.06, len, new THREE.Color('#fffaf5'), rot, 1));
-              for (let k = 0; k < 3; k++) {
-                const t = (k + 0.5) / 3 - 0.5;
-                racks.push(boxPart(cx + Math.sin(rot) * len * t, y + 0.25, cz + Math.cos(rot) * len * t, 0.42, 0.4 + rrnd() * 0.3, len / 3.6, new THREE.Color(PALETTE[Math.floor(rrnd() * 8)]), rot, 1));
-              }
-            }
-            racks.push(boxPart(cx, a.y + 1.9, cz, 0.12, 3.8, 0.12, new THREE.Color('#e04f8a'), rot, 1));
-          }
-        }
-        if (racks.length) add(merge(racks), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }));
-        // Door frames with the store's sign at both ends.
-        const frame: THREE.BufferGeometry[] = [];
-        for (const p of [walled[0], walled[walled.length - 1]]) {
-          const rot = Math.atan2(p.tx, p.tz);
-          for (const side of [-1, 1]) frame.push(boxPart(p.x + p.rx * side * bw, p.y + 3.4, p.z + p.rz * side * bw, 0.8, 6.8, 0.8, new THREE.Color('#e04f8a'), rot));
-          frame.push(boxPart(p.x, p.y + 6.6, p.z, 2 * bw + 0.8, 1.2, 0.8, new THREE.Color('#e04f8a'), rot));
-          signQuads.push(quad(2 * bw - 2, (2 * bw - 2) / 4, matrix(p.x, p.y + 6.6, p.z, 1, 1, 1, rot + Math.PI).multiply(matrix(0, 0, 0.42)), signs.uv(10)));
-          signQuads.push(quad(2 * bw - 2, (2 * bw - 2) / 4, matrix(p.x, p.y + 6.6, p.z, 1, 1, 1, rot).multiply(matrix(0, 0, 0.42)), signs.uv(10)));
-        }
-        add(merge(frame), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }), true);
-      }
-    }
     if (signQuads.length) add(mergeGeometries(signQuads)!, new THREE.MeshBasicMaterial({ map: signs.map, color: new THREE.Color(1.3, 1.3, 1.3) }));
 
     // ---- Palms in planters (solid: from the scenery plan) and flower planters between them -------------------------------
-    if (mp.palms.length) instances(palmGeo, palmMat, mp.palms.map((pl) => [matrix(pl.x, pl.y, pl.z, pl.scale, pl.scale, pl.scale, pl.rotationY)]), true);
+    const palmList: [THREE.Matrix4][] = [...mp.palms.map((pl): [THREE.Matrix4] => [matrix(pl.x, pl.y, pl.z, pl.scale, pl.scale, pl.scale, pl.rotationY)]), ...spiralPalms];
+    if (palmList.length) instances(palmGeo, palmMat, palmList, true);
     {
       const list: [THREE.Matrix4][] = [];
       const pstep = Math.max(1, Math.round(34 / track.spacing));
       for (let i = Math.round(pstep / 2); i < S.length; i += pstep) {
         const p = S[i];
-        if (!(onUpper(p) || inGarden(p)) || nearEsc(p.s)) continue;
+        if (!(onUpper(p) || inGarden(p)) || nearEsc(p.s) || inSpiral(p)) continue;
         for (const side of [-1, 1]) {
           const x = p.x + p.rx * side * (outer + 2.4);
           const z = p.z + p.rz * side * (outer + 2.4);
-          if (roadDist(x, z, p.y) < outer + 1.5) continue;
+          if (roadDist(x, z, p.y) < outer + 1.5 || (onUpper(p) && !onSlab(p, side * (outer + 3.5))) || blocked(x, z, 1, p.y - 30, p.y - 1.5)) continue;
           list.push([matrix(x, p.y, z, 1, 1, 1, Math.atan2(p.tx, p.tz))]);
         }
       }
@@ -897,16 +913,16 @@ export class MallView {
     const LAWN = 17.5;
     for (const run of tools.runs(S, (p) => inGarden(p))) {
       for (const side of [-1, 1]) {
-        add(tools.ribbon(run, false, () => (side < 0 ? [{ d: -LAWN, h: 0.0 }, { d: -outer - 0.3, h: 0.0 }] : [{ d: outer + 0.3, h: 0.0 }, { d: LAWN, h: 0.0 }]), 8), lawnMat);
+        addB(tools.ribbon(run, false, () => (side < 0 ? [{ d: -LAWN, h: 0.0 }, { d: -outer - 0.3, h: 0.0 }] : [{ d: outer + 0.3, h: 0.0 }, { d: LAWN, h: 0.0 }]), 8), lawnMat);
         // Stone edging next to the road, a clipped hedge at the lawn's outer edge.
-        add(tools.ribbon(run, false, () => [{ d: side * (outer + 0.3), h: 0 }, { d: side * (outer + 0.3), h: 0.3 }, { d: side * (outer + 0.95), h: 0.3 }, { d: side * (outer + 0.95), h: 0 }], 4), curbMat);
-        add(tools.ribbon(run, false, () => [{ d: side * LAWN, h: 0 }, { d: side * LAWN, h: 1.3 }, { d: side * (LAWN + 1.2), h: 1.3 }, { d: side * (LAWN + 1.2), h: 0 }], 6), hedgeMat);
+        addB(tools.ribbon(run, false, () => [{ d: side * (outer + 0.3), h: 0 }, { d: side * (outer + 0.3), h: 0.3 }, { d: side * (outer + 0.95), h: 0.3 }, { d: side * (outer + 0.95), h: 0 }], 4), curbMat);
+        addB(tools.ribbon(run, false, () => [{ d: side * LAWN, h: 0 }, { d: side * LAWN, h: 1.3 }, { d: side * (LAWN + 1.2), h: 1.3 }, { d: side * (LAWN + 1.2), h: 0 }], 6), hedgeMat);
       }
     }
     const patchMat = new THREE.MeshStandardMaterial({ ...grass, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     for (const g of track.grassPatches) {
       const ss = between(track, g.s0, g.s1);
-      add(tools.ribbon(ss, false, () => [{ d: g.d0, h: 0.06 }, { d: g.d1, h: 0.06 }], 6), patchMat);
+      addB(tools.ribbon(ss, false, () => [{ d: g.d0, h: 0.06 }, { d: g.d1, h: 0.06 }], 6), patchMat);
     }
     // The fountain: a round water surface where the road gaps (after the rim's kicker), a stone rim round it, two tiered fountains.
     this.water = waterTexture();
@@ -979,6 +995,13 @@ export class MallView {
         }
       });
       if (list.length) instances(bedGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), list);
+    }
+
+    // The batched ribbons and faces: one mesh per material.
+    for (const [mat, list] of batch) {
+      const m = new THREE.Mesh(mergeGeometries(list)!, mat);
+      m.receiveShadow = true;
+      this.group.add(m);
     }
 
     // Everything that glows (HDR vertex colours, unlit): the garages' "P" signs.

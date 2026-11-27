@@ -75,7 +75,10 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
         if (!wantsRoute(b.route)) continue;
         const dist = track.deltaS(p.s, b.s0);
         // (A deck fork is a Y whose arms overlap for a while: keep steering for the branch until it has taken the kart.)
-        if (dist > (b.def.deck ? -90 : -30) && dist < SHORTCUT_APPROACH) {
+        // (...unless the main road already has its rail on the branch's side here: the fork is missed, carry on along the main road.)
+        const w = dist < 0 ? track.wallsAt(p.i) : null;
+        const railed = w !== null && (b.startSide > 0 ? w.right !== null : w.left !== null);
+        if (dist > (b.def.deck ? -90 : -30) && dist < SHORTCUT_APPROACH && !railed) {
           route = b.route;
           at = Math.round(-dist / track.spacing); // negative = still on the main road before the fork
           atFork = b.def.surface !== 'road'; // (a hard-packed branch is taken at full speed)

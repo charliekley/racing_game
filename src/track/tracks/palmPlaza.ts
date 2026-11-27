@@ -70,20 +70,20 @@ function escalators(name: string, dy: number, swing: 1 | -1): void {
 }
 
 // ---- 1. The plaza and the entrance escalators: up into the mall (the main lane swings north, the other south) ----
-t.line(44);
+t.line(40);
 escalators('e1', UPPER, -1);
 
 // ---- 2. Sky Gallery (upper floor): an S along the gallery, then the split ----
 t.line(6).mark('gallery').turn(56, 30).mark('gal1').turn(56, -30).mark('split');
 
 // ---- 3. The atrium split: the main road stays up (gallery, then the down escalators); the lower route turns off ----
-t.line(56).mark('galPad').turn(44, 90).mark('galTurn').line(8);
+t.line(70).mark('galPad').turn(44, 90).mark('galTurn').line(8);
 escalators('e2', -UPPER, 1);
 
 // ---- 4. Garden atrium (ground floor): right into the garden, an S with grass, the fountain ----
 t.line(4).turn(40, 90).mark('gardenIn').turn(90, -15).turn(90, 15).line(36).mark('rejoin');
 t.line(14).mark('fountain'); //   the rim's kicker (10 m), the pool, and a straight run-out
-t.line(28).mark('fountainOut');
+t.line(22).mark('fountainOut');
 t.turn(48, -30).mark('g1').turn(48, 30).mark('g2').turn(48, 14).mark('gardenOut');
 
 // ---- 5. The spiral: a climbing helix round the sculpture column, out of the building at the top ----
@@ -377,8 +377,8 @@ function deckWalls(from: number, to: number): Wall[] {
   return out;
 }
 
-// The game's sides: + lateral = the driver's right = the turtle's... (see `rightOf` in the sim: (-tz, tx)). A turtle
-// right turn (+deg) swings the road towards +lateral... no: towards the driver's LEFT. So:
+// Sides: + lateral = the driver's right (the sim's `rightOf`: (-tz, tx)); a turtle right turn (+deg) swings the road towards the
+// driver's LEFT. So:
 //   e1's main lane swings with a turtle LEFT turn -> to the driver's right; the second lane leaves on the driver's left.
 //   e2's main lane swings with a turtle RIGHT turn -> to the driver's left; the second lane leaves on the driver's right.
 //   The lower route leaves with a turtle right turn -> on the driver's left; it rejoins from the same side.
@@ -441,7 +441,7 @@ export const palmPlaza: TrackDef = {
       seed: 5,
       upper: UPPER,
       upperFloor: [{ from: at('e1Off'), to: at('e2On') }],
-      garden: { from: at('gardenIn'), to: at('gardenOut') },
+      garden: { from: at('rejoin'), to: at('gardenOut') },
       fountain: { at: at('fountain'), length: 24 },
       spiral: { from: at('spiralIn'), to: at('spiralOut') },
       deck: { from: at('mallExit'), to: at('ramp1') },
@@ -449,10 +449,10 @@ export const palmPlaza: TrackDef = {
       // The building: round everything from the top of the entrance escalators to the top of the spiral.
       building: [
         [155, 34],
-        [405, 34],
-        [405, -318],
-        [72, -318],
-        [72, -190],
+        [420, 34],
+        [420, -318],
+        [105, -318],
+        [105, -190],
         [155, -100],
       ],
     },

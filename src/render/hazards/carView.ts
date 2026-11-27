@@ -1,11 +1,13 @@
 /**
- * Draws Palm Plaza's parking-lot cars (the rules live in sim/hazards/car.ts): every car of every lane is one instance of one of
+ * Draws Palm Plaza's parking-deck traffic (the rules live in sim/hazards/car.ts): every car of every lane is one instance of one of
  * three body shapes (hatchback, saloon, SUV; env/mall.ts `carGeometry`), facing the way it drives, tinted its own colour, and
- * shrunk to nothing while it is "in the garage" (between crossings). The four wheels of every car are instances of one wheel
+ * shrunk to nothing while it is "in the garage" (between drives). The four wheels of every car are instances of one wheel
  * model that rolls with the car's speed, and glowing head and tail lights (HDR, they bloom) are one more instanced mesh.
- * Draw calls: 3 bodies + wheels + lights = 5 for all the cars.
+ * Indicators: two amber lamps per car (front and rear corner) on the side it is about to move to, blinking (`CarState.blink`).
+ * Draw calls: 3 bodies + wheels + lights + indicators = 6 for all the cars.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Car } from '../../sim/hazards/car';
 import type { Hazard } from '../../sim/hazards/types';
 import { CAR_COLORS, CAR_SHAPES, WHEEL_R, WHEEL_SPOTS, carGeometry, carLightGeometry, carWheelGeometry } from '../env/mall';
@@ -22,6 +24,7 @@ export class CarView {
   private readonly slots: { shape: number; index: number }[] = [];
   private readonly wheels: THREE.InstancedMesh;
   private readonly lights: THREE.InstancedMesh;
+  private readonly indicators: THREE.InstancedMesh;
   private readonly cars: Car[];
 
   constructor(
@@ -59,7 +62,12 @@ export class CarView {
     this.wheels.frustumCulled = false;
     this.lights = new THREE.InstancedMesh(carLightGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true }), total);
     this.lights.frustumCulled = false;
-    scene.add(this.wheels, this.lights);
+    // Indicator lamps on the car's right (+x); mirrored (scale x -1) for the left.
+    const lamp = new THREE.BoxGeometry(0.12, 0.16, 0.3);
+    const ind = mergeGeometries([lamp.clone().translate(1.01, 0.75, 2.05), lamp.clone().translate(1.01, 0.8, -2.05)])!;
+    this.indicators = new THREE.InstancedMesh(ind, new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.6, 0.2) }), total);
+    this.indicators.frustumCulled = false;
+    scene.add(this.wheels, this.lights, this.indicators);
   }
 
   update(time: number): void {
@@ -74,10 +82,14 @@ export class CarView {
           this.bodies[slot.shape].setMatrixAt(slot.index, _m);
           this.lights.setMatrixAt(i, _m);
           WHEEL_SPOTS.forEach(([wx, wz], k) => this.wheels.setMatrixAt(i * 4 + k, _w.copy(_m).multiply(matrix(wx, WHEEL_R, wz, 1, 1, 1, 0, roll))));
+          // Indicators: on while blinking (~1.5 Hz), on the side the car turns to (the car's own right = local -x, as the game's x is mirrored).
+          const on = car.blink !== 0 && time % 0.66 < 0.36;
+          this.indicators.setMatrixAt(i, on ? _w.copy(_m).multiply(matrix(0, 0, 0, -car.blink, 1, 1)) : HIDDEN);
         } else {
           this.bodies[slot.shape].setMatrixAt(slot.index, HIDDEN);
           this.lights.setMatrixAt(i, HIDDEN);
           for (let k = 0; k < 4; k++) this.wheels.setMatrixAt(i * 4 + k, HIDDEN);
+          this.indicators.setMatrixAt(i, HIDDEN);
         }
         i++;
       }
@@ -85,12 +97,13 @@ export class CarView {
     for (const b of this.bodies) b.instanceMatrix.needsUpdate = true;
     this.wheels.instanceMatrix.needsUpdate = true;
     this.lights.instanceMatrix.needsUpdate = true;
+    this.indicators.instanceMatrix.needsUpdate = true;
   }
 
   setQuality(_q: QualitySettings): void {}
 
   dispose(): void {
-    for (const m of [...this.bodies, this.wheels, this.lights]) {
+    for (const m of [...this.bodies, this.wheels, this.lights, this.indicators]) {
       this.scene.remove(m);
       m.geometry.dispose();
     }

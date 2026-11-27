@@ -420,7 +420,8 @@ export class EscalatorView {
     arrows: THREE.MeshBasicMaterial[];
     strips: THREE.MeshBasicMaterial[];
     signs: { mat: THREE.MeshBasicMaterial; kind: 'down' | 'up' | 'stop' | '' }[];
-    rig: RobotRig;
+    /** The guide robot (null at a pair without one: direction lights and signs only). */
+    rig: RobotRig | null;
   }[] = [];
   private readonly root = new THREE.Group();
   private readonly signTex = { down: signTexture('down'), up: signTexture('up'), stop: signTexture('stop') };
@@ -573,15 +574,14 @@ export class EscalatorView {
       addMesh(combs, combMat);
       addMesh(rails, rubber);
       addMesh(skirts, steel);
-      // The robot's pillar (an information column) between the lanes, with the truss panels.
+      // The robot's pillar (an information column) between the lanes, with the truss panels (a pair without a robot has none).
       const m = h.mascot(0);
-      const pillar = new THREE.CylinderGeometry(1.1, 1.3, m.y, 16, 1).translate(m.x, m.y / 2, m.z);
-      panels.push(pillar);
+      if (h.hasMascot) panels.push(new THREE.CylinderGeometry(1.1, 1.3, m.y, 16, 1).translate(m.x, m.y / 2, m.z));
       addMesh(panels, truss, true);
       if (housings.length) this.root.add(new THREE.Mesh(merge(housings), housingMat));
 
       // The guide robot.
-      this.items.push({ h, steps, arrows, strips, signs, rig: this.buildRobot(m, robotMat) });
+      this.items.push({ h, steps, arrows, strips, signs, rig: h.hasMascot ? this.buildRobot(m, robotMat) : null });
     }
     scene.add(this.root);
   }
@@ -654,7 +654,8 @@ export class EscalatorView {
         it.strips[lane].color.copy(color).multiplyScalar(blink);
         // The overhead sign: chevrons down / up or two bars, in the lane's colour.
         const sign = it.signs[lane];
-        const kind = dir > 0 ? 'down' : dir < 0 ? 'up' : 'stop';
+        // (With the traffic = the way the road goes: down, or up at the entrance.)
+        const kind = dir === 0 ? 'stop' : (dir > 0) !== it.h.rising ? 'down' : 'up';
         if (sign.kind !== kind) {
           sign.kind = kind;
           sign.mat.map = this.signTex[kind];
@@ -662,7 +663,7 @@ export class EscalatorView {
         }
         sign.mat.color.copy(color).multiplyScalar(blink * 0.9);
       }
-      this.poseRobot(it.rig, it.h, time, dt, focus);
+      if (it.rig) this.poseRobot(it.rig, it.h, time, dt, focus);
     }
   }
 

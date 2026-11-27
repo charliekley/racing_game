@@ -474,6 +474,7 @@ best human. Otherwise it stays on the main road (`shortcutBias` 0). Easy bots ne
 junctions, so a bot never changes its mind half way into a fork. Mandatory routes (mandatory cannons, Sky Leap and the cliff cap) are not shortcuts and every bot takes
 them. Rainbow Route's high line is an ordinary branch: the main ribbon is the default and only a lagging bot takes the high line.
 Tests: `bots.test.ts` ("bots and shortcuts"): alone / in front, a normal or hard bot spends 0 ticks on a shortcut; held back 16 s a hard bot takes them and gets round; easy never.
+Exceptions (Palm Plaza): the escalator forks and an `alternate` branch (`ShortcutDef.alternate`: a second route of about the same time, the mall's lower level) are not shortcuts: `BotStyle.branchChoice` decides them per bot (`pickEscalator`, `pickAlternate`; see the Palm Plaza section).
 
 ## Rainbow Route (7th track): what is implemented
 
@@ -562,84 +563,101 @@ Plus all the generic ones (layout, grid of 12, bots of every difficulty, 12 race
 ## Palm Plaza (8th track): what is implemented
 
 An original, bright, modern **two-storey shopping mall** with palm trees. Lobby index 7 (`?track=7`), 8th and last race of the Grand Prix.
-3 laps, 1.56 km; every bend has a radius of 28 m or more (main road and both deck lanes); flat floors (no banking). A normal bot laps alone in
-about 51 s (4 normal bots: 54-56 s per lap in a race), so 3 laps take a person about 2:30-2:45. Music: its own tune `plaza` (Bb major, 104 bpm).
+3 laps, 1.60 km; every bend has a radius of 28 m or more (main road and every deck lane); flat floors (no banking). A normal bot laps alone in
+about 50-51 s (4 normal bots: 52-58 s per lap in a race), so 3 laps take a person about 2:30-2:45. Music: its own tune `plaza` (Bb major, 104 bpm).
 Everything (stores, signs, posters, the guide robot) is made up for this game.
+
+Rework after play-testing ("the store shortcut is dumb, you clip a wall", "add escalators going up at the start", "the cars never
+bothered me", "the second half is flat and boring"): the store shortcut is gone; a level choice (gallery or atrium floor, with a leap
+off the ledge), an entrance escalator pair going up, a spiral ramp, and traffic that drives ALONG the road on the parking deck.
 
 ### Layout (`src/track/tracks/palmPlaza.ts`, turtle-written, `closeTo` closes the lap; careful: +x is on a driver's LEFT when facing +z)
 
 | # | Section | Height | What happens |
 |---|---|---|---|
-| 1 | Parking ramp | 0 -> 13 m | the grid on the entrance plaza, then climbing S-bends (r 50, ~6 %) up the parking deck |
-| 2 | Sky Promenade | 13 m | upper-floor gallery: glass railings, shops, palms, string lights; a bend north |
-| 3 | The Boutique (choice) | 13 m | main road swings left round a store (r 40 arcs); `shortcuts[0]` (a walled `deck`, 10 m wide, full speed) runs straight through it, in one door and out the other: 23 m shorter (~0.8 s) |
-| 4 | The escalators | 13 -> 0 m | a Y split into two parallel escalator lanes 78 m long going down (~17 %): the main road (driver's left) and `shortcuts[1]` (a walled `deck` mirrored across the fork's axis, same length and heights); 27 m between the lane centres, the guide robot on a pillar between them |
-| 5 | Garden atrium | 0 m | S-bends with boost pads and 5 grass patches (`TrackDef.grassPatches`: 'offroad' surface on the road), the fountain (a 1.4 m kicker at its rim, a 24 m pool, a row of 4 item boxes floating 2.2 m over it: `TrackDef.floatingItemRows`) |
-| 6 | Parking lot | 0 m | outside: S-bends, 4 car lanes crossing the road (kerb gaps where they cross), a boost pad on every car lane |
-| 7 | Home | 0 m | a sweeping bend, an S and the plaza straight to the line |
+| 1 | Plaza + entrance escalators | 0 -> 13 m | the grid on the entrance plaza, then a Y split into two escalator lanes 78 m long going UP (~17 %) through the mall's front: the main road and `shortcuts[0]` (a walled `deck` mirrored across the fork's axis). Their own timetable (`phase` 12 s); no robot, direction lights and signs only |
+| 2 | Sky Gallery | 13 m | an S along the upper floor (glass railings, shops, palms, boost pads) |
+| 3 | The atrium split (level choice) | 13 -> 0 m | UPPER (main road): on along the gallery (3 boost pads), a bend, then DOWN the second escalator pair (main + `shortcuts[1]`, the guide robot between them). LOWER (`shortcuts[2]`, a 20 m wide `deck`, `alternate`): turns off the gallery's inside, runs up a 1.7 m kicker to the gallery's EDGE and drops 13 m onto the atrium floor (its height line falls in 2 m: `deckSmooth: 1`), then down the atrium floor past palm islands and back in. Times: upper 10-12 s with a helping belt, 15-19 s against; lower 12.5-14 s |
+| 4 | Garden atrium | 0 m | the fountain (a 1.4 m kicker at its rim, a 24 m pool, a row of 4 item boxes floating 2.2 m over it), S-bends with 3 grass patches (`TrackDef.grassPatches`) |
+| 5 | The spiral | 0 -> 13 m | a helix of radius 38 m, 330 degrees, round a teal sculpture column; its exit passes 13 m over its own entry and leaves the building |
+| 6 | Parking deck | 13 m | outside, S-bends, the traffic (below), parked cars, garage gates |
+| 7 | Deck ramp + home | 13 -> 0 m | S-bends down the ramp, a bend and a gentle S onto the plaza and the grid |
 
-Walls: glass railings almost everywhere. At both Y forks the inner side of the main road stays OPEN for 52-56 m after the split and before
-the merge: a kart steps from the main road onto a deck only once it is off the main road's kerb (`projectWithBranches`), so the opening must
-outlast the point where the roads have pulled apart.
+Walls: glass railings almost everywhere. At every Y fork the inner side of the main road stays OPEN for 52-56 m after the split and before
+the merge (`forkWalls`): a kart steps from the main road onto a deck only once it is off the main road's kerb (`projectWithBranches`). The
+deck's parapets have short gaps where the cars come out of / go into their garage gates (`deckWalls`).
+
+### The ledge (lower route)
+
+* Any speed lands on the atrium floor: at walking pace the kart rolls off the lip and drops; flat out (34 m/s) it flies ~45 m and the deck
+  runs straight for 30 m past the lip first. Leaving the kicker rising (> 3 m/s up) makes the jump trickable: a trick pays the usual boost on
+  landing (`kart.ts`). Walls on both sides of the whole raised part and the landing (they stand at any height).
+* Look: the raised part has its own slab with faces down to the floor, a ledge face at the lip with a yellow edge; the drop itself is a
+  steep tiled chute (the deck ribbon follows the height line).
 
 ### Escalators (`sim/hazards/escalator.ts`, kind `'escalator'`, view `render/hazards/escalatorView.ts`)
 
-* Two lanes: the main road between `from`..`to` and the deck branch `branch` between the samples nearest `branchFrom`/`branchTo`.
+* Two pairs: the entrance (up, `mascot: false`) and the down pair. Each: the main road between `from`..`to` and the deck branch `branch`
+  between the samples nearest `branchFrom`/`branchTo`. `Escalator.rising` says which way the road goes; the signs show up / down chevrons
+  accordingly.
 * Belt: a kart on the ground on a moving part is carried along the lane by `ESCALATOR_SPEED` = 8.5 m/s (a displacement; the kart's own speed is
-  untouched): with the traffic ~ +30 %, against ~ -30 %. Measured over the 78 m (gas only): with 2.15 s, stopped 2.80 s, against 4.00 s.
+  untouched): with the traffic ~ +30 %, against ~ -30 %. Measured over the 78 m (gas only): with 2.15 s, stopped 2.80 s, against 4.02 s.
   Respawning, flying and Rocket karts are not carried. Never a hit.
-* Timetable (`ESCALATOR_SCHEDULE`, pure function of the race clock, 61 s cycle): `[main, branch, seconds]` = [1,-1,13] [-1,1,13] [0,0,6]
-  [-1,1,9] [1,-1,11] [0,0,5] [1,-1,4]. One lane always helps and the other hinders, except two pauses when both stop. Belts ramp over `RAMP` 1 s
-  (smoothstep). `travel(lane, t)` is the exact integral of the belt speed (the drawn steps never jump). Phases: `warn` in the last `WARN`
-  2.5 s before a change (chime `bridgeBell`, the robot waves), `active` while a belt moves, `idle` while both are stopped.
-* Guide robot: `Escalator.mascot(time)`: halfway between the two lane middles, facing the karts; `target` = the middle of the lane that runs
-  with the traffic (null when neither does: it shrugs); `wave` before a change. Original design: a rounded white robot with a dark screen face
-  (glowing eyes and smile), a teal sash and ears, an antenna and a wheel base, 1.7x statue size on an information pillar.
-* View: scrolling step texture per lane (offset = travel), glowing chevrons pointing the belt's way (hidden while stopped), light strips along
-  both edges: GREEN with you, RED against, AMBER stopped, blinking during `warn`; side cladding down to the floor.
-* Bots (`bots.ts` `pickEscalator`, `BotStyle.branchChoice` in `autopilot.ts`): the escalator fork is not a shortcut (the lagging rule does
-  not apply). Easy: looks at the current state 150 m before the fork and ignores it 30 % of the time; normal: the current state 100 m before;
-  hard: 70 m before, `Escalator.bestLane` (average belt speed over its own ride, from the fixed timetable). Measured over a 3-lap race of 4 bots:
-  hard rides the helping lane 100 % of the time (12/12), normal 64 %, easy 40 %.
-* `autopilot.ts` change (generic, only matters for a WALLED deck): a bot that ended up on a walled deck it did not want carries on along it
-  once it is off the main road's verge (it cannot get back across the rail); Rainbow Route's deck has no walls, so it is unchanged.
+* Timetable (`ESCALATOR_SCHEDULE`, pure function of the race clock, 61 s cycle, `phase` per pair): `[main, branch, seconds]` = [1,-1,13]
+  [-1,1,13] [0,0,6] [-1,1,9] [1,-1,11] [0,0,5] [1,-1,4]. Belts ramp over 1 s. `warn` 2.5 s before a change (chime, the robot waves).
+* Guide robot (down pair only): halfway between the lane middles, points at the lane that runs with the traffic, shrugs when both stop,
+  waves before a change, its head follows the nearest kart.
+* Bots (`bots.ts` `pickEscalator`, per pair): easy: the current state 150 m before the fork, ignored 30 % of the time; normal: 100 m before;
+  hard: 70 m before, `Escalator.bestLane` (average belt speed over its own ride). Over a 3-lap race of 4 bots: hard ride the helping lane
+  95 % of the time, normal 67 %, easy 69 % (rides where both lanes differ).
 
-### Parking-lot cars (`sim/hazards/car.ts`, kind `'car'`, view `render/hazards/carView.ts`)
+### Level choice for bots (`ShortcutDef.alternate`, `bots.ts` `pickAlternate`)
 
-* A car lane crosses the road at `at` from a garage gate at `-reach` to one at `+reach` (default road half width + 16 m), `dir` +-1, `speed`
-  9 m/s, `cars` per lane evenly spaced in `period`; between crossings a car is hidden "in the garage". Pure function of the clock.
-* A car is a 4.4 x 2.0 m box: touching it FLIPS the kart (`spinOut`, +7.5 m/s up, a 7 m/s shove the car's way; the kart view does one barrel
-  roll, `KartView.startFlip`, triggered by `hazardHit` with `type: 'car'` in `game.ts`). Nova karts pass, a kart still invulnerable is only pushed out.
-* Bots read `danger()` (the car's lateral band +-0.35 s around their arrival) through `dangerAhead`: car hits in a 3-lap race of 4 bots:
-  easy 4, normal 3, hard 1.
-* Four lanes (periods 8-10 s), each with a boost pad on it.
+An `alternate` branch is not a shortcut (the lagging rule does not apply): decided once per approach, 120 m before the fork. Hard: takes the
+lower level when the down escalators will not help (`bestLane` = -1), else stays up and rides the helping lane; normal: every other lap
+(half of them on odd laps); easy: one bot in three. Generic changes for it: `BotStyle.branchChoice` covers every escalator pair and the
+alternate; `railAim` (Seeker / Hunter / Rocket rails) follows a target onto a deck branch up to 60 m past the junction (a deck's Y arms
+overlap that long).
+
+### Deck traffic (`sim/hazards/car.ts`, kind `'car'`, view `render/hazards/carView.ts`)
+
+* A car stretch (`CarDef`: `from`..`to` on the main road, `dir` +1 with the race / -1 against it, `sides`, `speed` 12 m/s, `cars`, `period`):
+  each car comes out of a garage gate beside the road (`GATE` 18 m from the gate at 15.5 m to its half), drives the stretch on ONE half of
+  the road (`lane` 4.2 m from the centre; the other half, 8+ m wide, stays free), changes sides at the part boundaries (indicators on for
+  `INDICATE` 30 m first, swing over `SWING` 16 m) and goes into the gate at the end; hidden in the garages for the rest of its period.
+  Pure function of the clock. Two stretches: 2 oncoming cars (right half, period 9 s), then 2 slow cars going your way that move from the
+  left half to the right one (period 11 s).
+* A car is a 4.4 x 2.0 m box: touching it FLIPS the kart (`spinOut`, +7.5 m/s up, a 7 m/s shove the car's way, a barrel roll in the view).
+  Nova karts pass, a kart still invulnerable is only pushed out.
+* Bots: `Hazard.dangerFor(s, speed, d, time)` (new, optional): where will each car be when the kart reaches it (closing speed = kart speed
+  minus the car's speed along the race)? `HazardSystem.dangerAhead` uses it instead of `danger` when present. Car hits over a 3-lap race of
+  4 bots: 0 at every difficulty (they steer round).
 
 ### Look (`render/env/mall.ts`, `mallShell.ts`, `mallStyle.ts`, gated by `scenery.mall` = `MallDef`; `trackView.ts` switches when `isMall`)
 
-No terrain mesh: a tiled ground floor (polished terracotta checker, low roughness), upper-floor slabs 30 m wide, the store floor, a concrete
-parking-deck ramp, asphalt with painted bays for the lot. Mood `'mall'` (`scene.ts`): warm sun through the glass, less haze, more contrast and
-saturation; the mountain/hill backdrop and the balloons are skipped (`scenery.ts`, `extras.ts`): only a hazy city skyline all round.
-* **Shell** (`mallShell.ts`): outer walls on both sides of the indoor part (upper-floor start to garden end), ~30.6 m from the road, bulging
-  (smoothed) where another lane is close; bands: base wall, painted shop zone (9 m, `facadeTexture`), glass clerestory; lintels with the mall's
-  name close both gates; skylight roof = one transparent lattice mesh + slim instanced beams (16 m grid); a few additive sunbeams.
-* **Shops**: coloured bodies, three display windows each (atlas of 8 made-up shop scenes), striped awnings, neon/bright sign boards (17 made-up names),
-  crates; posters on columns and walls; flower planters (instanced), palms with pinnate fronds, string lights on wires.
-* **Garden**: lawns with stone edging and hedges, flower beds, a round water surface in a stone rim, two tiered fountains with jets and a
-  droplet spray (a `Points` mesh moved on the CPU, 180 points). **Lot**: kerbs and hedges, a palm row, three car body shapes (`carGeometry(shape)`),
-  garage gates with roll-up doors, hazard stripes and glowing "P" signs. **Boutique**: shelf-printed walls plus 3D display racks.
-* **Cars** (`carView.ts`): 3 body meshes, instanced turning wheels (rolling with the speed) and a glowing head/tail light mesh.
-* **Escalators** (`escalatorView.ts`): ribbed steps with bump map, comb plates, black rubber hand rails with posts, steel skirts, GREEN/RED/AMBER
-  light strips under the rail and on the skirt plus a bar across the top end, overhead signs with chevrons (down/up/bars), truss panels. The guide
-  robot has a curved screen face (expressions: smile, joy, shrug, wow, blinking), a head that follows the nearest kart (`HazardViews.update` passes
-  the camera-followed karts), and two-joint arms for pointing, shrugging and waving.
-Perf (headless, 1 viewport, `renderer.info`, Low): 71-145 draw calls / 128-174 k triangles (before this pass: 67-132 / 150-190 k).
+* **Plan** (`track/mallPlan.ts` `planMallShell`, pure, shared by the renderer and the tests): the building's WALLS along the footprint
+  polygon `MallDef.building`, with an opening wherever a road (main or branch) passes through (its width / sin(angle) + 2 m, open to 9 m above
+  the road); the upper-floor SLAB and the parking DECK spans per main sample, as wide as possible (30 m) but never over a road of another
+  level (the atrium stays open above every ground-floor road and round the escalators) and never through the wall.
+* **Shell** (`mallShell.ts`): wall bands (ground-floor shop zone, slab band, upper shop zone, glass clerestory), the mall's name over every
+  gate, glass roof over the footprint (one transparent mesh + instanced beams), sunbeams.
+* Floors: tiled ground, upper slabs (plan spans), the spiral's helical slab with a fascia and slim pillars where nothing passes below, the
+  sculpture column (teal, gold rings, palm planter), the lower route's raised start and ledge, the deck (asphalt with bays, parapets and
+  hedges, walls to the ground), the ramp. Static ribbons are merged into one mesh per material (draw calls).
+* Shops, columns, planters and string lights only where a floor is (slab spans), inside the building and with nothing of another level in
+  the way; palms (solid, from the plan) stand on their road's floor; palm islands along the lower route.
+* Cars (`carView.ts`): 3 body meshes, instanced wheels, head/tail lights, and blinking amber indicators.
+Perf (headless, 1 viewport, `renderer.info`, Low): 56-145 draw calls / 109-172 k triangles.
 
 ### Tests
 
-`palmPlaza.test.ts`: length and radius (main road and both decks), two floors and parallel equal-length escalator lanes, the store shortcut is
-shorter and walled, grass patches are offroad, the floating row of 4 boxes over the pool, a boost pad on every car lane; escalator timetable
-(periodic, one with / one against, pauses), travel = integral of speed, the ride is ~30 % faster / slower, carrying rules, the mascot points
-at the lane that runs with the traffic and waves before a change; cars (periodic, hidden between crossings, hit = flip, Nova passes); bots of
-every difficulty finish 3 laps with at most 1 respawn, hard bots pick the helping escalator >= 85 % (and more often than easy), hard bots hit
-cars no more than easy, a normal bot laps in 48-58 s. `sceneryPlan.test.ts` expects palms and parked cars instead of trees on this track.
-Plus the generic ones (layout, grid of 12, items, bots of every difficulty, 12 racers, class balance, Rocket/Seeker/Hunter rails, maps, tunes).
+`palmPlaza.test.ts`: length and radius (main road and every deck lane); the entrance pair goes up (no robot), the down pair down (robot),
+both pairs parallel and equal length, their timetables out of step; the lower route is wider, starts at 13 m, has a kicker and a 13 m drop
+within 8 m, and is 70-110 % of the main road's span; a kart lands on the atrium floor from the ledge at 6, 18, 27 and 34 m/s and a trick
+pays a boost; the spiral climbs a floor over > 300 degrees; **nothing clips a road**: every road's cross-section crosses the building's
+walls only inside an opening tall enough, no road runs under an upper slab or the deck, no solid prop stands on any road at its level;
+grass patches are offroad, the floating row of 4 boxes; escalator timetable, belt travel, the ride is ~30 % faster / slower, carrying rules,
+the mascot; deck traffic: cars on one half of the road (pure function of the clock), indicators, never both halves blocked, hit = flip,
+Nova passes, bots see a car on its half only; bots of every difficulty finish 3 laps with at most 1 respawn, hard bots ride the helping
+escalator >= 85 % (more than easy), normal bots use both levels, hard bots hit cars no more than easy, a normal bot laps in 48-58 s.
+`sceneryPlan.test.ts`: palms and parked cars instead of trees; on the mall, things stand on their road's floor (not the supplied ground).

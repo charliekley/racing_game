@@ -1,38 +1,34 @@
 /**
- * Palm Plaza's building shell: the outer walls that close in the indoor part of the lap (so from the road you never see
- * the hills, the sky line or the other floors outside), the skylight roof and its sunbeams.
+ * Palm Plaza's building shell: the outer walls that close in the indoor part of the lap, the skylight roof and its sunbeams.
  *
- *   - WALLS run along both sides of the road from the mall's entrance (the top of the parking ramp) to its exit (the end of the
- *     garden). They keep ~30 m from the road and bulge outward where another lane is close (the second escalator), following a
- *     smoothed offset so they never cut into a lane. From the floor the road is on they are three bands: a painted shop zone
- *     (the shop fronts stand against it), a tall clerestory of glass panes, and a plain base wall down to the ground floor.
- *     A lintel with the mall's name closes both gates.
+ *   - WALLS stand along the edges of the building's footprint (`MallDef.building`, planned in track/mallPlan.ts with an
+ *     opening wherever a road passes through, sized for its width and the crossing angle). Bands from the ground up: a
+ *     painted shop zone for the ground floor, a plain band at the upper floor's slab, a second shop zone for the upper
+ *     floor, and a tall clerestory of glass panes up to the roof. Over an opening only the part above its lintel stands.
  *   - ROOF: tinted glass with a fine lattice texture (one transparent mesh) on a coarse structural grid of slim steel beams
- *     (instanced). It only covers the building.
+ *     (instanced). It covers the footprint.
  *   - SUNBEAMS: a few slanted additive light shafts through the glass (crossed quads, no particles).
  *
- * Cost: 4-5 draw calls, ~8k triangles.
+ * Cost: 5-6 draw calls, a few thousand triangles.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Track } from '../../sim/track';
+import { insidePolygon, type MallShellPlan } from '../../track/mallPlan';
 import { matrix } from './geo';
 import { beamTexture, clerestoryTexture, facadeTexture, roofTexture } from './mallStyle';
-import type { RibbonTools } from './rainbow';
 
-/** Where the walls stand: this far (m) from the road centre when nothing is in the way. */
-export const WALL_D = 30.6;
-/** Height of the shop zone above the floor (m). */
+/** Height of a shop zone above its floor (m). */
 export const SHOP_ZONE = 9;
 /** Direction of the light the sunbeams follow (matches the 'mall' mood in scene.ts): azimuth and elevation, degrees. */
 export const MALL_SUN = { azimuth: 30, elevation: 62 };
 
-/** A point of a wall line: position, floor height there, the unit vector pointing from the wall back to the road. */
+/** A point of a wall line: position, the upper floor's height, the unit vector pointing from the wall into the building. */
 export interface WallPoint {
   x: number;
   z: number;
   y: number;
-  /** Unit vector (x, z) pointing inward (towards the road). */
+  /** Unit vector (x, z) pointing inward. */
   nx: number;
   nz: number;
   /** Distance along the wall (m). */
@@ -40,71 +36,71 @@ export interface WallPoint {
 }
 
 export interface Shell {
-  /** The wall lines (one run per side and continuous stretch), for the things that hang on the walls. */
+  /** Points along the solid parts of the walls (one run per piece of wall), for the things that hang on them. */
   walls: WallPoint[][];
-  /** The two gates: where the road enters/leaves the building (position, floor height, heading, width). */
+  /** The gates: where a road passes through a wall (centre on the wall, the lintel's height, facing inward, width). */
   gates: { x: number; z: number; y: number; rotY: number; w: number }[];
 }
 
 interface ShellOptions {
   track: Track;
-  tools: RibbonTools;
   group: THREE.Group;
-  /** Is arc length s inside the building? */
-  inMall: (s: number) => boolean;
-  /** Distance to the nearest road (main or branch) at about floor height y. */
-  roadDist: (x: number, z: number, y: number) => number;
-  roofY: number;
+  plan: MallShellPlan;
+  /** The upper floor's height (m). */
+  upper: number;
 }
 
 export function buildShell(o: ShellOptions): Shell {
-  const { track, tools, group, roofY } = o;
-  const S = track.samples;
+  const { track, group, plan } = o;
+  const roofY = plan.roofY;
+  const poly = track.def.scenery.mall!.building;
   const shell: Shell = { walls: [], gates: [] };
-
-  // ---- Wall lines: smoothed offsets that stay clear of every lane ---------------------------------------------
-  const runs = tools.runs(S, (p) => o.inMall(p.s));
   const wallMats = {
     base: new THREE.MeshStandardMaterial({ color: '#d4c4ae', roughness: 0.7, side: THREE.DoubleSide }),
     shop: new THREE.MeshStandardMaterial({ map: facadeTexture(), roughness: 0.55, side: THREE.DoubleSide }),
     glass: new THREE.MeshBasicMaterial({ map: clerestoryTexture(), side: THREE.DoubleSide }),
   };
   const bands: Record<'base' | 'shop' | 'glass', THREE.BufferGeometry[]> = { base: [], shop: [], glass: [] };
-  for (const run of runs) {
-    if (run.length < 3) continue;
-    for (const side of [-1, 1]) {
-      // Raw distance: the first one of 30.6, 33.6... m whose spot is at least 28 m from every road at this level.
-      const raw = run.map((p) => {
-        for (let d = WALL_D; d < 62; d += 3) {
-          if (o.roadDist(p.x + p.rx * side * d, p.z + p.rz * side * d, p.y) >= WALL_D - 2.5) return d;
-        }
-        return WALL_D;
-      });
-      // Widen over neighbours, then relax (never below the raw value), so the wall flows round the obstacle.
-      let d = raw.map((_, i) => Math.max(...raw.slice(Math.max(0, i - 5), i + 6)));
-      for (let pass = 0; pass < 8; pass++) d = d.map((v, i) => Math.max(raw[i], (d[Math.max(0, i - 1)] + v * 2 + d[Math.min(d.length - 1, i + 1)]) / 4));
-      const pts: WallPoint[] = [];
-      let u = 0;
-      run.forEach((p, i) => {
-        const x = p.x + p.rx * side * d[i];
-        const z = p.z + p.rz * side * d[i];
-        if (i > 0) u += Math.hypot(x - pts[i - 1].x, z - pts[i - 1].z);
-        pts.push({ x, z, y: p.y, nx: -p.rx * side, nz: -p.rz * side, u });
-      });
-      shell.walls.push(pts);
-      bands.base.push(strip(pts, () => 0, (p) => p.y, 8, () => 1));
-      bands.shop.push(strip(pts, (p) => p.y, (p) => p.y + SHOP_ZONE, 24, () => 1));
-      bands.glass.push(strip(pts, (p) => p.y + SHOP_ZONE, () => roofY + 2, 24, (p) => (roofY + 2 - p.y - SHOP_ZONE) / 8));
+  // The bands: [material, bottom, top, metres per texture repeat along, texture repeats up].
+  const layout: ['base' | 'shop' | 'glass', number, number, number, number][] = [
+    ['shop', 0, SHOP_ZONE, 24, 1],
+    ['base', SHOP_ZONE, o.upper, 8, 1],
+    ['shop', o.upper, o.upper + SHOP_ZONE, 24, 1],
+    ['glass', o.upper + SHOP_ZONE, roofY + 2, 24, (roofY + 2 - o.upper - SHOP_ZONE) / 8],
+  ];
+  for (const w of plan.walls) {
+    const len = Math.hypot(w.bx - w.ax, w.bz - w.az);
+    const ux = (w.bx - w.ax) / len;
+    const uz = (w.bz - w.az) / len;
+    // Inward normal: the side of the edge the footprint is on.
+    let nx = -uz;
+    let nz = ux;
+    if (!insidePolygon(poly, (w.ax + w.bx) / 2 + nx * 2, (w.az + w.bz) / 2 + nz * 2)) [nx, nz] = [-nx, -nz];
+    // Cut the edge at the openings: each piece is either solid (top = -inf) or an opening (only above its lintel).
+    const cuts: { u0: number; u1: number; top: number }[] = [];
+    let u = 0;
+    for (const op of w.openings) {
+      const a = Math.max(u, op.u0);
+      const b = Math.min(len, op.u1);
+      if (a > u) cuts.push({ u0: u, u1: a, top: -Infinity });
+      if (b > a) cuts.push({ u0: a, u1: b, top: op.top });
+      u = Math.max(u, b);
     }
-    // Gates: a lintel closing the building above the road at both ends.
-    for (const i of [0, run.length - 1]) {
-      const p = run[i];
-      const left = shell.walls[shell.walls.length - 2][i];
-      const right = shell.walls[shell.walls.length - 1][i];
-      const pts: WallPoint[] = [left, right].map((w, k) => ({ ...w, u: k * Math.hypot(left.x - right.x, left.z - right.z) }));
-      bands.shop.push(strip(pts, () => p.y + 9, () => p.y + 12.5, 24, () => 1));
-      bands.glass.push(strip(pts, () => p.y + 12.5, () => roofY + 2, 24, () => (roofY + 2 - p.y - 12.5) / 8));
-      shell.gates.push({ x: p.x, y: p.y, z: p.z, rotY: Math.atan2(p.tx, p.tz), w: Math.hypot(left.x - right.x, left.z - right.z) });
+    if (u < len) cuts.push({ u0: u, u1: len, top: -Infinity });
+    for (const c of cuts) {
+      for (const [mat, y0, y1, uRep, vRep] of layout) {
+        const lo = Math.max(y0, c.top);
+        if (lo >= y1) continue;
+        const v0 = ((lo - y0) / (y1 - y0)) * vRep;
+        bands[mat].push(quad(w.ax + ux * c.u0, w.az + uz * c.u0, w.ax + ux * c.u1, w.az + uz * c.u1, lo, y1, c.u0 / uRep, c.u1 / uRep, v0, vRep));
+      }
+      if (c.top > -Infinity) {
+        shell.gates.push({ x: w.ax + (ux * (c.u0 + c.u1)) / 2, z: w.az + (uz * (c.u0 + c.u1)) / 2, y: c.top, rotY: Math.atan2(nx, nz), w: c.u1 - c.u0 });
+      } else {
+        const pts: WallPoint[] = [];
+        for (let k = c.u0 + 2; k < c.u1 - 2; k += 4) pts.push({ x: w.ax + ux * k, z: w.az + uz * k, y: o.upper, nx, nz, u: k });
+        if (pts.length > 1) shell.walls.push(pts);
+      }
     }
   }
   for (const k of ['base', 'shop', 'glass'] as const) {
@@ -114,54 +110,54 @@ export function buildShell(o: ShellOptions): Shell {
     group.add(m);
   }
 
-  // ---- Roof: glass on a coarse grid of slim beams, over the building only ---------------------------------------
+  // ---- Roof: glass on a coarse grid of slim beams, over the footprint ---------------------------------------------
   const CELL = 16;
-  const mallPts = S.filter((p) => o.inMall(p.s));
-  const covering: { x: number; z: number }[] = [...mallPts];
-  for (const b of track.branches) for (const q of b.samples) if (mallPts.some((p) => Math.hypot(p.x - q.x, p.z - q.z) < 45 && Math.abs(p.y - q.y) < 6)) covering.push(q);
-  const cells = new Set<string>();
-  for (const p of covering) {
-    for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) cells.add(`${Math.floor(p.x / CELL) + dx},${Math.floor(p.z / CELL) + dz}`);
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (const [x, z] of poly) {
+    x0 = Math.min(x0, x);
+    x1 = Math.max(x1, x);
+    z0 = Math.min(z0, z);
+    z1 = Math.max(z1, z);
   }
   const beams: THREE.Matrix4[] = [];
   const panes: THREE.BufferGeometry[] = [];
-  for (const key of cells) {
-    const [cx, cz] = key.split(',').map(Number);
-    const x = (cx + 0.5) * CELL;
-    const z = (cz + 0.5) * CELL;
-    beams.push(matrix(x - CELL / 2, roofY, z, 0.22, 0.4, CELL));
-    beams.push(matrix(x, roofY, z - CELL / 2, CELL, 0.4, 0.22));
-    panes.push(new THREE.PlaneGeometry(CELL, CELL).rotateX(Math.PI / 2).translate(x, roofY + 0.22, z));
+  for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
+    for (let cz = Math.floor(z0 / CELL); cz <= Math.floor(z1 / CELL); cz++) {
+      const x = (cx + 0.5) * CELL;
+      const z = (cz + 0.5) * CELL;
+      // A cell is roofed when its middle is inside the footprint (the walls reach 2 m above the roof and hide the ragged edge).
+      if (!insidePolygon(poly, x, z)) continue;
+      beams.push(matrix(x - CELL / 2, roofY, z, 0.22, 0.4, CELL));
+      beams.push(matrix(x, roofY, z - CELL / 2, CELL, 0.4, 0.22));
+      panes.push(new THREE.PlaneGeometry(CELL, CELL).rotateX(Math.PI / 2).translate(x, roofY + 0.22, z));
+    }
   }
   const beamMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#cfd6de', roughness: 0.35, metalness: 0.7 }), beams.length);
   beams.forEach((m, i) => beamMesh.setMatrixAt(i, m));
   group.add(beamMesh);
-  if (panes.length) {
-    const glass = new THREE.Mesh(mergeGeometries(panes)!, new THREE.MeshBasicMaterial({ map: roofTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-    group.add(glass);
-  }
+  if (panes.length) group.add(new THREE.Mesh(mergeGeometries(panes)!, new THREE.MeshBasicMaterial({ map: roofTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide })));
 
-  // ---- Sunbeams: crossed, slanted light shafts every ~40 m ----------------------------------------------------------
+  // ---- Sunbeams: crossed, slanted light shafts every ~40 m of the road indoors -----------------------------------
   const az = (MALL_SUN.azimuth * Math.PI) / 180;
-  const run = Math.cos((MALL_SUN.elevation * Math.PI) / 180) / Math.sin((MALL_SUN.elevation * Math.PI) / 180); // horizontal metres per metre of fall
+  const slope = Math.cos((MALL_SUN.elevation * Math.PI) / 180) / Math.sin((MALL_SUN.elevation * Math.PI) / 180); // horizontal metres per metre of fall
   const quads: THREE.BufferGeometry[] = [];
   const stepI = Math.max(1, Math.round(40 / track.spacing));
-  mallPts.forEach((p, i) => {
-    if (i % stepI !== 0) return;
+  track.samples.forEach((p, i) => {
+    if (i % stepI !== 0 || !insidePolygon(poly, p.x, p.z)) return;
     const side = (i / stepI) % 2 ? 1 : -1;
     const bx = p.x + p.rx * side * (5 + ((i * 7) % 9));
     const bz = p.z + p.rz * side * (5 + ((i * 7) % 9));
     const H = roofY - p.y;
-    const tx = bx;
-    const tz = bz;
-    const ex = bx - Math.cos(az) * run * H; // the beam travels away from the sun
-    const ez = bz - Math.sin(az) * run * H;
+    const ex = bx - Math.cos(az) * slope * H; // the beam travels away from the sun
+    const ez = bz - Math.sin(az) * slope * H;
     for (const ang of [0, Math.PI / 2]) {
-      const w = 3.2;
-      const wx = Math.cos(ang) * w;
-      const wz = Math.sin(ang) * w;
+      const wx = Math.cos(ang) * 3.2;
+      const wz = Math.sin(ang) * 3.2;
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute([tx - wx, roofY, tz - wz, tx + wx, roofY, tz + wz, ex - wx, p.y + 0.05, ez - wz, ex + wx, p.y + 0.05, ez + wz], 3));
+      g.setAttribute('position', new THREE.Float32BufferAttribute([bx - wx, roofY, bz - wz, bx + wx, roofY, bz + wz, ex - wx, p.y + 0.05, ez - wz, ex + wx, p.y + 0.05, ez + wz], 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2));
       g.setIndex([0, 2, 1, 1, 2, 3]);
       quads.push(g);
@@ -175,21 +171,12 @@ export function buildShell(o: ShellOptions): Shell {
   return shell;
 }
 
-/** A vertical strip along a wall line between two heights: u = distance / uRepeat, v = 0 at the bottom to `vTop(p)` at the top. */
-function strip(pts: WallPoint[], y0: (p: WallPoint) => number, y1: (p: WallPoint) => number, uRepeat: number, vTop: (p: WallPoint) => number): THREE.BufferGeometry {
-  const pos: number[] = [];
-  const uv: number[] = [];
-  const idx: number[] = [];
-  pts.forEach((p, i) => {
-    pos.push(p.x, y0(p), p.z, p.x, y1(p), p.z);
-    uv.push(p.u / uRepeat, 0, p.u / uRepeat, vTop(p));
-    if (i > 0) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, (i - 1) * 2 + 1, i * 2, i * 2 + 1);
-  });
+/** A vertical quad from (ax, az) to (bx, bz) between heights y0 and y1, with u running u0..u1 and v v0..v1. */
+function quad(ax: number, az: number, bx: number, bz: number, y0: number, y1: number, u0: number, u1: number, v0: number, v1: number): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
+  g.setAttribute('position', new THREE.Float32BufferAttribute([ax, y0, az, bx, y0, bz, ax, y1, az, bx, y1, bz], 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute([u0, v0, u1, v0, u0, v1, u1, v1], 2));
+  g.setIndex([0, 1, 2, 1, 3, 2]);
   g.computeVertexNormals();
   return g;
 }
-

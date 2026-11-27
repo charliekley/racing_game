@@ -42,7 +42,7 @@ const VIEWS: Record<string, Partial<ShotView>> = {
   'Mushroom Valley': { at: 0.896, ahead: 8, back: 45, side: -60, up: 40, fov: 48 },
   // The ribbon from far above and beside the start run, with the planet below and the fork ahead.
   // The atrium from above and beside the escalators: both lanes, the guide robot, the glass roof and the shop walls.
-  'Palm Plaza': { at: 0.375, ahead: 6, back: 40, side: 38, up: 12, fov: 62 },
+  'Palm Plaza': { at: 0.285, ahead: 30, back: 34, side: 4, up: 13, fov: 62 },
   'Rainbow Route': { at: 0.12, ahead: 0, back: 60, side: -190, up: 110, fov: 48 },
 };
 
