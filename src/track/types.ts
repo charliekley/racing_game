@@ -201,6 +201,16 @@ export interface ShortcutDef {
    */
   deck?: boolean;
   /**
+   * Deck only: metres over which the height line is smoothed (each side; default 8). Palm Plaza's ledge route uses 1, so
+   * its kicker keeps its lip and the drop off the gallery's edge stays a drop (everyone flies off it).
+   */
+  deckSmooth?: number;
+  /**
+   * true = not a shortcut but an ALTERNATE route of about the same time (Palm Plaza's lower level): the bots choose it by
+   * their own rule (sim/bots.ts `pickAlternate`), not only when they lag behind.
+   */
+  alternate?: boolean;
+  /**
    * Barriers along the branch. Same shape as the main `walls`, but `from`/`to` are in
    * BRANCH-local control-point units: 0 = the junction where the branch starts,
    * 1..points.length = your `points`, points.length + 1 = the junction where it rejoins.
@@ -248,10 +258,17 @@ export interface MallDef {
   garden: { from: number; to: number };
   /** The fountain: its kicker (the rim) starts at `at`; the pool is `length` metres long. */
   fountain: { at: number; length: number };
-  /** The outdoor parking lot (asphalt, painted bays, parked cars, garage gates where the moving cars come and go). */
-  lot: { from: number; to: number };
-  /** Index (in `shortcuts`) of the shortcut that runs through a store (drawn as a shop interior), if any. */
-  storeBranch?: number;
+  /** The spiral ramp round the sculpture column (main-road stretch): drawn as a helical slab with its own supports. */
+  spiral?: { from: number; to: number };
+  /** The outdoor parking deck (asphalt, painted bays, parked cars, garage gates where the moving cars come and go). */
+  deck: { from: number; to: number };
+  /**
+   * The building's footprint: a polygon of world [x, z] points. Its walls stand along the edges (with an opening wherever a
+   * road passes through, see track/mallPlan.ts), the glass roof covers it; the upper floor stays inside, the deck outside.
+   */
+  building: [number, number][];
+  /** Index (in `shortcuts`) of the lower route of the atrium split (its raised part before the ledge gets a slab of its own). */
+  low?: number;
 }
 
 import type { HazardDef } from './hazardTypes';

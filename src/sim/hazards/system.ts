@@ -102,7 +102,7 @@ export class HazardSystem {
       if (dist < -BEHIND_MARGIN || dist > LOOK_AHEAD) continue;
       if (h.botCommits?.(k.speed, k.boostTime > 0.3)) continue; // fast enough to take it as it comes
       const arrive = Math.max(0, dist) / speed;
-      const blocked = (d: number) => h.danger(h.s, d, time, arrive) >= 0.5;
+      const blocked = (d: number) => (h.dangerFor ? h.dangerFor(p.s, speed, d, time) : h.danger(h.s, d, time, arrive)) >= 0.5;
       if (!blocked(lane) && !blocked(p.d)) continue; // nothing to do for this hazard
       let target: number | null = blocked(lane) ? null : lane; // the preferred line, if it is free
       if (target === null) {

@@ -73,6 +73,8 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('scenery plan for %s', (_
   });
 
   it('uses the supplied ground height', () => {
+    // (Palm Plaza: everything stands on the floor of the road it belongs to (upper floor, parking deck), see mallPlan.ts.)
+    if (def.scenery.mall) return;
     const raised = planScenery(track, () => 7);
     expect(raised.trees.every((t) => t.y === 7)).toBe(true);
     expect(raised.colliders.every((c) => c.y === 7)).toBe(true);

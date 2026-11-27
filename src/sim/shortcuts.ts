@@ -347,7 +347,7 @@ function buildBranch(track: Track, def: ShortcutDef, route: number): Built {
       const t = Math.max(0, Math.min(1, (bk - anchorsD[a].b) / Math.max(1e-6, anchorsD[a + 1].b - anchorsD[a].b)));
       return anchorsD[a].y + (anchorsD[a + 1].y - anchorsD[a].y) * t;
     });
-    const RD = Math.max(1, Math.round(DECK_SMOOTH / spacing));
+    const RD = Math.max(1, Math.round((def.deckSmooth ?? DECK_SMOOTH) / spacing));
     for (let k = 0; k <= last; k++) {
       const r = Math.min(RD, k, last - k);
       let sum = 0;

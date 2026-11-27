@@ -126,24 +126,30 @@ export interface EscalatorDef {
    * Repeats forever. Default ESCALATOR_SCHEDULE.
    */
   schedule?: [number, number, number][];
+  /** false = no guide robot at this pair (direction lights and signs only). Default true. */
+  mascot?: boolean;
 }
 
 /**
- * Palm Plaza's parking lot: a lane of cars driving straight across the road at `at`, from a garage gate on one side to
- * a gate on the other (`dir` +1 = from the left of the road to the right). `cars` cars, evenly spaced in time, each
- * crossing once per `period`; outside the gates a car is hidden (it is "in the garage"). A car is solid: hitting one
- * flips the kart over (a spin-out with a hop). Pure function of the race clock.
+ * Palm Plaza's parking deck: cars driving ALONG the road between `from` and `to` (main-road control-point units), `dir`
+ * +1 = with the race, -1 = against it (from `to` back to `from`), slower than the karts. A car always holds one half of the
+ * road: `sides` lists the half (+1 = the race's right, -1 = its left) for equal parts of its drive, in its own driving
+ * order; between two parts it changes sides (indicators on for a while first). It comes out of a garage gate beside the
+ * road at the start of its drive and goes into one at the end. `cars` cars, evenly spaced in time, each driving once per
+ * `period` (hidden in the garages in between). Solid: hitting one flips the kart over. Pure function of the race clock.
  */
 export interface CarDef extends HazardBase {
   kind: 'car';
-  at: number;
+  from: number;
+  to: number;
   dir: 1 | -1;
-  /** Driving speed (m/s, default 9). */
+  sides: (1 | -1)[];
+  /** Driving speed (m/s, default CAR_SPEED). */
   speed?: number;
-  /** How many cars use this lane (default 1). */
+  /** How many cars share the stretch (default 1). */
   cars?: number;
-  /** Distance (m) from the road centre to each garage gate (default road half width + 16). */
-  reach?: number;
+  /** Distance (m) from the road centre to the middle of a car's half (default 4.2). */
+  lane?: number;
 }
 
 export type HazardDef = GeyserDef | DrawbridgeDef | GustDef | RollerDef | BeetleDef | EscalatorDef | CarDef;

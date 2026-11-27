@@ -28,6 +28,7 @@ import type { Track } from './track';
 import type { Race, Racer } from './race';
 import type { World } from './world';
 import type { Escalator } from './hazards/escalator';
+import type { Branch } from './shortcuts';
 
 /** What a bot feels: the host can turn these into driver faces. */
 export type BotMood = 'celebrate' | 'despair' | 'angry' | 'smug';
@@ -344,11 +345,18 @@ export class Bot {
   /** How far behind the leader (m) this bot has to be before it counts as lagging: fixed per bot (seeded), so some bots give up on the main road sooner. */
   private lagGap = 60;
   /**
-   * Escalators (Palm Plaza): the lane picked for the coming escalator fork (true = the branch lane) and whether the pick
-   * for this approach is made. Re-decided once per lap, at a distance that depends on the difficulty (see `pickEscalator`).
+   * Escalators (Palm Plaza): for each escalator pair (by hazard id), the lane picked for the coming fork (true = the branch
+   * lane) and whether the pick for this approach is made. Re-decided once per lap, at a distance that depends on the
+   * difficulty (see `pickEscalator`).
    */
-  private escPick = false;
-  private escDecided = false;
+  private readonly escPick = new Map<number, boolean>();
+  private readonly escDecided = new Set<number>();
+  /**
+   * Alternate routes (`ShortcutDef.alternate`, Palm Plaza's lower level): for each such branch (by route id), whether this
+   * bot takes it on this approach, and whether that is decided (see `pickAlternate`).
+   */
+  private readonly altPick = new Map<number, boolean>();
+  private readonly altDecided = new Set<number>();
 
   constructor(
     readonly slot: number,
@@ -423,9 +431,11 @@ export class Bot {
     this.fightShift += ((nearFork ? 0 : this.fightTarget(world, k, track, sNow, lane, half, isHuman)) - this.fightShift) * 0.06;
     lane += this.fightShift;
     if (!nearFork && sNow.route === 0) this.riskShortcut = this.skill.skillful && this.isLagging(race, humanAhead);
-    // --- Escalators (Palm Plaza): pick the lane whose belt will carry us down, not hold us back ---
-    const esc = world.hazards?.list.find((h): h is Escalator => h.kind === 'escalator') ?? null;
-    if (esc) this.pickEscalator(esc, k, track, sNow, race.time);
+    // --- Escalators (Palm Plaza): pick the lane whose belt will carry us along, not hold us back ---
+    const escs = world.hazards?.list.filter((h): h is Escalator => h.kind === 'escalator') ?? [];
+    for (const esc of escs) this.pickEscalator(esc, k, track, sNow, race.time);
+    // --- Alternate routes (Palm Plaza's lower level): the gallery or the atrium floor ---
+    for (const b of track.branches) if (b.def.alternate) this.pickAlternate(b, escs, k, track, sNow, race);
     // --- Hazards (lava geysers...): swing to a free lane, or lift when every lane is blocked ---
     // The advice is a function of the race clock, so bots "see" the same eruptions as the players.
     // Easy bots react only partly (care 0.75), so they are sometimes caught; hard bots almost never.
@@ -442,8 +452,16 @@ export class Bot {
       // Bold moves: brake later for the dive. Shortcuts: only a bot that is lagging behind takes them (the player's toy otherwise).
       cornerSpeed: (this.style.cornerSpeed ?? 0.75) + (diving ? 0.1 : 0),
       shortcutBias: this.riskShortcut ? Math.max(this.style.shortcutBias ?? 0, 0.6) : 0,
-      // The escalator fork is not a shortcut: both lanes are the same length, the belts decide (see pickEscalator).
-      branchChoice: esc ? (r: number) => (r === esc.branchRoute ? this.escPick : undefined) : undefined,
+      // The escalator forks are not shortcuts: both lanes are the same length, the belts decide (see pickEscalator). An
+      // alternate route is not one either: it takes about as long (see pickAlternate).
+      branchChoice:
+        escs.length || this.altPick.size
+          ? (r: number) => {
+              const esc = escs.find((e) => e.branchRoute === r);
+              if (esc) return this.escPick.get(esc.id) ?? false;
+              return this.altPick.has(r) ? this.altPick.get(r) : undefined;
+            }
+          : undefined,
     };
 
     // --- Base driving ---------------------------------------------------------------------
@@ -567,11 +585,11 @@ export class Bot {
     const dist = track.deltaS(p.s, b.s0); // metres to the fork (negative = past it)
     const decideAt = this.label === 'easy' ? 150 : this.label === 'normal' ? 100 : 70;
     if (dist > decideAt + 20 || dist < -(esc.s1 - b.s0 + 40)) {
-      this.escDecided = false; // far from the fork (before it, or well past it): forget the old pick
+      this.escDecided.delete(esc.id); // far from the fork (before it, or well past it): forget the old pick
       return;
     }
-    if (this.escDecided || p.route !== 0 || dist > decideAt || dist < 0) return;
-    this.escDecided = true;
+    if (this.escDecided.has(esc.id) || p.route !== 0 || dist > decideAt || dist < 0) return;
+    this.escDecided.add(esc.id);
     let good: number;
     if (this.label === 'hard') {
       const speed = Math.max(15, k.speed);
@@ -580,7 +598,35 @@ export class Bot {
       good = (esc.pose(time) as { good: number }).good;
       if (this.label === 'easy' && this.rnd() > 0.7) good = -1;
     }
-    this.escPick = good === 1;
+    this.escPick.set(esc.id, good === 1);
+  }
+
+  /**
+   * An alternate route (`ShortcutDef.alternate`: Palm Plaza's lower level, about as quick as the main road): decided once
+   * per approach, 120 m before the fork.
+   *  - hard: takes it when the escalators on the main road's side will not help (no lane runs its way during the ride:
+   *    `Escalator.bestLane` = -1), else stays up and rides the helping escalator;
+   *  - normal: every other lap, half of the bots on odd laps and the other half on even ones;
+   *  - easy: one bot in three, always.
+   */
+  private pickAlternate(b: Branch, escs: Escalator[], k: KartState, track: Track, p: { route: number; s: number }, race: Race): void {
+    const dist = track.deltaS(p.s, b.s0);
+    if (dist > 140 || dist < -(b.span + 40)) {
+      this.altDecided.delete(b.route);
+      if (!this.altPick.has(b.route)) this.altPick.set(b.route, false);
+      return;
+    }
+    if (this.altDecided.has(b.route) || p.route !== 0 || dist > 120 || dist < 0) return;
+    this.altDecided.add(b.route);
+    const lap = race.racers.get(this.slot)?.lap ?? 1;
+    let take: boolean;
+    if (this.label === 'hard') {
+      const esc = escs.find((e) => track.deltaS(b.s0, e.s0) > 0 && track.deltaS(e.s1, b.s1) > 0);
+      const speed = Math.max(15, k.speed);
+      take = esc ? esc.bestLane(race.time, (dist + track.deltaS(b.s0, esc.s0)) / speed, (esc.s1 - esc.s0) / speed) === -1 : false;
+    } else if (this.label === 'normal') take = (this.slot + lap) % 2 === 0;
+    else take = this.slot % 3 === 2;
+    this.altPick.set(b.route, take);
   }
 
   /**

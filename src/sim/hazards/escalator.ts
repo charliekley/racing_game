@@ -1,6 +1,6 @@
 /**
- * Escalators (Palm Plaza). Two parallel escalator lanes take the road down from the upper floor to the ground floor:
- * lane 0 is the main road, lane 1 a `deck` shortcut branch beside it. Each lane's surface MOVES:
+ * Escalators (Palm Plaza). Two parallel escalator lanes take the road between the floors (down, or up at the mall's
+ * entrance): lane 0 is the main road, lane 1 a `deck` branch beside it. Each lane's surface MOVES:
  *
  *   riding WITH it   -> the kart is carried forward  `speed` m/s faster (about +30 % at top speed)
  *   riding AGAINST it -> the kart is carried backward `speed` m/s        (about -30 %)
@@ -48,7 +48,7 @@ export const ESCALATOR_SCHEDULE: [number, number, number][] = [
 const SAME_LEVEL = 2.5;
 
 export interface EscalatorPose extends HazardPose {
-  /** Belt velocity of each lane (m/s, + = with the traffic, i.e. downhill), already ramped. */
+  /** Belt velocity of each lane (m/s, + = with the traffic), already ramped. */
   lanes: [number, number];
   /** Timetable direction of each lane in the current step (+1, -1, 0). */
   dirs: [number, number];
@@ -79,6 +79,10 @@ export class Escalator implements Hazard {
   /** Start time of each step within the cycle. */
   private readonly starts: number[];
   private readonly phase: number;
+  /** Is there a guide robot at this pair (false = direction lights and signs only)? */
+  readonly hasMascot: boolean;
+  /** Does the road climb along the lanes (true: an escalator going UP with the traffic)? */
+  readonly rising: boolean;
 
   constructor(
     readonly id: number,
@@ -92,6 +96,8 @@ export class Escalator implements Hazard {
     this.speed = def.speed ?? ESCALATOR_SPEED;
     this.schedule = def.schedule ?? ESCALATOR_SCHEDULE;
     this.phase = def.phase ?? 0;
+    this.hasMascot = def.mascot !== false;
+    this.rising = track.pointAt(this.s1).y > track.pointAt(this.s0).y;
     this.starts = [];
     let t = 0;
     for (const step of this.schedule) {

@@ -4,19 +4,25 @@
  * The lap (north = +z, east = +x; careful: +x is on a driver's LEFT when facing +z). The start line is on the entrance
  * plaza at ground level, heading east:
  *
- *   1. PARKING RAMP   (0 -> 13 m)          from the grid, climbing S-bends up the parking deck to the upper floor.
- *   2. SKY PROMENADE  (upper floor, 13 m)  an S along the gallery (glass railings, shops, palms), a bend north.
- *   3. THE BOUTIQUE   (upper floor)        the main road swings LEFT round a big store; the shortcut turns RIGHT
- *                                          straight through it: in at one door, out at the other (`shortcuts[0]`, a deck).
- *   4. THE ESCALATORS (13 m -> 0 m)        the road splits into TWO parallel escalator lanes going down (the main road on
- *                                          the driver's left, `shortcuts[1]` on the right). The belts move: with you = faster,
- *                                          against you = slower, sometimes both stop; a fixed timetable (sim/hazards/
- *                                          escalator.ts). A guide robot between them points at the good lane.
- *   5. GARDEN ATRIUM  (ground floor, 0 m)  boost pads, grass patches (slow), and the FOUNTAIN: its rim is a kicker with a
- *                                          row of item boxes floating over the pool.
- *   6. PARKING LOT    (outside, 0 m)      S-bends through the car park; cars drive across the road from garage gate to
- *                                          garage gate (sim/hazards/car.ts), sometimes over the boost pads. Hit one = flip.
- *   7. HOME           (outside, 0 m)      a sweeping bend and an S back to the entrance plaza and the grid.
+ *   1. ENTRANCE ESCALATORS (0 -> 13 m)   two parallel escalator lanes carry the road UP through the mall's front into
+ *                                        the upper floor (the main road and `shortcuts[0]`). Their belts switch
+ *                                        direction on their own timetable (sim/hazards/escalator.ts); direction lights
+ *                                        and signs only, no guide robot here.
+ *   2. SKY GALLERY  (upper floor, 13 m)  an S along the gallery (glass railings, shops, palms, boost pads).
+ *   3. THE ATRIUM SPLIT (choice)         the road splits in two levels:
+ *        - UPPER: the main road carries on along the gallery (boost pads) and comes down the second pair of switching
+ *          ESCALATORS (main road + `shortcuts[1]`); the guide robot between them points at the lane that helps;
+ *        - LOWER: `shortcuts[2]` (a `deck`, wider) turns off over a KICKER at the gallery's edge and drops onto the
+ *          ground floor of the atrium (any speed lands on it; a trick in the air pays a boost), then runs down the
+ *          atrium floor and rejoins.
+ *   4. GARDEN ATRIUM (ground floor, 0 m) S-bends with grass patches (slow) and the FOUNTAIN: its rim is a kicker with a
+ *                                        row of item boxes floating over the pool.
+ *   5. THE SPIRAL   (0 -> 13 m)          a wide helix (r 30 m, 330 degrees) climbing round the atrium's sculpture
+ *                                        column; it leaves the building at the top, over its own entry.
+ *   6. PARKING DECK (outside, 13 m)      cars drive ALONG the road (sim/hazards/car.ts): oncoming ones first, then
+ *                                        slow ones going your way that change sides with their indicators on. Each
+ *                                        holds the left or the right half of the road: steer round. Hit one = flip.
+ *   7. DECK RAMP    (13 -> 0 m)          S-bends down the parking ramp and a sweeping bend back to the plaza and the grid.
  *
  * Written with the turtle (src/track/turtle.ts): every bend is a circle arc of radius >= 28 m (bots never brake hard,
  * which keeps the three weight classes balanced), named points place the features, and the lap is closed exactly by
@@ -31,50 +37,64 @@ import { ESCALATOR_SCHEDULE } from '../../sim/hazards/escalator';
 const rad = (deg: number): number => (deg * Math.PI) / 180;
 const arcLen = (r: number, deg: number): number => (Math.abs(deg) * Math.PI * r) / 180;
 
-/** Height of the upper floor (m); the ground floor and the parking lot are at 0. */
+/** Height of the upper floor (m); the ground floor and the plaza are at 0. */
 export const UPPER = 13;
-/** Road width (m) everywhere, both escalator lanes included. */
+/** Road width (m) everywhere on the main road, both escalator lanes included. */
 export const MALL_WIDTH = 16;
-/** Width of the shortcut aisle through the store (m). */
-export const STORE_WIDTH = 10;
-/** Length (m) of the moving part of each escalator, and of the split / merge on either side of it. */
+/** Width of the lower (ground-floor) route of the atrium split (m): wider than the gallery. */
+export const LOW_WIDTH = 20;
+/** Length (m) of the moving part of each escalator. */
 export const ESC_LEN = 78;
 const ESC_R = 40;
 const ESC_DEG = 25;
 const ESC_LINE = 14;
+/** The spiral: radius (m) and how far round it goes (degrees). */
+export const SPIRAL_R = 30;
+export const SPIRAL_DEG = 330;
+/** Height of the kicker at the gallery's edge (m above the upper floor) and its length (m). */
+export const LEDGE_KICK = 1.7;
+const LEDGE_KICK_LEN = 11;
 
 const t = new Turtle(0, 0, 0, 90).mark('start');
 
-// ---- 1. Parking ramp: from the grid on the entrance plaza, S-bends up the parking deck to the upper floor ----
-t.turn(50, 40, 1.5).mark('ramp1').turn(50, -80, 5).mark('ramp2').turn(50, 80, 5).mark('ramp3').turn(50, -40, 1.5).mark('upperIn');
+/**
+ * A pair of escalators: the main lane swings `swing` (+1 = a turtle right turn) away from the fork's axis, runs ESC_LEN m
+ * straight while the height changes by `dy`, and swings back. Named points: `${name}A` (fork), `${name}On` / `${name}Off`
+ * (the moving part), `${name}B` (merge). The other lane is the main lane mirrored across the axis (see `escalatorLane`).
+ */
+function escalators(name: string, dy: number, swing: 1 | -1): void {
+  t.mark(`${name}A`);
+  t.turn(ESC_R, swing * ESC_DEG).line(ESC_LINE).turn(ESC_R, -swing * ESC_DEG).mark(`${name}On`);
+  t.line(ESC_LEN, dy).mark(`${name}Off`);
+  t.turn(ESC_R, -swing * ESC_DEG).line(ESC_LINE).turn(ESC_R, swing * ESC_DEG).mark(`${name}B`);
+}
 
-// ---- 2. Sky Promenade (upper floor): an S along the gallery, then a left bend to head north ----
-t.line(6).turn(60, 18).mark('prom').turn(60, -18).mark('promEnd').turn(42, -90).mark('promTurn');
+// ---- 1. The plaza and the entrance escalators: up into the mall (the main lane swings north, the other south) ----
+t.line(44);
+escalators('e1', UPPER, -1);
 
-// ---- 3. The Boutique: the main road swings LEFT round the store; the shortcut aisle goes straight through it ----
-// (Careful with left and right: +x is on a driver's LEFT when facing +z, so a turtle "right" turn (positive degrees,
-// heading towards +x) is a LEFT bend from the driver's seat. Here the main road swings to the driver's left, so the store
-// aisle, straight on, is a turn to the RIGHT.)
-t.line(8).mark('storeA');
-t.turn(40, 45).line(18).mark('bulge1').turn(40, -90).line(18).mark('bulge2').turn(40, 45).mark('storeB');
-t.line(14).mark('landing').line(10).mark('escA');
+// ---- 2. Sky Gallery (upper floor): an S along the gallery, then the split ----
+t.line(6).mark('gallery').turn(56, 24).mark('gal1').turn(56, -24).mark('split');
 
-// ---- 4. The escalators: the main lane swings to the driver's left, runs down beside the other lane, and comes back ----
-t.turn(ESC_R, ESC_DEG).line(ESC_LINE).turn(ESC_R, -ESC_DEG).mark('escTop');
-t.line(ESC_LEN, -UPPER).mark('escBot');
-t.turn(ESC_R, -ESC_DEG).line(ESC_LINE).turn(ESC_R, ESC_DEG).mark('escB');
+// ---- 3. The atrium split: the main road stays up (gallery, then the down escalators); the lower route turns off ----
+t.line(56).mark('galPad').turn(44, 90).mark('galTurn').line(8);
+escalators('e2', -UPPER, 1);
 
-// ---- 5. Garden atrium (ground floor): left into the garden, an S with pads and grass, the fountain, an S out ----
-t.line(6).turn(40, -90).line(4).mark('gardenIn');
-t.turn(48, 35).mark('g1').turn(48, -70).mark('g2').turn(48, 35).mark('g3');
+// ---- 4. Garden atrium (ground floor): right into the garden, an S with grass, the fountain ----
+t.line(4).turn(40, 90).mark('gardenIn').line(40).mark('rejoin');
+t.turn(48, -30).mark('g1').turn(48, 30).mark('g2');
 t.line(14).mark('fountain'); //   the rim's kicker (10 m), the pool, and a straight run-out
-t.line(34).mark('fountainOut');
-t.turn(48, -30).mark('g4').turn(48, 30).mark('g5').line(4).mark('gardenOut');
+t.line(32).mark('fountainOut');
+t.turn(48, 14).mark('gardenOut');
 
-// ---- 6. Parking lot (outside): left out through the doors, then S-bends past the car lanes ----
-t.turn(40, -90).mark('lotIn');
-t.turn(56, 30).mark('lot1').turn(56, -60).mark('lot2').turn(56, 30).mark('lot3');
-t.line(6).mark('lotEnd');
+// ---- 5. The spiral: a climbing helix round the sculpture column, out of the building at the top ----
+t.line(4).mark('spiralIn').turn(SPIRAL_R, SPIRAL_DEG, UPPER).mark('spiralOut').line(22).mark('mallExit');
+
+// ---- 6. Parking deck (outside, upper level): a right bend, then the car stretch (gentle S-bends) ----
+t.turn(44, 60).mark('deckIn').line(20).turn(80, -22).mark('cars1').turn(80, 22).mark('cars2').line(14).turn(80, 22).mark('cars3').turn(80, -22).mark('deckEnd');
+
+// ---- 7. Deck ramp: S-bends down to the plaza ----
+t.turn(50, -30, -1.5).mark('ramp1').turn(50, 60, -5).mark('ramp2').turn(50, -60, -5).mark('ramp3').turn(50, 30, -1.5).mark('rampEnd');
 
 /** The pose the turtle stands in. */
 const here = () => ({ x: t.x, z: t.z, heading: t.heading });
@@ -83,7 +103,7 @@ const here = () => ({ x: t.x, z: t.z, heading: t.heading });
  * Close the lap: a circle arc, a straight, then a second circle arc that ends on the pose (targetX, targetZ, targetHeading)
  * (copied from Rainbow Route: the shortest of the four left/right combinations).
  */
-function closeTo(radius: number, targetX: number, targetZ: number, targetHeading: number): { a1: number; len: number; a2: number } {
+function closeTo(radius: number, targetX: number, targetZ: number, targetHeading: number, maxDeg = 360): { a1: number; len: number; a2: number } {
   const p = here();
   const centre = (x: number, z: number, heading: number, side: number) => ({ x: x + side * radius * Math.cos(rad(heading)), z: z - side * radius * Math.sin(rad(heading)) });
   const wrapDeg = (d: number, side: number) => {
@@ -113,10 +133,12 @@ function closeTo(radius: number, targetX: number, targetZ: number, targetHeading
       const a1 = wrapDeg(th - p.heading, s1);
       const a2 = wrapDeg(targetHeading - th, s2);
       const total = arcLen(radius, a1) + len + arcLen(radius, a2);
+      if (Math.abs(a1) > maxDeg || Math.abs(a2) > maxDeg) continue;
       if (!best || total < best.total) best = { a1, len, a2, total };
     }
   }
-  return best!;
+  if (!best) throw new Error('palmPlaza: cannot close the path');
+  return best;
 }
 
 // ---- back to the grid on the entrance plaza: whatever it takes to arrive heading east on the start line ----
@@ -130,7 +152,7 @@ const close = closeTo(CLOSE_R, END_X, END_Z, 90);
 {
   if (Math.abs(close.a1) > 0.01) t.turn(CLOSE_R, close.a1).mark('home1');
   if (close.len > 100) {
-    // A long run between the two arcs: an S in the middle of it (neutral sideways and in heading), past the lot's exit.
+    // A long run between the two arcs: an S in the middle of it (neutral sideways and in heading).
     const R2 = 60;
     const A2 = 22;
     const rest = (close.len - 4 * R2 * Math.sin(rad(A2))) / 2;
@@ -146,8 +168,8 @@ else throw new Error(`palmPlaza: the lap does not close (${route[route.length - 
 
 /**
  * Smooth the heights (a triangular average over +-SMOOTH_M metres of road): the turtle steps the grade arc by arc, and a
- * sudden grade change at speed is a ramp (the crest-launch rule). The flat floors stay flat, the escalators and the
- * parking ramp get eased ends.
+ * sudden grade change at speed is a ramp (the crest-launch rule). The flat floors stay flat, the escalators, the spiral
+ * and the ramp get eased ends.
  */
 const SMOOTH_M = 24;
 {
@@ -210,102 +232,192 @@ export function along(name: string, ds: number): number {
   }
 }
 
-/** World [x, z] of a control point mirrored across the escalator fork's axis (the line through 'escA', heading north). */
-const escAxisX = route[at('escA')].p[0];
-const mirror = (p: [number, number, number]): [number, number, number] => [2 * escAxisX - p[0], p[1], p[2]];
+type P3 = [number, number, number];
+
+/** A point mirrored across the axis of the fork at `${name}A` (the line through it along the road's heading there). */
+function mirrorAcross(name: string): (p: P3) => P3 {
+  const a = route[at(`${name}A`)];
+  const ux = Math.sin(rad(a.heading));
+  const uz = Math.cos(rad(a.heading));
+  return (p) => {
+    const vx = p[0] - a.p[0];
+    const vz = p[1] - a.p[1];
+    const along = vx * ux + vz * uz;
+    return [a.p[0] + 2 * along * ux - vx, a.p[1] + 2 * along * uz - vz, p[2]];
+  };
+}
 
 /**
- * The second escalator lane (a deck branch): the main lane's route mirrored across the fork's axis (on the driver's right), same heights.
- * The first and last points of the split arcs are left out: the branch builder adds its own straight 16 m lead at each
- * junction (a deck leaves the main centre line at 9 degrees).
+ * The second lane of an escalator pair (a deck branch): the main lane's moving part mirrored across the fork's axis, same
+ * heights. The split arcs are left out: the branch builder adds its own straight 16 m lead at each junction (a deck
+ * leaves the main centre line at 9 degrees) and a smooth curve to the first point.
  */
-const ESC_POINTS = route
-  .slice(at('escA') + 1, at('escB'))
-  .filter((r) => r.p[1] >= route[at('escTop')].p[1] - 1 && r.p[1] <= route[at('escBot')].p[1] + 1)
-  .map((r) => mirror(r.p));
+function escalatorLane(name: string): P3[] {
+  const m = mirrorAcross(name);
+  return route.slice(at(`${name}On`), at(`${name}Off`) + 1).map((r) => m(r.p));
+}
+const E1_POINTS = escalatorLane('e1');
+const E2_POINTS = escalatorLane('e2');
 
-/** The store aisle: straight on from 'storeA' to 'storeB', 2.5 m to the (driver's) right of the line the road had. */
-const STORE_POINTS = (() => {
-  const a = route[at('storeA')].p;
-  const b = route[at('storeB')].p;
-  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  // The driver's right of the direction a -> b: (-tz, tx) (the game's `rightOf`).
-  const rx = -(b[1] - a[1]) / len;
-  const rz = (b[0] - a[0]) / len;
-  const out: [number, number, number][] = [];
-  for (const f of [0.25, 0.5, 0.75]) out.push([a[0] + (b[0] - a[0]) * f + rx * 2.5, a[1] + (b[1] - a[1]) * f + rz * 2.5, UPPER]);
-  return out;
+/**
+ * The lower route of the atrium split (a deck branch, LOW_WIDTH wide), written with a second turtle. It leaves the gallery
+ * at 'split' on the inside of the coming right-hand bend, swings right towards the atrium, runs up a kicker to the gallery's
+ * edge (the LEDGE), drops onto the ground floor (the height line falls 13 m in 2 m: in practice everyone flies), runs
+ * south down the atrium floor beside the escalators and curves right to rejoin the main road at 'rejoin'.
+ * The branch builder adds the 16 m leads at both junctions; this path starts at the end of the first lead and is closed
+ * onto the start of the last one with the same circle-line-circle construction as the lap.
+ */
+const LOW_POINTS: P3[] = (() => {
+  const LEAD = 16;
+  const ANG = 9;
+  const a = route[at('split')];
+  // Leave towards the right of the main road (a turtle right turn = +degrees): the inside of the coming bend.
+  const h0 = a.heading + ANG;
+  const lt = new Turtle(a.p[0] + Math.sin(rad(h0)) * LEAD, a.p[1] + Math.cos(rad(h0)) * LEAD, UPPER, h0);
+  lt.turn(46, 86).line(6);
+  const kickFrom = lt.route.length - 1;
+  lt.line(LEDGE_KICK_LEN, LEDGE_KICK).mark('lip');
+  const lip = lt.route.length - 1;
+  // The drop: 2 m past the lip the height line is down on the ground floor; then a long straight landing.
+  lt.line(2, -UPPER - LEDGE_KICK).line(30).mark('landed');
+  // Down the atrium floor: S-bends round the palm islands.
+  lt.turn(46, 26).turn(46, -52).turn(46, 26);
+  // Close onto the start of the end lead: arriving at 'rejoin' from the main road's right at 9 degrees.
+  const q = route[at('rejoin')];
+  const hq = q.heading - ANG;
+  const ex = q.p[0] - Math.sin(rad(hq)) * LEAD;
+  const ez = q.p[1] - Math.cos(rad(hq)) * LEAD;
+  const c = closeWith(lt, 32, ex, ez, hq);
+  if (Math.abs(c.a1) > 0.01) lt.turn(32, c.a1);
+  if (c.len > 0.01) lt.line(c.len);
+  if (Math.abs(c.a2) > 0.01) lt.turn(32, c.a2);
+  // The first point (the lead's end) is the builder's own; heights: the upper floor up to the kicker, then the kicker,
+  // then the ground floor.
+  // (The last point is where the builder's end lead starts: left out too.)
+  return lt.route.slice(1, -1).map((r, i): P3 => {
+    const k = i + 1;
+    const y = k <= kickFrom ? UPPER : k <= lip ? r.p[2] : 0;
+    return [r.p[0], r.p[1], y];
+  });
 })();
 
-/** Main-road stretches (control-point units) with walls on both sides, minus holes (e.g. where a fork's arms overlap). */
+/** `closeTo` for any turtle (see above). */
+function closeWith(tt: Turtle, radius: number, targetX: number, targetZ: number, targetHeading: number): { a1: number; len: number; a2: number } {
+  const saved = { x: t.x, z: t.z, heading: t.heading };
+  t.x = tt.x;
+  t.z = tt.z;
+  t.heading = tt.heading;
+  const r = closeTo(radius, targetX, targetZ, targetHeading, 150);
+  Object.assign(t, saved);
+  return r;
+}
+
+/** Main-road stretches (control-point units) with walls. */
 type Wall = TrackDef['walls'][number];
 const wall = (from: number, to: number, side: Wall['side'] = 'both'): Wall => ({ from, to, side });
 
 /** Boost pad `ds` metres past a named point. */
 const pad = (name: string, ds: number, offset = 0, length = 8, width = 6) => ({ at: along(name, ds), offset, length, width });
 
-/** Car lanes across the parking lot: [named point, metres past it, direction, period, phase]. */
-const CAR_LANES: [string, number, 1 | -1, number, number][] = [
-  ['lotIn', 12, 1, 9, 0],
-  ['lot1', 8, -1, 8, 2.5],
-  ['lot1', 40, 1, 10, 5],
-  ['lot2', 20, -1, 9, 1.2],
+/**
+ * Walls round a deck fork: both sides, except the side where the deck leaves / rejoins, which stays OPEN for `open` metres
+ * after the split and before the merge (a kart steps from the main road onto a deck only once it is off the main road's
+ * kerb, so the opening must outlast the point where the two roads have pulled apart).
+ */
+function forkWalls(a: string, b: string, side: 'left' | 'right', open = 52): Wall[] {
+  const keep = side === 'left' ? 'right' : 'left';
+  return [wall(along(a, -6), along(a, open), keep), wall(along(a, open), along(b, -open)), wall(along(b, -open), along(b, 6), keep)];
+}
+
+/**
+ * The parking deck's traffic: stretches of road (from / to as [named point, metres past it]), the way the cars drive
+ * (+1 = with the race), the half of the road they hold (+1 = the race's right) in each part of their drive, and timing.
+ */
+const CAR_STRETCHES: { from: [string, number]; to: [string, number]; dir: 1 | -1; sides: (1 | -1)[]; period: number; phase: number; cars: number }[] = [
+  { from: ['deckIn', 4], to: ['cars2', 0], dir: -1, sides: [1], period: 9, phase: 0, cars: 2 },
+  { from: ['cars2', 14], to: ['deckEnd', 0], dir: 1, sides: [-1, 1], period: 11, phase: 3, cars: 2 },
 ];
+
+/**
+ * Parapets from `from` to `to` (control-point units), open on one side where a car of the deck's traffic drives out of / into
+ * its garage gate (from 3 m behind the gate's door to 11 m past it, on the gate's side).
+ */
+function deckWalls(from: number, to: number): Wall[] {
+  const gaps: { a: number; b: number; side: 'left' | 'right' }[] = [];
+  for (const c of CAR_STRETCHES) {
+    const start = c.dir > 0 ? c.from : c.to;
+    const end = c.dir > 0 ? c.to : c.from;
+    const sideOf = (v: number) => (v > 0 ? 'right' : 'left') as 'left' | 'right';
+    // Out of the gate: the car drives the race's way (dir) from `start`; into the gate: it arrives at `end`.
+    const a0 = along(start[0], start[1] - 3 * c.dir);
+    const a1 = along(start[0], start[1] + 11 * c.dir);
+    const b0 = along(end[0], end[1] - 11 * c.dir);
+    const b1 = along(end[0], end[1] + 3 * c.dir);
+    gaps.push({ a: Math.min(a0, a1), b: Math.max(a0, a1), side: sideOf(c.sides[0]) });
+    gaps.push({ a: Math.min(b0, b1), b: Math.max(b0, b1), side: sideOf(c.sides[c.sides.length - 1]) });
+  }
+  gaps.sort((g, h) => g.a - h.a);
+  const out: Wall[] = [];
+  let cur = from;
+  for (const g of gaps) {
+    out.push(wall(cur, g.a), wall(g.a, g.b, g.side === 'left' ? 'right' : 'left'));
+    cur = g.b;
+  }
+  out.push(wall(cur, to));
+  return out;
+}
+
+// The game's sides: + lateral = the driver's right = the turtle's... (see `rightOf` in the sim: (-tz, tx)). A turtle
+// right turn (+deg) swings the road towards +lateral... no: towards the driver's LEFT. So:
+//   e1's main lane swings with a turtle LEFT turn -> to the driver's right; the second lane leaves on the driver's left.
+//   e2's main lane swings with a turtle RIGHT turn -> to the driver's left; the second lane leaves on the driver's right.
+//   The lower route leaves with a turtle right turn -> on the driver's left; it rejoins from the same side.
 
 export const palmPlaza: TrackDef = {
   name: 'Palm Plaza',
-  blurb: 'A bright two-storey shopping mall: a shortcut through a boutique, racing escalators that change direction, a garden atrium with a fountain jump, and a car park full of moving cars.',
+  blurb: 'A bright two-storey shopping mall: switching escalators, a split between the gallery and the atrium floor with a leap off the ledge, a garden fountain jump, a spiral ramp and a parking deck full of traffic.',
   points,
   width: MALL_WIDTH,
   // No grass verge indoors: the glass railings stand right at the kerb (and a deck lane's floor ends there too).
   offroadWidth: 2,
-  // Flat floors (no banking): the deck lanes beside the main road (the store aisle, the second escalator) are flat too, so
-  // stepping from one onto the other is seamless.
+  // Flat floors (no banking): the deck lanes beside the main road are flat too, so stepping from one onto the other is seamless.
   bankPerCurvature: 0,
   maxBankDeg: 0,
   walls: [
-    // Parking ramp, Sky Promenade and the store's outside lane (open on the right only where the store aisle splits off / joins).
-    // (A kart steps from the main road onto a deck lane only once it is off the main road's kerb, so the open side must
-    // stay open well past the point where the two roads have pulled apart: 56 m.)
-    wall(along('start', 30), along('storeA', -6)),
-    wall(along('storeA', -6), along('storeA', 56), 'left'),
-    wall(along('storeA', 56), along('storeB', -56)),
-    wall(along('storeB', -56), along('storeB', 6), 'left'),
-    wall(along('storeB', 6), along('escA', -6)),
-    // The escalator fork (the main lane swings to the driver's left): its right side stays open where the two lanes overlap.
-    wall(along('escA', -6), along('escA', 52), 'left'),
-    wall(along('escA', 52), along('escB', -52)),
-    wall(along('escB', -52), along('escB', 6), 'left'),
+    // The plaza is open; railings from the entrance fork on.
+    ...forkWalls('e1A', 'e1B', 'left'),
+    wall(along('e1B', 6), along('split', -6)),
+    // The atrium split: the lower route leaves on the driver's left; the gallery's left side stays open for it.
+    wall(along('split', -6), along('split', 56), 'right'),
+    wall(along('split', 56), along('e2A', -6)),
+    ...forkWalls('e2A', 'e2B', 'right'),
+    wall(along('e2B', 6), along('rejoin', -56)),
+    wall(along('rejoin', -56), along('rejoin', 6), 'right'),
     // Garden: low planter walls, open round the fountain pool (the pool rim is part of the road).
-    wall(along('escB', 6), along('fountain', -6)),
-    wall(along('fountainOut', 0), at('gardenOut')),
-    // Parking lot: kerbs, with a gap where each car lane crosses.
-    ...lotWalls(),
-    // The way back to the entrance plaza (the grid itself is open: a plaza).
-    wall(along(CAR_LANES[CAR_LANES.length - 1][0], CAR_LANES[CAR_LANES.length - 1][1] + 3.5), along('start', -60)),
+    wall(along('rejoin', 6), along('fountain', -6)),
+    wall(at('fountainOut'), at('mallExit')),
+    // Parking deck and ramp: parapets (with gaps where the cars come out of / go into their garage gates), down to the
+    // plaza (the grid itself is open: a plaza).
+    ...deckWalls(at('mallExit'), along('start', -60)),
   ],
   ramps: [
     // The fountain's rim: a low kicker over the pool (a trick off it pays a boost; the floating boxes are over the pool).
     { at: at('fountain'), length: 10, height: 1.4, shape: 'kicker' },
   ],
   boostPads: [
-    pad('start', 12),
-    pad('prom', 6, 0.35),
-    pad('landing', 2),
-    pad('g1', 4, -0.3),
-    pad('g2', 0, 0.3),
-    pad('g3', 4, 0, 8, 7), //  the run-up to the fountain
-    pad('g5', 4, -0.25),
-    // Parking lot: pads ON the car lanes, so a car sometimes sits on them.
-    ...CAR_LANES.map(([name, ds], i) => pad(name, ds - 4, i % 2 ? 0.35 : -0.35)),
-    pad('ramp1', 8),
+    pad('start', 14),
+    pad('e1B', 2, 0.3),
+    pad('gal1', 0, -0.35),
+    pad('galPad', -6, 0.3),
+    pad('galPad', 18, -0.3),
+    pad('galTurn', 4, 0.35),
+    pad('g2', 4, 0, 8, 7), //  the run-up to the fountain
+    pad('spiralIn', 0),
+    pad('rampEnd', 10),
   ],
   grassPatches: [
-    { at: along('g1', 16), offset: 0.5, length: 18, width: 7 },
-    { at: along('g2', -10), offset: -0.5, length: 16, width: 7 },
-    { at: along('g2', 24), offset: 0.55, length: 14, width: 6 },
-    { at: along('g4', 6), offset: 0.5, length: 16, width: 7 },
-    { at: along('g5', 10), offset: -0.5, length: 14, width: 7 },
+    { at: along('g1', 4), offset: 0.5, length: 16, width: 7 },
+    { at: along('g1', 30), offset: -0.5, length: 14, width: 7 },
   ],
   floatingItemRows: [{ at: along('fountain', 19), lift: 2.2 }],
   laps: 3,
@@ -318,44 +430,57 @@ export const palmPlaza: TrackDef = {
     mall: {
       seed: 5,
       upper: UPPER,
-      upperFloor: [{ from: at('upperIn'), to: at('escA') }],
+      upperFloor: [{ from: at('e1Off'), to: at('e2On') }],
       garden: { from: at('gardenIn'), to: at('gardenOut') },
       fountain: { at: at('fountain'), length: 24 },
-      lot: { from: at('lotIn'), to: at('lotEnd') },
-      storeBranch: 0,
+      spiral: { from: at('spiralIn'), to: at('spiralOut') },
+      deck: { from: at('mallExit'), to: at('ramp1') },
+      low: 2,
+      // The building: round everything from the top of the entrance escalators to the top of the spiral.
+      building: [
+        [155, 34],
+        [398, 34],
+        [398, -318],
+        [128, -318],
+        [128, -130],
+        [155, -100],
+      ],
     },
   },
   theme: { grass: '#7fbf5a', offroad: '#d9d2c4', sky: '#8fcfff', horizon: '#ead8bd', mood: 'mall' },
-  // (The terrain is only the floor the scenery stands on: level with the road for 12 m either side, then a wide blend, so
-  // the palms beside the upper floor stand at its height. The renderer draws its own floors instead of the terrain.)
+  // (The terrain is only the floor the scenery stands on: level with the road for 12 m either side, then a wide blend.
+  // The renderer draws its own floors instead of the terrain.)
   terrain: { blend: 30 },
   shortcuts: [
-    // The Boutique: straight through the store (in one door, out the other). A deck at the upper floor's height.
-    { from: at('storeA'), to: at('storeB'), points: STORE_POINTS, width: STORE_WIDTH, deck: true, hold: true, surface: 'road', walls: [{ from: 0.55, to: STORE_POINTS.length + 0.45, side: 'both' }] },
-    // The second escalator lane, mirrored to the left of the main lane.
-    { from: at('escA'), to: at('escB'), points: ESC_POINTS, width: MALL_WIDTH, deck: true, hold: true, surface: 'road', walls: [{ from: 0.9, to: ESC_POINTS.length + 0.1, side: 'both' }] },
+    // The entrance escalators' second lane (on the driver's left of the main lane).
+    { from: at('e1A'), to: at('e1B'), points: E1_POINTS, width: MALL_WIDTH, deck: true, hold: true, surface: 'road', walls: [{ from: 0.9, to: E1_POINTS.length + 0.1, side: 'both' }] },
+    // The down escalators' second lane (on the driver's right).
+    { from: at('e2A'), to: at('e2B'), points: E2_POINTS, width: MALL_WIDTH, deck: true, hold: true, surface: 'road', walls: [{ from: 0.9, to: E2_POINTS.length + 0.1, side: 'both' }] },
+    // The lower route of the atrium split: over the ledge and down the atrium floor (a sharp height line: deckSmooth 1).
+    { from: at('split'), to: at('rejoin'), points: LOW_POINTS, width: LOW_WIDTH, deck: true, hold: true, surface: 'road', deckSmooth: 1, alternate: true, walls: [{ from: 1.2, to: LOW_POINTS.length - 0.2, side: 'both' }] },
   ],
   hazards: [
     {
       kind: 'escalator',
       period: ESCALATOR_SCHEDULE.reduce((a, s) => a + s[2], 0),
-      from: at('escTop'),
-      to: at('escBot'),
-      branch: 1,
-      branchFrom: [mirror(route[at('escTop')].p)[0], route[at('escTop')].p[1]],
-      branchTo: [mirror(route[at('escBot')].p)[0], route[at('escBot')].p[1]],
+      phase: 23,
+      from: at('e1On'),
+      to: at('e1Off'),
+      branch: 0,
+      branchFrom: E1_POINTS[0].slice(0, 2) as [number, number],
+      branchTo: E1_POINTS[E1_POINTS.length - 1].slice(0, 2) as [number, number],
+      mascot: false,
     },
-    ...CAR_LANES.map(([name, ds, dir, period, phase]) => ({ kind: 'car' as const, at: along(name, ds), dir, period, phase, cars: 1 })),
+    {
+      kind: 'escalator',
+      period: ESCALATOR_SCHEDULE.reduce((a, s) => a + s[2], 0),
+      from: at('e2On'),
+      to: at('e2Off'),
+      branch: 1,
+      branchFrom: E2_POINTS[0].slice(0, 2) as [number, number],
+      branchTo: E2_POINTS[E2_POINTS.length - 1].slice(0, 2) as [number, number],
+    },
+    // Parking deck: oncoming cars on the first stretch, then slow cars going your way that change sides once.
+    ...CAR_STRETCHES.map((c) => ({ kind: 'car' as const, from: along(c.from[0], c.from[1]), to: along(c.to[0], c.to[1]), dir: c.dir, sides: c.sides, period: c.period, phase: c.phase, cars: c.cars })),
   ],
 };
-
-/** Parking-lot kerbs: both sides from the garden's exit to the last car lane, with a 7 m gap where each car lane crosses. */
-function lotWalls(): Wall[] {
-  const out: Wall[] = [];
-  let from = at('gardenOut');
-  for (const [name, ds] of CAR_LANES) {
-    out.push(wall(from, along(name, ds - 3.5)));
-    from = along(name, ds + 3.5);
-  }
-  return out;
-}
