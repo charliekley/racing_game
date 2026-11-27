@@ -601,10 +601,10 @@ export class MallView {
     const slabMat = new THREE.MeshStandardMaterial({ map: slabTex, roughness: 0.3, metalness: 0.05 });
     const sideMat = new THREE.MeshStandardMaterial({ color: '#e3d6c2', roughness: 0.7 });
     /** A slab under `run`: top at the road (+ lift), `left`/`right` m wide, with faces down `drop(p)` m on both sides. */
-    const slab = (run: TrackSample[], left: (p: TrackSample) => number, right: (p: TrackSample) => number, drop: (p: TrackSample) => number, mat: THREE.Material = slabMat, lift = -0.03) => {
+    const slab = (run: TrackSample[], left: (p: TrackSample) => number, right: (p: TrackSample) => number, drop: (p: TrackSample) => number, mat: THREE.Material = slabMat, lift = -0.03, sides: THREE.Material = sideMat) => {
       addB(tools.ribbon(run, false, (p) => [{ d: -left(p), h: lift }, { d: right(p), h: lift }], 16), mat);
-      addB(tools.ribbon(run, false, (p) => [{ d: -left(p), h: -drop(p) }, { d: -left(p), h: lift }], 8), sideMat);
-      addB(tools.ribbon(run, false, (p) => [{ d: right(p), h: lift }, { d: right(p), h: -drop(p) }], 8), sideMat);
+      addB(tools.ribbon(run, false, (p) => [{ d: -left(p), h: -drop(p) }, { d: -left(p), h: lift }], 8), sides);
+      addB(tools.ribbon(run, false, (p) => [{ d: right(p), h: lift }, { d: right(p), h: -drop(p) }], 8), sides);
     };
     const spanL = (p: TrackSample) => spans.get(p)?.left ?? outer;
     const spanR = (p: TrackSample) => spans.get(p)?.right ?? outer;
@@ -621,11 +621,22 @@ export class MallView {
       const raised = lowB.samples.filter((p) => p.y > 1);
       const lw = lowB.samples[0].width / 2 + def.offroadWidth + 0.6;
       if (raised.length > 2) {
-        slab(raised, () => lw, () => lw, (p) => p.y);
+        // Dress the raised run like the rest of the mall instead of a plain block: colourful tiled sides (ledgeTexture)
+        // and glass rails along both top edges, so it reads as a gallery walkway that ends in a jump.
+        const ledgeMap = ledgeTexture();
+        ledgeMap.repeat.set(3, 1); // (big tiles: the ribbon UVs span the whole run)
+        const ledgeMat = new THREE.MeshStandardMaterial({ map: ledgeMap, roughness: 0.45, metalness: 0.05 });
+        slab(raised, () => lw, () => lw, (p) => p.y, slabMat, -0.03, ledgeMat);
+        for (const side of [-1, 1]) {
+          addB(tools.ribbon(raised, false, (): Edge[] => [{ d: side * lw, h: 0 }, { d: side * lw, h: 1.05 }], 6), glassM);
+          addB(tools.ribbon(raised, false, (): Edge[] => [{ d: side * lw - 0.06, h: 1.05 }, { d: side * lw + 0.06, h: 1.05 }], 6), metalM);
+        }
         // The ledge's face: across the end of the raised part, from the ground to the lip (a stripe of hazard paint on top).
         const lip = raised[raised.length - 1];
         const face = new THREE.PlaneGeometry(2 * lw, lip.y).translate(0, lip.y / 2, 0).applyMatrix4(matrix(lip.x + lip.tx * 0.3, 0, lip.z + lip.tz * 0.3, 1, 1, 1, Math.atan2(lip.tx, lip.tz)));
-        addB(face, sideMat);
+        const faceMap = ledgeTexture();
+        faceMap.repeat.set(Math.max(1, Math.round((2 * lw) / 4)), Math.max(1, Math.round(lip.y / 4)));
+        addB(face, new THREE.MeshStandardMaterial({ map: faceMap, roughness: 0.45, metalness: 0.05 }));
         addB(new THREE.BoxGeometry(2 * lw, 0.2, 0.5).applyMatrix4(matrix(lip.x, lip.y - 0.05, lip.z, 1, 1, 1, Math.atan2(lip.tx, lip.tz))), new THREE.MeshStandardMaterial({ color: '#f5c518', roughness: 0.5 }));
       }
     }
@@ -1047,3 +1058,23 @@ export function railMetal(): THREE.MeshStandardMaterial {
   return railMat;
 }
 
+/**
+ * Tiles for the lower route's raised walkway and its ledge face: squares in the mall palette with white grout, so the
+ * jump-off point looks like a decorated gallery wall instead of a plain block. Square tiles look right whichever way the
+ * ribbon's UVs run.
+ */
+function ledgeTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = '#fffaf0'; // grout
+  g.fillRect(0, 0, 256, 256);
+  const r = rand(7);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      g.fillStyle = PALETTE[Math.floor(r() * PALETTE.length)];
+      g.fillRect(i * 64 + 4, j * 64 + 4, 56, 56);
+      g.fillStyle = 'rgba(255,255,255,0.18)'; // a soft highlight in the corner of each tile
+      g.fillRect(i * 64 + 8, j * 64 + 8, 20, 8);
+    }
+  }
+  return tex(c);
+}
