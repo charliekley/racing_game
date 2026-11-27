@@ -38,11 +38,16 @@ export interface InterpolatedKart {
   yawRate: number;
 }
 
+/** Seconds a car-hit flip (one barrel roll) takes; about the kart's hop in the air. */
+const FLIP_TIME = 0.75;
+
 export class KartView {
   readonly model: KartModel;
   private lean = 0;
   private pitch = 0;
   private roll = 0;
+  /** Flip after being hit by a car (Palm Plaza): seconds into the roll, or -1 when not flipping. Render only. */
+  private flipT = -1;
   private wheelSpin = 0; // distance rolled (m); divided by each wheel's radius for its angle
   private driftYaw = 0;
   /** Cosmetic driver animation (hands on the wheel, leaning, trick spin...). */
@@ -128,6 +133,11 @@ export class KartView {
     this.model.bakeFarModel();
   }
 
+  /** Start the flip animation (a parking-lot car hit this kart: see sim/hazards/car.ts). */
+  startFlip(): void {
+    this.flipT = 0;
+  }
+
   update(prev: KartState, cur: KartState, alpha: number, dt: number, ground?: Ground): void {
     const p = this.pose;
     p.x = prev.pos.x + (cur.pos.x - prev.pos.x) * alpha;
@@ -172,7 +182,15 @@ export class KartView {
     m.root.rotation.x = this.pitch;
     // Cannon flight: one slow, smooth barrel roll over the whole flight (ends level on landing).
     const flightU = fl?.phase === 'air' && fl.duration > 0 ? Math.min(1, fl.t / fl.duration) : 0;
-    m.root.rotation.z = this.roll + Math.PI * 2 * flightU * flightU * (3 - 2 * flightU);
+    // Flipped by a car: one full barrel roll over FLIP_TIME (eased), ending level.
+    let flip = 0;
+    if (this.flipT >= 0) {
+      this.flipT += dt;
+      const u = Math.min(1, this.flipT / FLIP_TIME);
+      flip = Math.PI * 2 * u * u * (3 - 2 * u);
+      if (u >= 1) this.flipT = -1;
+    }
+    m.root.rotation.z = this.roll + Math.PI * 2 * flightU * flightU * (3 - 2 * flightU) + flip;
     // The kart shrinks as it is swallowed by the barrel and pops back to full size just after the shot.
     let scale = 1;
     if (fl?.phase === 'load') scale = 1 - 0.45 * Math.min(1, fl.t / 0.5);

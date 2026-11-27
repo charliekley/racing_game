@@ -83,7 +83,7 @@ export class Escalator implements Hazard {
   constructor(
     readonly id: number,
     def: EscalatorDef,
-    private readonly track: Track,
+    readonly track: Track,
   ) {
     this.s0 = track.sAt(def.from);
     this.s1 = track.sAt(def.to);

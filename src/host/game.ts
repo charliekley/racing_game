@@ -966,6 +966,7 @@ export class Game {
         this.shake(e.slot, 0.8);
         break;
       case 'hazardHit': // lava geyser (or another hazard) got this kart: same burst and shake as an item hit
+        if (e.type === 'car') kv.startFlip(); // Palm Plaza: a parking-lot car flips the kart over (render only)
         this.fx.hit(p.x, p.y, p.z);
         hud?.flash('hit');
         this.shake(e.slot, 0.8);

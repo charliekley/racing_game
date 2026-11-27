@@ -23,6 +23,7 @@ import { LeafBurstView, leafPileSites, type BurstKart } from './env/leafBurst';
 import { MushroomView, isMushroom, trailTexture } from './env/mushroom';
 import { buildBranchLogs, buildFallingLeaves, buildGiantTrees, buildLeafPiles, buildRopeBridges, buildShortcutRoots, buildTrunkBrackets, buildLanterns, isTreetop, plankTexture } from './env/treetop';
 import { RainbowView, isRainbow } from './env/rainbow';
+import { MallView, isMall, mallGlassMaterial, mallRoadTexture } from './env/mall';
 import { planScenery } from '../track/sceneryPlan';
 
 interface Edge {
@@ -122,6 +123,13 @@ const STONE_WALL_PROFILE: [number, number][] = [
   [-0.4, 0.12],
   [-0.42, 0],
 ];
+/** Palm Plaza's glass railing: a thin panel 1.1 m tall (posts and the steel hand rail are added like the barrier's). */
+const GLASS_PROFILE: [number, number][] = [
+  [0.04, 0],
+  [0.04, 1.12],
+  [-0.04, 1.12],
+  [-0.04, 0],
+];
 const BARRIER_PROFILE: [number, number][] = [
   [0.34, 0],
   [0.32, 0.1],
@@ -156,7 +164,9 @@ export class TrackView {
     // Rainbow Route floats in space: no terrain, no standard road, kerbs, barriers or scenery (see env/rainbow.ts).
     const rainbow = isRainbow(track);
     // Terrain: height-field mesh + rock walls + bridges + floor (or the old flat plane without a terrain def).
-    const terrainView = rainbow ? { group: new THREE.Group(), cullToFog: () => {} } : new TerrainView(track);
+    // Palm Plaza (an indoor mall) draws its own floors instead of the terrain (see env/mall.ts).
+    const mall = isMall(track);
+    const terrainView = rainbow || mall ? { group: new THREE.Group(), cullToFog: () => {} } : new TerrainView(track);
     this.group.add(terrainView.group);
     this.terrainView = terrainView;
     const hasTerrain = track.terrain.enabled;
@@ -185,7 +195,9 @@ export class TrackView {
         ? new THREE.MeshStandardMaterial({ map: planks, roughness: 0.82, metalness: 0 })
         : mushroom
           ? new THREE.MeshStandardMaterial({ map: trailTexture(), roughness: 0.96, metalness: 0 })
-          : new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
+          : mall
+            ? new THREE.MeshStandardMaterial({ map: mallRoadTexture(), roughness: 0.35, metalness: 0.05 }) // (Palm Plaza: polished stone tiles)
+            : new THREE.MeshStandardMaterial({ map: roadTexture(), roughness: 0.86, metalness: 0, roughnessMap: asphalt.roughnessMap });
       alongTrack((p) => [{ d: -hw, h: lift(p, -hw) + 0.02 }, { d: 0, h: lift(p, 0) + 0.02 }, { d: hw, h: lift(p, hw) + 0.02 }], 12, roadMat);
 
       // Rounded raised kerbs with red/white stone bands.
@@ -195,6 +207,8 @@ export class TrackView {
       const stone = mushroom ? rockMaps() : null; // (Mushroom Valley: a rough stone edge)
       const kerbMat = treetop
         ? new THREE.MeshStandardMaterial({ color: '#5a3820', roughness: 0.9 })
+        : mall
+          ? new THREE.MeshStandardMaterial({ color: '#9aa3ad', roughness: 0.5 }) // (Palm Plaza: a plain grey stone edge)
         : stone
           ? new THREE.MeshStandardMaterial({ ...stone, roughness: 1, color: '#b9afa0' })
           : new THREE.MeshStandardMaterial({ ...kerb, roughness: 1 });
@@ -215,7 +229,9 @@ export class TrackView {
       const alpine = hexLight(def.theme.grass) > 0.72;
       const offMaps = alpine ? snowMaps() : grassMaps(shoulder);
       for (const t of [offMaps.map, offMaps.normalMap, offMaps.roughnessMap]) t.repeat.set(1, 1);
-      const offMat = new THREE.MeshStandardMaterial({ ...offMaps, roughness: 1, color: alpine ? new THREE.Color(shoulder).lerp(new THREE.Color('#ffffff'), 0.5) : new THREE.Color('#ffffff') });
+      const offMat = mall
+        ? new THREE.MeshStandardMaterial({ color: '#b5ab9b', roughness: 0.6 }) // (Palm Plaza: a tiled strip, not grass)
+        : new THREE.MeshStandardMaterial({ ...offMaps, roughness: 1, color: alpine ? new THREE.Color(shoulder).lerp(new THREE.Color('#ffffff'), 0.5) : new THREE.Color('#ffffff') });
       const outer = hw + def.offroadWidth;
       const stripH = (p: TrackSample, d: number) => Track.groundLevel(p.y, p.bank, hw, d, def.offroadWidth) - p.y + 0.01;
       const outerD = (p: TrackSample, side: number) => Math.min(outer, track.cliffEdgeAt(p.s, side));
@@ -301,6 +317,7 @@ export class TrackView {
         boards.repeat.set(0.25, 1);
         barrierMat = new THREE.MeshStandardMaterial({ map: boards, color: '#d8b48c', roughness: 0.9, side: THREE.DoubleSide });
       }
+      if (mall) barrierMat = mallGlassMaterial(); // Palm Plaza: glass railings (see GLASS_PROFILE)
       if (mushroom) {
         // Mushroom Valley: a low rough stone wall (the same stone as the edges) topped by wooden posts and ropes.
         const stoneWall = rockMaps();
@@ -315,9 +332,9 @@ export class TrackView {
           // A wall on a cliff side stands at the cliff edge (like the collision wall does).
           // On a bridge the parapet stands at the deck edge (like the collision wall: Track.wallsAt).
           const wallD = (p: TrackSample) => side * Math.min(track.onBridge(p.s) ? hw + CURB_WIDTH : outer, track.cliffEdgeAt(p.s, side));
-          const profile = mushroom ? STONE_WALL_PROFILE : BARRIER_PROFILE;
+          const profile = mushroom ? STONE_WALL_PROFILE : mall ? GLASS_PROFILE : BARRIER_PROFILE;
           const m = add(ribbon(run, false, (p) => profile.map(([dIn, h]) => ({ d: wallD(p) - side * dIn, h })), 6), barrierMat);
-          m.castShadow = true;
+          m.castShadow = !mall;
           const pts: THREE.Vector3[] = [];
           const lowRope: THREE.Vector3[] = []; // (Mushroom Valley: a second, lower rope)
           const step = Math.max(1, Math.round((mushroom ? 4 : 5) / track.spacing));
@@ -397,7 +414,7 @@ export class TrackView {
     this.group.add(gm);
 
     // Shortcut branch roads, curbs, walls and the fork gates (render/branchView.ts).
-    if (!rainbow) this.group.add(buildBranchViews(track, strip));
+    if (!rainbow && !mall) this.group.add(buildBranchViews(track, strip)); // (Palm Plaza draws its deck lanes itself)
 
     const scenery = rainbow ? new THREE.Group() : buildScenery(track);
     if (treetop) {
@@ -424,6 +441,11 @@ export class TrackView {
       this.rainbow = new RainbowView(track, { ribbon, runs });
       this.group.add(this.rainbow.group);
     }
+    // Palm Plaza: floors, deck lanes, shops, palms, the roof, the garden and the parking lot (the fountain animates).
+    if (mall) {
+      this.mallView = new MallView(track, { ribbon, runs });
+      this.group.add(this.mallView.group);
+    }
     // Mushroom Valley: giant caps, gorge mist and the glowing cave (added after the merge: they animate).
     if (isMushroom(track)) {
       this.mushrooms = new MushroomView(track);
@@ -433,6 +455,9 @@ export class TrackView {
 
   /** Rainbow Route: the ribbon, planet and star tunnel (null on other tracks). */
   private rainbow: RainbowView | null = null;
+
+  /** Palm Plaza: the mall (null on other tracks). */
+  private mallView: MallView | null = null;
 
   /** Mushroom Valley: the caps, mist and cave (null on other tracks). */
   private mushrooms: MushroomView | null = null;
@@ -451,6 +476,7 @@ export class TrackView {
     ENV_TIME.value = time;
     this.mushrooms?.update(time);
     this.rainbow?.update(time);
+    this.mallView?.update(time);
     this.boostTex.offset.y = -time * 2.2;
     const k = 2.4 + 0.9 * Math.sin(time * 6);
     this.boostMat.color.setRGB(k, k, k);

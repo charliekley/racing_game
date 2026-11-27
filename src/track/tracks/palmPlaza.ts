@@ -1,20 +1,22 @@
 /**
  * Track: "Palm Plaza" – an original, bright, modern two-storey shopping mall with palm trees (about 1.5 km).
  *
- * The lap runs anticlockwise (north = +z, east = +x). The start line is on the UPPER floor, heading east:
+ * The lap (north = +z, east = +x; careful: +x is on a driver's LEFT when facing +z). The start line is on the entrance
+ * plaza at ground level, heading east:
  *
- *   1. SKY PROMENADE  (upper floor, 13 m)  the grid, a boost pad, an S along the gallery with glass railings.
- *   2. THE BOUTIQUE   (upper floor)        the main road swings LEFT round a big store; the shortcut turns RIGHT
+ *   1. PARKING RAMP   (0 -> 13 m)          from the grid, climbing S-bends up the parking deck to the upper floor.
+ *   2. SKY PROMENADE  (upper floor, 13 m)  an S along the gallery (glass railings, shops, palms), a bend north.
+ *   3. THE BOUTIQUE   (upper floor)        the main road swings LEFT round a big store; the shortcut turns RIGHT
  *                                          straight through it: in at one door, out at the other (`shortcuts[0]`, a deck).
- *   3. THE ESCALATORS (13 m -> 0 m)        the road splits into TWO parallel escalator lanes going down (the main road on
- *                                          the right, `shortcuts[1]` on the left). The belts move: with you = faster,
+ *   4. THE ESCALATORS (13 m -> 0 m)        the road splits into TWO parallel escalator lanes going down (the main road on
+ *                                          the driver's left, `shortcuts[1]` on the right). The belts move: with you = faster,
  *                                          against you = slower, sometimes both stop; a fixed timetable (sim/hazards/
  *                                          escalator.ts). A guide robot between them points at the good lane.
- *   4. GARDEN ATRIUM  (ground floor, 0 m)  boost pads, grass patches (slow), and the FOUNTAIN: its rim is a kicker with a
+ *   5. GARDEN ATRIUM  (ground floor, 0 m)  boost pads, grass patches (slow), and the FOUNTAIN: its rim is a kicker with a
  *                                          row of item boxes floating over the pool.
- *   5. PARKING LOT    (outside, 0 m)      S-bends through the car park; cars drive across the road from garage gate to
+ *   6. PARKING LOT    (outside, 0 m)      S-bends through the car park; cars drive across the road from garage gate to
  *                                          garage gate (sim/hazards/car.ts), sometimes over the boost pads. Hit one = flip.
- *   6. PARKING RAMP   (0 -> 13 m)          a long curving ramp up the parking deck, back into the upper floor and the grid.
+ *   7. HOME           (outside, 0 m)      a sweeping bend and an S back to the entrance plaza and the grid.
  *
  * Written with the turtle (src/track/turtle.ts): every bend is a circle arc of radius >= 28 m (bots never brake hard,
  * which keeps the three weight classes balanced), named points place the features, and the lap is closed exactly by
@@ -138,7 +140,6 @@ const close = closeTo(CLOSE_R, END_X, END_Z, 90);
   t.turn(S_R, S_DEG).mark('plaza').turn(S_R, -S_DEG).line(-END_X - 2 * S_R * Math.sin(rad(S_DEG))); // gentle S, then the straight grid to the line
 }
 
-export const CLOSE = close;
 const route: RoutePoint[] = t.route;
 if (Math.hypot(route[route.length - 1].p[0] - route[0].p[0], route[route.length - 1].p[1] - route[0].p[1]) < 1.5) route.pop();
 else throw new Error(`palmPlaza: the lap does not close (${route[route.length - 1].p[0].toFixed(1)}, ${route[route.length - 1].p[1].toFixed(1)})`);
@@ -317,17 +318,14 @@ export const palmPlaza: TrackDef = {
     mall: {
       seed: 5,
       upper: UPPER,
-      upperFloor: [
-        { from: at('upperIn'), to: route.length },
-        { from: 0, to: at('escA') },
-      ],
+      upperFloor: [{ from: at('upperIn'), to: at('escA') }],
       garden: { from: at('gardenIn'), to: at('gardenOut') },
       fountain: { at: at('fountain'), length: 24 },
       lot: { from: at('lotIn'), to: at('lotEnd') },
       storeBranch: 0,
     },
   },
-  theme: { grass: '#7fbf5a', offroad: '#d9d2c4', sky: '#9fd8ff', horizon: '#fff1d6', mood: 'bright' },
+  theme: { grass: '#7fbf5a', offroad: '#d9d2c4', sky: '#8fcfff', horizon: '#d8ecff', mood: 'day' },
   // (The terrain is only the floor the scenery stands on: level with the road for 12 m either side, then a wide blend, so
   // the palms beside the upper floor stand at its height. The renderer draws its own floors instead of the terrain.)
   terrain: { blend: 30 },
@@ -361,4 +359,3 @@ function lotWalls(): Wall[] {
   }
   return out;
 }
-export const NAMED = route.map((r, i) => [r, i] as const).filter(([r]) => r.name).map(([r, i]) => `${r.name}#${i} ${r.p[0].toFixed(0)},${r.p[1].toFixed(0)} h${r.heading.toFixed(0)}`);

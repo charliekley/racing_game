@@ -15,6 +15,8 @@ import { GeyserView } from './geyserView';
 import { GustView } from './gustView';
 import { RollerView } from './rollerView';
 import { BeetleView } from './beetleView';
+import { EscalatorView } from './escalatorView';
+import { CarView } from './carView';
 
 export class HazardViews {
   private readonly geysers: GeyserView | null;
@@ -22,6 +24,8 @@ export class HazardViews {
   private readonly bridges: DrawbridgeView | null;
   private readonly gusts: GustView | null;
   private readonly beetles: BeetleView | null;
+  private readonly escalators: EscalatorView | null;
+  private readonly cars: CarView | null;
   private lastTime = Number.NaN;
 
   constructor(
@@ -40,6 +44,10 @@ export class HazardViews {
     this.gusts = gusts.length > 0 ? new GustView(scene, gusts, quality) : null;
     const beetles = ofKind('beetle');
     this.beetles = beetles.length > 0 ? new BeetleView(scene, beetles, quality) : null;
+    const escalators = ofKind('escalator');
+    this.escalators = escalators.length > 0 ? new EscalatorView(scene, escalators, quality) : null;
+    const cars = ofKind('car');
+    this.cars = cars.length > 0 ? new CarView(scene, cars, quality) : null;
   }
 
   /** Pose everything at race time `time` (s). `focus` = positions of the karts the cameras follow (culls particles far away). */
@@ -51,6 +59,8 @@ export class HazardViews {
     this.bridges?.update(time);
     this.gusts?.update(time);
     this.beetles?.update(time);
+    this.escalators?.update(time);
+    this.cars?.update(time);
   }
 
   setQuality(q: QualitySettings): void {
@@ -59,6 +69,8 @@ export class HazardViews {
     this.bridges?.setQuality(q);
     this.gusts?.setQuality(q);
     this.beetles?.setQuality(q);
+    this.escalators?.setQuality(q);
+    this.cars?.setQuality(q);
   }
 
   dispose(): void {
@@ -67,5 +79,7 @@ export class HazardViews {
     this.bridges?.dispose();
     this.gusts?.dispose();
     this.beetles?.dispose();
+    this.escalators?.dispose();
+    this.cars?.dispose();
   }
 }
