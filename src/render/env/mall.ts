@@ -138,7 +138,7 @@ function lotTexture(): THREE.CanvasTexture {
 }
 
 /** Original, made-up store names for the sign boards (no real brands). The last board is the mall's own name for its gates. */
-const STORE_NAMES = ['Sunny Sips', 'Pixel Pals', 'Kiwi & Co.', 'Moonbeam Books', 'Zippy Shoes', 'Coco Cones', 'Bloom Room', 'Gadget Grove', 'Tidal Tees', 'Puffin Pops', 'Velvet Boutique', 'Maple Mugs', 'Comet Toys', 'Lemon Loft', 'Breeze Bikes', 'Honey Hats', 'PALM PLAZA'];
+const STORE_NAMES = ['Sunny Sips', 'Pixel Pals', 'Kiwi & Co.', 'Moonbeam Books', 'Zippy Shoes', 'Cloud Cones', 'Bloom Room', 'Gadget Grove', 'Tidal Tees', 'Puffin Pops', 'Velvet Boutique', 'Maple Mugs', 'Comet Toys', 'Lemon Loft', 'Breeze Bikes', 'Honey Hats', 'PALM PLAZA'];
 const SIGN_COLORS = PALETTE;
 const GATE_SIGN = 16;
 
