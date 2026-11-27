@@ -8,3 +8,7 @@ export { cyclePose, wrap } from './cycle';
 export { HAZARD_FACTORIES } from './registry';
 export { HAZARD_NEAR_DISTANCE } from './types';
 export type { BotAdvice, Hazard, HazardEvent, HazardPhase, HazardPose } from './types';
+export { Escalator, ESCALATOR_SPEED, ESCALATOR_SCHEDULE } from './escalator';
+export type { EscalatorPose } from './escalator';
+export { Car, CAR_LENGTH, CAR_WIDTH } from './car';
+export type { CarState } from './car';

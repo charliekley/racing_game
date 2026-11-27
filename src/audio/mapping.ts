@@ -190,6 +190,8 @@ export function hazardSound(type: string, fire: boolean): SoundId | null {
       return fire ? null : 'gust'; // the rising whistle is the warning; the gust itself is already audible
     case 'roller':
       return fire ? null : 'roller'; // rumbling snowball
+    case 'escalator':
+      return fire ? null : 'bridgeBell'; // Palm Plaza: a chime just before the escalators change direction
     default:
       return null;
   }
@@ -204,6 +206,8 @@ export function hazardHitSound(type: string): SoundId {
       return 'hitWater';
     case 'beetle':
       return 'hitBeetle'; // a hard shell: a dull wooden thud and a short rattle
+    case 'car':
+      return 'hitBeetle'; // Palm Plaza: a parked-lot car (a hard body thud)
     default:
       return 'hazardHit'; // geyser (lava); gusts only push, they never raise a hit
   }

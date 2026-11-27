@@ -27,6 +27,7 @@ import { forwardOf, rightOf } from './kart';
 import type { Track } from './track';
 import type { Race, Racer } from './race';
 import type { World } from './world';
+import type { Escalator } from './hazards/escalator';
 
 /** What a bot feels: the host can turn these into driver faces. */
 export type BotMood = 'celebrate' | 'despair' | 'angry' | 'smug';
@@ -342,6 +343,12 @@ export class Bot {
   private riskShortcut = false;
   /** How far behind the leader (m) this bot has to be before it counts as lagging: fixed per bot (seeded), so some bots give up on the main road sooner. */
   private lagGap = 60;
+  /**
+   * Escalators (Palm Plaza): the lane picked for the coming escalator fork (true = the branch lane) and whether the pick
+   * for this approach is made. Re-decided once per lap, at a distance that depends on the difficulty (see `pickEscalator`).
+   */
+  private escPick = false;
+  private escDecided = false;
 
   constructor(
     readonly slot: number,
@@ -416,6 +423,9 @@ export class Bot {
     this.fightShift += ((nearFork ? 0 : this.fightTarget(world, k, track, sNow, lane, half, isHuman)) - this.fightShift) * 0.06;
     lane += this.fightShift;
     if (!nearFork && sNow.route === 0) this.riskShortcut = this.skill.skillful && this.isLagging(race, humanAhead);
+    // --- Escalators (Palm Plaza): pick the lane whose belt will carry us down, not hold us back ---
+    const esc = world.hazards?.list.find((h): h is Escalator => h.kind === 'escalator') ?? null;
+    if (esc) this.pickEscalator(esc, k, track, sNow, race.time);
     // --- Hazards (lava geysers...): swing to a free lane, or lift when every lane is blocked ---
     // The advice is a function of the race clock, so bots "see" the same eruptions as the players.
     // Easy bots react only partly (care 0.75), so they are sometimes caught; hard bots almost never.
@@ -432,6 +442,8 @@ export class Bot {
       // Bold moves: brake later for the dive. Shortcuts: only a bot that is lagging behind takes them (the player's toy otherwise).
       cornerSpeed: (this.style.cornerSpeed ?? 0.75) + (diving ? 0.1 : 0),
       shortcutBias: this.riskShortcut ? Math.max(this.style.shortcutBias ?? 0, 0.6) : 0,
+      // The escalator fork is not a shortcut: both lanes are the same length, the belts decide (see pickEscalator).
+      branchChoice: esc ? (r: number) => (r === esc.branchRoute ? this.escPick : undefined) : undefined,
     };
 
     // --- Base driving ---------------------------------------------------------------------
@@ -538,6 +550,37 @@ export class Bot {
     let best = -Infinity;
     for (const r of race.racers.values()) if (!r.out) best = Math.max(best, r.progress);
     return best;
+  }
+
+  /**
+   * Palm Plaza's escalators: decide once per approach which of the two lanes to take. The better the bot, the later
+   * (closer to the fork) and the smarter it decides:
+   *  - easy: 150 m before the fork it looks at which belt runs its way RIGHT NOW (often stale by the time it gets
+   *    there), and only 70 % of the time does it bother at all (else it stays on the main lane);
+   *  - normal: the same look, 100 m before the fork;
+   *  - hard: 70 m before, it works out which lane's belt will help most over the ride itself (the timetable is fixed,
+   *    so it can: `Escalator.bestLane`).
+   * No difference (both stopped) = the main lane.
+   */
+  private pickEscalator(esc: Escalator, k: KartState, track: Track, p: { route: number; s: number }, time: number): void {
+    const b = track.branches[esc.branchRoute - 1];
+    const dist = track.deltaS(p.s, b.s0); // metres to the fork (negative = past it)
+    const decideAt = this.label === 'easy' ? 150 : this.label === 'normal' ? 100 : 70;
+    if (dist > decideAt + 20 || dist < -(esc.s1 - b.s0 + 40)) {
+      this.escDecided = false; // far from the fork (before it, or well past it): forget the old pick
+      return;
+    }
+    if (this.escDecided || p.route !== 0 || dist > decideAt || dist < 0) return;
+    this.escDecided = true;
+    let good: number;
+    if (this.label === 'hard') {
+      const speed = Math.max(15, k.speed);
+      good = esc.bestLane(time, (dist + (esc.s0 - b.s0)) / speed, (esc.s1 - esc.s0) / speed);
+    } else {
+      good = (esc.pose(time) as { good: number }).good;
+      if (this.label === 'easy' && this.rnd() > 0.7) good = -1;
+    }
+    this.escPick = good === 1;
   }
 
   /**

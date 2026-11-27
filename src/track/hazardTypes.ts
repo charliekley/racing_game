@@ -99,5 +99,52 @@ export interface BeetleDef extends HazardBase {
   radius?: number;
 }
 
-export type HazardDef = GeyserDef | DrawbridgeDef | GustDef | RollerDef | BeetleDef;
+/**
+ * Palm Plaza: a pair of parallel escalators going down between two floors. The main road is one lane (its moving part is
+ * `from`..`to`), the other lane is the `deck` shortcut `branch` (its moving part is between the branch samples nearest to
+ * the world points `branchFrom` and `branchTo`). Each escalator's surface moves: riding WITH it adds `speed` m/s along the
+ * lane, AGAINST it takes `speed` m/s away, stopped does nothing. Which way each one runs follows a fixed timetable
+ * (`schedule`, a pure function of the race clock; see sim/hazards/escalator.ts). It never spins anyone out.
+ */
+export interface EscalatorDef {
+  kind: 'escalator';
+  /** Unused (the timetable sets the rhythm); kept so every hazard has one. Use the timetable's total length. */
+  period: number;
+  phase?: number;
+  /** Moving part of the main-road lane (control-point units). */
+  from: number;
+  to: number;
+  /** Index into `shortcuts` of the second lane (a `deck` branch running beside the main road). */
+  branch: number;
+  /** World points [x, z] where the second lane's moving part starts and ends. */
+  branchFrom: [number, number];
+  branchTo: [number, number];
+  /** Conveyor speed (m/s, default ESCALATOR_SPEED). */
+  speed?: number;
+  /**
+   * Timetable: [main lane, branch lane, seconds] steps; +1 = runs with the traffic (down), -1 = against it, 0 = stopped.
+   * Repeats forever. Default ESCALATOR_SCHEDULE.
+   */
+  schedule?: [number, number, number][];
+}
+
+/**
+ * Palm Plaza's parking lot: a lane of cars driving straight across the road at `at`, from a garage gate on one side to
+ * a gate on the other (`dir` +1 = from the left of the road to the right). `cars` cars, evenly spaced in time, each
+ * crossing once per `period`; outside the gates a car is hidden (it is "in the garage"). A car is solid: hitting one
+ * flips the kart over (a spin-out with a hop). Pure function of the race clock.
+ */
+export interface CarDef extends HazardBase {
+  kind: 'car';
+  at: number;
+  dir: 1 | -1;
+  /** Driving speed (m/s, default 9). */
+  speed?: number;
+  /** How many cars use this lane (default 1). */
+  cars?: number;
+  /** Distance (m) from the road centre to each garage gate (default road half width + 16). */
+  reach?: number;
+}
+
+export type HazardDef = GeyserDef | DrawbridgeDef | GustDef | RollerDef | BeetleDef | EscalatorDef | CarDef;
 export type HazardKind = HazardDef['kind'];

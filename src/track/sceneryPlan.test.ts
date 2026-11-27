@@ -28,7 +28,14 @@ describe.each(TRACKS.map((t) => [t.name, t] as const))('scenery plan for %s', (_
   it('is not empty and has both circles and boxes', () => {
     // (Rainbow Route floats in space: no trees, no buildings; the ribbon's own look is drawn by env/rainbow.ts.)
     if (def.scenery.rainbow) expect(plan.trees.length).toBe(0);
-    else {
+    else if (def.scenery.mall) {
+      // (Palm Plaza is an indoor mall: palms in planters and parked cars instead of trees and houses, see mallPlan.ts.)
+      expect(plan.trees.length).toBe(0);
+      expect(plan.mall!.palms.length).toBeGreaterThan(5);
+      expect(plan.mall!.parkedCars.length).toBeGreaterThan(5);
+      expect(plan.colliders.some((c) => c.shape === 'circle')).toBe(true);
+      expect(plan.colliders.some((c) => c.shape === 'box')).toBe(true);
+    } else {
       expect(plan.trees.length).toBeGreaterThan(5);
       expect(plan.colliders.some((c) => c.shape === 'circle')).toBe(true);
       expect(plan.colliders.some((c) => c.shape === 'box')).toBe(true);

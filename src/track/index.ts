@@ -6,10 +6,11 @@ import { switchbackSummit } from './tracks/switchbackSummit';
 import { autumnSpeedway } from './tracks/autumnSpeedway';
 import { mushroomValley } from './tracks/mushroomValley';
 import { rainbowRoute } from './tracks/rainbowRoute';
+import { palmPlaza } from './tracks/palmPlaza';
 import type { TrackDef } from './types';
 
-// The Grand Prix runs them in this order too, so Autumn Speedway is the 5th race, Mushroom Valley the 6th and Rainbow Route the 7th and last.
-export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit, autumnSpeedway, mushroomValley, rainbowRoute];
+// The Grand Prix runs them in this order too, so Autumn Speedway is the 5th race, Mushroom Valley the 6th, Rainbow Route the 7th and Palm Plaza the 8th and last.
+export const TRACKS: TrackDef[] = [emberPeaks, docksideLoop, cloudGarden, switchbackSummit, autumnSpeedway, mushroomValley, rainbowRoute, palmPlaza];
 export type { TrackDef };
 
 // Dev-only test tracks (never in the lobby picker). Open one with

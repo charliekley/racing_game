@@ -17,6 +17,7 @@ import type { Track, TrackSample } from '../sim/track';
 import { bridgePiers, PILLAR_RADIUS } from '../sim/bridgePillars';
 import { gatewayLayout, PILLAR_R, SIGN_R } from '../sim/gateways';
 import type { TrackDef } from './types';
+import { planMall, type MallPlan } from './mallPlan';
 
 // ---------------------------------------------------------------------------
 // Public data types
@@ -133,6 +134,8 @@ export interface SceneryPlan {
   pierColliders: Collider[];
   /** Ground height lookup used for `y` (also used by the renderer for ground detail). */
   heightAt: (x: number, z: number) => number;
+  /** Palm Plaza (`scenery.mall`): palms in planters, parked cars, garage gates, lamp posts (see mallPlan.ts). Undefined elsewhere. */
+  mall?: MallPlan;
 }
 
 // ---------------------------------------------------------------------------
@@ -378,12 +381,17 @@ export function planScenery(track: Track, heightAt?: (x: number, z: number) => n
 
   planForestGiants(site, plan, h, def, solidOf);
 
-  // Big man-made things first, so nature can grow around them.
-  planGrandstands(site, plan, h, seed, solidOf);
-  planHouses(site, plan, h, rnd, seed, solidOf, def.scenery.buildings);
-  planTrackside(site, plan, h, rnd, seed, solidOf, rules);
-  planTrees(site, plan, h, rnd, seed, solidOf, rules, Math.round(def.scenery.trees * rules.treeDensity));
-  planBushesAndRocks(site, plan, h, rnd, seed, solidOf, rules, def.scenery.trees);
+  if (def.scenery.mall) {
+    // Palm Plaza is an indoor mall: palms in planters, parked cars and garages instead of the countryside (mallPlan.ts).
+    plan.mall = planMall(site, track, h, rnd, seed, solidOf);
+  } else {
+    // Big man-made things first, so nature can grow around them.
+    planGrandstands(site, plan, h, seed, solidOf);
+    planHouses(site, plan, h, rnd, seed, solidOf, def.scenery.buildings);
+    planTrackside(site, plan, h, rnd, seed, solidOf, rules);
+    planTrees(site, plan, h, rnd, seed, solidOf, rules, Math.round(def.scenery.trees * rules.treeDensity));
+    planBushesAndRocks(site, plan, h, rnd, seed, solidOf, rules, def.scenery.trees);
+  }
   planGantry(site, plan, h, solidOf);
 
   if (!heightAt) planCache.set(track, plan);

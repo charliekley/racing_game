@@ -176,6 +176,8 @@ export class Track implements Ground {
   /** Height field around the road (flat 0 + legacy behaviour when the track has no terrain def). */
   readonly terrain: Terrain;
   readonly boostPads: BoostPad[] = [];
+  /** Grass patches on the road (Palm Plaza's garden): 'offroad' surface. Same shape as a boost pad. Empty on other tracks. */
+  readonly grassPatches: BoostPad[] = [];
   /** s where each checkpoint segment starts; checkpoint 0 = start/finish line (s = 0). */
   readonly checkpoints: number[] = [];
   /** Where item boxes float (rows of three across the road). */
@@ -346,6 +348,11 @@ export class Track implements Ground {
       const c = (b.offset * def.width) / 2;
       this.boostPads.push({ s0, s1: s0 + b.length, d0: c - b.width / 2, d1: c + b.width / 2 });
     }
+    for (const g of def.grassPatches ?? []) {
+      const s0 = this.sAt(g.at);
+      const c = (g.offset * def.width) / 2;
+      this.grassPatches.push({ s0, s1: s0 + g.length, d0: c - g.width / 2, d1: c + g.width / 2 });
+    }
     for (let c = 0; c < def.checkpoints; c++) this.checkpoints.push((c * this.length) / def.checkpoints);
     this.placeItemBoxes();
     this.cannons = resolveCannons(this, def.cannons); // cannon agent: needs pointAt/sample, so it comes last
@@ -376,6 +383,14 @@ export class Track implements Ground {
         const ground = this.sample(p.x, p.z, p.index);
         if (!ground) continue;
         this.itemBoxes.push({ x: p.x, y: ground.height, z: p.z, s });
+      }
+    }
+    // Rows held in the air (Palm Plaza: over the fountain, caught off the rim's kicker). Same spread as a normal row.
+    for (const r of this.def.floatingItemRows ?? []) {
+      const s = this.sAt(r.at);
+      for (const lateral of ITEM_ROW_LATERALS) {
+        const p = this.pointAt(s, lateral * this.def.width);
+        this.itemBoxes.push({ x: p.x, y: p.y + r.lift, z: p.z, s });
       }
     }
   }
@@ -660,6 +675,11 @@ export class Track implements Ground {
       for (const b of this.boostPads) {
         const into = this.deltaS(b.s0, p.s);
         if (into >= 0 && into <= b.s1 - b.s0 && p.d >= b.d0 && p.d <= b.d1) surface = 'boost';
+      }
+      // Grass patches on the road (Palm Plaza's garden) slow you like the verge.
+      for (const g of this.grassPatches) {
+        const into = this.deltaS(g.s0, p.s);
+        if (into >= 0 && into <= g.s1 - g.s0 && p.d >= g.d0 && p.d <= g.d1) surface = 'offroad';
       }
     } else {
       surface = 'offroad';

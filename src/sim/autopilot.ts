@@ -31,6 +31,11 @@ export interface BotStyle {
   steerGain?: number;
   /** Share (0..1+) of the track's `botTuning.wander` this bot uses (default 1; the better the bot, the less it sways). */
   wanderScale?: number;
+  /**
+   * Per-branch override of `shortcutBias` (Palm Plaza's escalators: the bot picks the lane that runs its way): given a
+   * branch's route id, true = take it, false = stay on the main road, undefined = decide by `shortcutBias` as usual.
+   */
+  branchChoice?: (route: number) => boolean | undefined;
 }
 
 /** A bot starts steering for a shortcut this far (m) before the junction. */
@@ -52,15 +57,22 @@ export function autopilot(k: KartState, track: Track, style: BotStyle, c: KartCo
   let at = p.i;
   let atFork = false; // steering for a shortcut junction: take it at corner speed
   if (track.branches.length > 0) {
-    const wants = (style.shortcutBias ?? 0) > 0.5;
-    if (route > 0 && !wants && at <= (track.branches[route - 1].def.deck ? 60 : 30)) {
+    const likes = (style.shortcutBias ?? 0) > 0.5;
+    const wantsRoute = (r: number) => style.branchChoice?.(r) ?? likes;
+    const bdef = route > 0 ? track.branches[route - 1].def : null;
+    // (A WALLED deck (Palm Plaza's store aisle and escalator) has rails between it and the main road once the two have pulled
+    // apart: a bot that is off the main road's verge by then cannot get back, so it carries on along the branch.)
+    const pm = bdef?.deck && bdef.walls?.length ? track.projectOnMain(k.pos.x, k.pos.z) : null;
+    const canGoBack = !pm || Math.abs(pm.d) <= pm.width / 2 + track.def.offroadWidth;
+    if (route > 0 && !wantsRoute(route) && at <= (bdef?.deck ? 60 : 30) && canGoBack) {
       // Where the roads overlap, a bot that doesn't want the shortcut ignores the branch.
-      p = track.projectOnMain(k.pos.x, k.pos.z);
+      p = pm ?? track.projectOnMain(k.pos.x, k.pos.z);
       route = 0;
       at = p.i;
-    } else if (route === 0 && wants) {
+    } else if (route === 0) {
       // Approaching (or just past) a junction of a branch we like: steer along the branch.
       for (const b of track.branches) {
+        if (!wantsRoute(b.route)) continue;
         const dist = track.deltaS(p.s, b.s0);
         // (A deck fork is a Y whose arms overlap for a while: keep steering for the branch until it has taken the kart.)
         if (dist > (b.def.deck ? -90 : -30) && dist < SHORTCUT_APPROACH) {

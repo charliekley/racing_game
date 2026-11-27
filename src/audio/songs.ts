@@ -154,6 +154,32 @@ const rainbow: Song = {
   drums: ['K..hS.hhK.h.S.ho', 'K..hS.hkK.hhS.oh'],
 };
 
+/**
+ * Palm Plaza (a sunny shopping mall): Bb major, a bouncy shopping-day groove at 104 bpm, swung, with a chirpy square
+ * lead and a sparkly "doorbell" arpeggio (original).
+ */
+const plaza: Song = {
+  bpm: 104,
+  scale: 'major',
+  bassRoot: 34,
+  leadRoot: 70,
+  swing: 0.25,
+  leadWave: 'square',
+  bass: {
+    grid: 2,
+    bars: ['0 . 0 4 . 4 0 .', '3 . 3 7 . 7 3 .', '5 . 5 9 . 9 5 .', '4 . 4 . 1 . 4 .'],
+  },
+  lead: {
+    grid: 2,
+    bars: ['4 5 7 . 4 . 2 .', '5 . 4 2 0 . . .', '7 . 9 7 5 4 5 .', '4 - 2 - 1 - . .'],
+  },
+  arp: {
+    grid: 1,
+    bars: ['7 . 9 . 11 . 9 . 7 . 9 . 11 . 9 .', '9 . 11 . 12 . 11 . 8 . 9 . 11 . 9 .'],
+  },
+  drums: ['K..hS.h.K.hhS..h', 'K..hS.hkK.h.S.oh'],
+};
+
 /** Lobby: C major, relaxed and friendly. */
 const lobby: Song = {
   bpm: 96,
@@ -192,9 +218,9 @@ const results: Song = {
   drums: ['k...h...s...h...'],
 };
 
-export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn' | 'mushroom' | 'rainbow';
+export type MusicId = 'lobby' | 'results' | 'ember' | 'dockside' | 'cloud' | 'summit' | 'autumn' | 'mushroom' | 'rainbow' | 'plaza';
 
-export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn, mushroom, rainbow };
+export const SONGS: Record<MusicId, Song> = { lobby, results, ember, dockside, cloud, summit, autumn, mushroom, rainbow, plaza };
 
 /** Track name (from src/track) -> its tune. Unknown (dev) tracks get a default by index. */
 const BY_TRACK_NAME: Record<string, MusicId> = {
@@ -205,8 +231,9 @@ const BY_TRACK_NAME: Record<string, MusicId> = {
   'Autumn Speedway': 'autumn',
   'Mushroom Valley': 'mushroom',
   'Rainbow Route': 'rainbow',
+  'Palm Plaza': 'plaza',
 };
-const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn', 'mushroom', 'rainbow'];
+const RACE_TUNES: MusicId[] = ['ember', 'dockside', 'cloud', 'summit', 'autumn', 'mushroom', 'rainbow', 'plaza'];
 
 export function musicForTrack(name: string, index = 0): MusicId {
   return BY_TRACK_NAME[name] ?? RACE_TUNES[Math.abs(index) % RACE_TUNES.length];

@@ -231,6 +231,29 @@ export interface RainbowDef {
   seed?: number;
 }
 
+/**
+ * Palm Plaza look (an indoor shopping mall): tiled floors, glass railings, shopfronts with made-up signs, palms in planters,
+ * a skylight roof, a garden atrium with a fountain, and an outdoor parking lot. Looks only (the escalators and the cars are
+ * hazards, see hazardTypes.ts; the palms, parked cars and garages are solid via the scenery plan).
+ * All stretches are in control-point units of the main road.
+ */
+export interface MallDef {
+  /** Seed for the cosmetic choices (sign texts, poster art, colours). */
+  seed?: number;
+  /** Height (m) of the upper floor (the ground floor is at 0). */
+  upper: number;
+  /** Main-road stretches that run along the upper floor gallery (drawn with a floor slab, columns and glass railings). */
+  upperFloor: { from: number; to: number }[];
+  /** The garden atrium on the ground floor (grass, flower beds, a fountain). */
+  garden: { from: number; to: number };
+  /** The fountain: its kicker (the rim) starts at `at`; the pool is `length` metres long. */
+  fountain: { at: number; length: number };
+  /** The outdoor parking lot (asphalt, painted bays, parked cars, garage gates where the moving cars come and go). */
+  lot: { from: number; to: number };
+  /** Index (in `shortcuts`) of the shortcut that runs through a store (drawn as a shop interior), if any. */
+  storeBranch?: number;
+}
+
 import type { HazardDef } from './hazardTypes';
 
 export interface TrackDef {
@@ -297,6 +320,8 @@ export interface TrackDef {
     openSky?: boolean;
     /** Rainbow Route: a glowing translucent ribbon road in space above a planet (see RainbowDef). Looks only. */
     rainbow?: RainbowDef;
+    /** Palm Plaza: an indoor shopping mall (see MallDef). The scenery planner places mall props instead of trees and houses. */
+    mall?: MallDef;
   };
   /** Colors for this track's look. */
   /**
@@ -335,4 +360,14 @@ export interface TrackDef {
   };
   /** Timed dangers and moving parts (geysers, drawbridges...). Their state depends only on the race clock; see src/sim/hazards/. */
   hazards?: HazardDef[];
+  /**
+   * Patches of grass ON the road (Palm Plaza's garden): inside one the surface is 'offroad' (slower), like the verge.
+   * Same placement as boost pads: `offset` -1 = left edge ... 1 = right edge, `length` along the road, `width` across (m).
+   */
+  grassPatches?: { at: number; offset: number; length: number; width: number }[];
+  /**
+   * Extra rows of 4 item boxes held `lift` metres above the road (Palm Plaza: over the fountain, to be caught in the air
+   * after the rim's kicker). `at` in control-point units. Added after the automatic rows (which never sit on a ramp).
+   */
+  floatingItemRows?: { at: number; lift: number }[];
 }
