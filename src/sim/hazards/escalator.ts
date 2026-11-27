@@ -182,6 +182,37 @@ export class Escalator implements Hazard {
     };
   }
 
+  /** World position of the middle of `lane`'s moving part (0 = main road, 1 = branch), and the lane's direction of travel there. */
+  laneMiddle(lane: 0 | 1): { x: number; y: number; z: number; tx: number; tz: number } {
+    if (lane === 0) {
+      const p = this.track.pointAt(this.s, 0);
+      const q = this.track.samples[p.index];
+      return { x: p.x, y: p.y, z: p.z, tx: q.tx, tz: q.tz };
+    }
+    const q = this.track.sampleOf(this.branchRoute, Math.round((this.b0 + this.b1) / 2));
+    return { x: q.x, y: q.y, z: q.z, tx: q.tx, tz: q.tz };
+  }
+
+  /**
+   * The guide mascot: it stands halfway between the two lanes, facing the karts coming down (up the escalators), and
+   * points at the lane whose belt runs WITH the traffic (`target`, null when neither does: both stopped, or it shrugs).
+   * It waves at the camera during the WARN seconds before the timetable changes. Pure function of the race clock.
+   */
+  mascot(time: number): { x: number; y: number; z: number; heading: number; target: { x: number; z: number } | null; wave: boolean } {
+    const a = this.laneMiddle(0);
+    const b = this.laneMiddle(1);
+    const pose = this.pose(time);
+    const good = pose.good === 0 ? a : pose.good === 1 ? b : null;
+    return {
+      x: (a.x + b.x) / 2,
+      y: Math.min(a.y, b.y),
+      z: (a.z + b.z) / 2,
+      heading: Math.atan2(-(a.tx + b.tx), -(a.tz + b.tz)), // facing up the escalators, towards the karts
+      target: good ? { x: good.x, z: good.z } : null,
+      wave: pose.changeIn <= WARN,
+    };
+  }
+
   /** Which lane (0 = main road, 1 = branch) a kart at (x, z) on the ground is riding, and the lane's direction there; null = not on a moving part. */
   laneAt(k: Pick<KartState, 'pos' | 'trackIndex'>): { lane: 0 | 1; tx: number; tz: number } | null {
     const p = this.track.project(k.pos.x, k.pos.z, k.trackIndex);
