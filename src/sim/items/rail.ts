@@ -47,7 +47,7 @@ export function railAim(track: Track, x: number, z: number, hint: number, lookMe
     const b = track.branches[wantRoute - 1];
     if (b) {
       const dist = track.deltaS(p.s, b.s0); // metres to the junction (negative = just past it)
-      if (dist > -20 && dist < 80) {
+      if (dist > (b.def.deck ? -60 : -20) && dist < 80) { // (a deck fork is a long Y: its arms overlap for ~50 m)
         route = b.route;
         u = -dist / track.spacing; // negative = still on the main road before the fork
       }

@@ -91,7 +91,7 @@ export class Car implements Hazard {
     this.s0 = track.sAt(def.from);
     this.s1 = track.sAt(def.to);
     this.length = track.deltaS(this.s0, this.s1);
-    if (this.length < 2 * GATE + 20) throw new Error('car stretch: too short');
+    if (this.length < 2 * GATE + 10) throw new Error('car stretch: too short');
     this.s = this.s0 + this.length / 2;
     this.halfLength = this.length / 2;
     this.dir = def.dir;
@@ -138,6 +138,20 @@ export class Car implements Hazard {
     return { s, lat: side.lat, blink: side.blink };
   }
 
+  /** Interpolated world point at main-route distance s, `lat` m to the right (Track.pointAt snaps to a sample). */
+  private point(s: number, lat: number): { x: number; y: number; z: number } {
+    const S = this.track.samples;
+    const n = S.length;
+    const L = this.track.length;
+    const f = ((((s % L) + L) % L) / this.track.spacing);
+    const i = Math.floor(f) % n;
+    const u = f - Math.floor(f);
+    const a = S[i];
+    const b = S[(i + 1) % n];
+    const m = (p: number, q: number) => p + (q - p) * u;
+    return { x: m(a.x + a.rx * lat, b.x + b.rx * lat), y: m(a.y, b.y), z: m(a.z + a.rz * lat, b.z + b.rz * lat) };
+  }
+
   /** How far into its drive car `k` is at `time` (may be beyond the stretch: then it is in the garage). */
   private travel(k: number, time: number): number {
     return this.speed * wrap(time - this.phase - (k * this.period) / this.count, this.period);
@@ -152,18 +166,18 @@ export class Car implements Hazard {
       const bb = Math.min(b, this.length);
       const a = this.placeAt(bb);
       const q = this.placeAt(Math.min(this.length, bb + 0.5));
-      const p0 = this.track.pointAt(a.s, a.lat);
+      const p0 = this.point(a.s, a.lat);
       // Direction: towards a point a little further on its drive (the end of the drive looks back a little instead).
-      let p1 = this.track.pointAt(q.s, q.lat);
+      let p1 = this.point(q.s, q.lat);
       let sgn = 1;
       if (bb + 0.5 > this.length) {
         const r = this.placeAt(bb - 0.5);
-        p1 = this.track.pointAt(r.s, r.lat);
+        p1 = this.point(r.s, r.lat);
         sgn = -1;
       }
       const dx = (p1.x - p0.x) * sgn;
       const dz = (p1.z - p0.z) * sgn;
-      const l = Math.hypot(dx, dz) || 1;
+      const l = Math.hypot(dx, dz) || 1; // (never 0: the points are 0.5 m apart)
       out.push({ lat: a.lat, visible, x: p0.x, y: p0.y, z: p0.z, fx: dx / l, fz: dz / l, s: a.s, blink: visible ? a.blink : 0 });
     }
     return out;

@@ -1,6 +1,8 @@
 /**
- * Palm Plaza: the layout, the escalators (timetable, belt effect, guide mascot), the parking-lot cars (hit = flip), the
- * garden (grass, fountain boxes), the store shortcut, and the bots (lane choice, car dodging, finishing).
+ * Palm Plaza: the layout (two escalator pairs, the atrium split with its ledge drop, the spiral), nothing clipping a road
+ * (walls, slabs, solid props), the escalators (timetable, belt effect, guide mascot), the deck traffic (cars along the
+ * road on one half, hit = flip), the garden (grass, fountain boxes), and the bots (lane and level choice, car dodging,
+ * finishing).
  */
 import { describe, expect, it } from 'vitest';
 import { Buttons, type ControlInput } from '../../shared/protocol';
@@ -8,58 +10,106 @@ import { autopilot } from '../../sim/autopilot';
 import { BotPack, DIFFICULTIES, type Difficulty } from '../../sim/bots';
 import { botLoadoutFor } from '../../sim/classes';
 import { KART, SIM_DT } from '../../sim/config';
-import { Car, CAR_LENGTH } from '../../sim/hazards/car';
+import { Car, CAR_LENGTH, GATE, SWING } from '../../sim/hazards/car';
 import { Escalator, ESCALATOR_SCHEDULE, ESCALATOR_SPEED } from '../../sim/hazards/escalator';
 import { createKart, stepKart } from '../../sim/kart';
 import { collideWalls } from '../../sim/collision';
-import { Track } from '../../sim/track';
+import { ROUTE_STRIDE } from '../../sim/shortcuts';
+import { Track, type TrackSample } from '../../sim/track';
 import { World } from '../../sim/world';
-import type { EscalatorDef } from '../hazardTypes';
+import type { CarDef, EscalatorDef } from '../hazardTypes';
 import { layoutStats } from '../layoutStats';
+import { allRoadSamples, planMallShell } from '../mallPlan';
+import { planScenery, type Collider } from '../sceneryPlan';
 import type { TrackDef } from '../types';
-import { at, palmPlaza, UPPER } from './palmPlaza';
+import { LOW_WIDTH, palmPlaza, UPPER } from './palmPlaza';
 
 const track = new Track(palmPlaza);
-const escDef = palmPlaza.hazards!.find((h) => h.kind === 'escalator') as EscalatorDef;
-const escalatorOf = (t: Track) => new Escalator(0, { ...(t.def.hazards!.find((h) => h.kind === 'escalator') as EscalatorDef) }, t);
+const escDefs = palmPlaza.hazards!.map((h, i) => [h, i] as const).filter(([h]) => h.kind === 'escalator') as [EscalatorDef, number][];
+/** The down pair (with the guide robot) and the entrance pair (up, no robot). */
+const escDef = escDefs.find(([h]) => h.mascot !== false)![0];
+const escalatorOf = (t: Track, def = escDef) => new Escalator(0, { ...def }, t);
 const esc = escalatorOf(track);
+const entrance = escalatorOf(track, escDefs.find(([h]) => h.mascot === false)![0]);
+const escs = escDefs.map(([h, i]) => new Escalator(i, h, track));
+const low = track.branches[palmPlaza.scenery.mall!.low!];
 const minRadius = (curv: number[]) => 1 / Math.max(...curv.map(Math.abs));
+/** Index of the highest sample of the lower route: the kicker's lip at the gallery's edge. */
+const lipIndex = low.samples.reduce((best, p, i) => (p.y > low.samples[best].y ? i : best), 0);
 
 describe('Palm Plaza layout', () => {
-  it('is about 1.5 km with bends of radius 28 m or more (main road and both deck lanes)', () => {
+  it('is about 1.5 km with bends of radius 28 m or more (main road and every deck lane)', () => {
     expect(track.length).toBeGreaterThan(1400);
-    expect(track.length).toBeLessThan(1700);
+    expect(track.length).toBeLessThan(1650);
     expect(minRadius(track.samples.map((p) => p.curvature))).toBeGreaterThanOrEqual(28);
     for (const b of track.branches) expect(minRadius(b.samples.slice(2, -2).map((p) => p.curvature)), `branch ${b.route}`).toBeGreaterThanOrEqual(28);
   });
 
-  it('has two floors: the upper floor at 13 m, the ground floor and the lot at 0, the escalators between them', () => {
-    const st = layoutStats(track);
-    expect(st.heightRange).toBeGreaterThanOrEqual(12);
-    expect(track.pointAt(track.sAt(at('storeA'))).y).toBeCloseTo(UPPER, 0);
-    expect(track.pointAt(track.sAt(at('fountain'))).y).toBeCloseTo(0, 0);
-    // Both escalator lanes go DOWN the same 13 m over the same stretch.
-    const lane0 = [esc.laneMiddle(0), track.pointAt(esc.s0), track.pointAt(esc.s1)];
-    expect(lane0[1].y - lane0[2].y).toBeGreaterThan(10);
-    const b = track.branches[esc.branchRoute - 1];
-    expect(b.samples[esc.b0].y - b.samples[esc.b1].y).toBeGreaterThan(10);
-    expect(Math.abs(esc.laneMiddle(0).y - esc.laneMiddle(1).y)).toBeLessThan(0.6);
-    // ...side by side, with room for the mascot between them, and the same length (neither is a shortcut).
-    const gap = Math.hypot(esc.laneMiddle(0).x - esc.laneMiddle(1).x, esc.laneMiddle(0).z - esc.laneMiddle(1).z);
-    expect(gap).toBeGreaterThan(palmPlaza.width + 6);
-    expect(gap).toBeLessThan(palmPlaza.width + 16);
-    expect(Math.abs(b.length - b.span) / b.span).toBeLessThan(0.03);
+  it('enters the mall UP a pair of escalators (no robot) and leaves the upper floor DOWN another pair (with the robot)', () => {
+    expect(layoutStats(track).heightRange).toBeGreaterThanOrEqual(12);
+    for (const [e, up] of [[entrance, true], [esc, false]] as const) {
+      expect(e.rising).toBe(up);
+      const b = track.branches[e.branchRoute - 1];
+      const rise = (y0: number, y1: number) => (up ? y1 - y0 : y0 - y1);
+      expect(rise(track.pointAt(e.s0).y, track.pointAt(e.s1).y)).toBeGreaterThan(10);
+      expect(rise(b.samples[e.b0].y, b.samples[e.b1].y)).toBeGreaterThan(10);
+      expect(Math.abs(e.laneMiddle(0).y - e.laneMiddle(1).y)).toBeLessThan(0.6);
+      // Side by side, with room between them, and the same length (neither is a shortcut).
+      const gap = Math.hypot(e.laneMiddle(0).x - e.laneMiddle(1).x, e.laneMiddle(0).z - e.laneMiddle(1).z);
+      expect(gap).toBeGreaterThan(palmPlaza.width + 6);
+      expect(gap).toBeLessThan(palmPlaza.width + 16);
+      expect(Math.abs(b.length - b.span) / b.span).toBeLessThan(0.03);
+    }
+    expect(entrance.hasMascot).toBe(false);
+    expect(esc.hasMascot).toBe(true);
+    // Their own timetables: not in step.
+    let differ = 0;
+    for (let t = 0; t < 61; t += 1) if (entrance.pose(t).good !== esc.pose(t).good) differ++;
+    expect(differ).toBeGreaterThan(15);
   });
 
-  it('the store aisle (shortcut) is clearly shorter than the main road round the store, and walled like a shop', () => {
-    const b = track.branches[0];
-    expect(b.def.deck).toBe(true);
-    expect(b.span - b.length).toBeGreaterThan(15);
-    expect(b.samples.some((p) => p.wallLeft) && b.samples.some((p) => p.wallRight)).toBe(true);
+  it('the atrium split: a wider lower route leaves the gallery over a kicker, drops a floor at the ledge and rejoins', () => {
+    expect(low.def.deck && low.def.alternate).toBe(true);
+    expect(low.samples[0].width).toBe(LOW_WIDTH);
+    expect(LOW_WIDTH).toBeGreaterThan(palmPlaza.width);
+    expect(low.samples[0].y).toBeCloseTo(UPPER, 0);
+    expect(low.samples[low.samples.length - 1].y).toBeCloseTo(0, 0);
+    // The kicker (it rises before the lip) and the ledge: a floor down within a few metres.
+    expect(low.samples[lipIndex].y - UPPER).toBeGreaterThan(1.2);
+    expect(low.samples[lipIndex].y - low.samples[lipIndex + 4].y).toBeGreaterThan(UPPER);
+    // Not a shortcut in the usual sense: it is the wider, quieter way (no pads, no belts), not much shorter.
+    expect(low.length / low.span).toBeGreaterThan(0.7);
+    expect(low.length / low.span).toBeLessThan(1.1);
+  });
+
+  it('the ledge: a kart lands on the ground floor at any speed, and a trick off the kicker pays a boost', () => {
+    for (const [speed, trick] of [[6, false], [18, false], [27, true], [34, false]] as const) {
+      const from = low.samples[lipIndex - 20];
+      const k = createKart(from.x, from.z, from.heading, from.y);
+      k.trackIndex = low.route * ROUTE_STRIDE + lipIndex - 20; // (a hint: on the lower route)
+      k.trackIndex = track.project(k.pos.x, k.pos.z, k.trackIndex).index;
+      expect(track.onRoute(k)).toBe(low.route);
+      k.speed = speed;
+      k.vel.x = from.tx * speed;
+      k.vel.z = from.tz * speed;
+      let boosted = false;
+      for (let i = 0; i < 60 * 8; i++) {
+        const buttons = Buttons.GAS | (trick && !k.grounded && i % 2 === 0 ? Buttons.TRICK : 0);
+        const steer = autopilot(k, track, { pace: 1, lane: 0, branchChoice: () => true }).steer;
+        const ev = stepKart(k, { steer, buttons }, track, SIM_DT);
+        collideWalls(k, track);
+        if (ev.some((e) => e.kind === 'trickBoost')) boosted = true;
+        if (k.grounded && k.pos.y < 0.5) break;
+      }
+      expect(k.grounded, `speed ${speed}`).toBe(true);
+      expect(k.pos.y, `speed ${speed}`).toBeLessThan(0.5);
+      expect(track.onRoute(k), `speed ${speed}`).toBe(low.route);
+      if (trick) expect(boosted, 'trick boost').toBe(true);
+    }
   });
 
   it('grass patches in the garden slow you; the fountain row of item boxes floats over the pool', () => {
-    expect(track.grassPatches.length).toBeGreaterThanOrEqual(4);
+    expect(track.grassPatches.length).toBeGreaterThanOrEqual(2);
     for (const g of track.grassPatches) {
       const p = track.pointAt((g.s0 + g.s1) / 2, (g.d0 + g.d1) / 2);
       expect(track.sample(p.x, p.z, p.index)!.surface).toBe('offroad');
@@ -70,11 +120,91 @@ describe('Palm Plaza layout', () => {
     for (const bx of floating) expect(bx.y - track.pointAt(bx.s).y).toBeGreaterThan(1.5);
   });
 
-  it('the parking lot has boost pads on the car lanes', () => {
-    const cars = palmPlaza.hazards!.filter((h) => h.kind === 'car').map((h) => track.sAt(h.at));
-    expect(cars.length).toBeGreaterThanOrEqual(3);
-    const covered = cars.filter((s) => track.boostPads.some((p) => track.deltaS(p.s0, s) >= -1 && track.deltaS(s, p.s1) >= -1));
-    expect(covered.length).toBe(cars.length);
+  it('the spiral climbs a whole floor going round more than 300 degrees', () => {
+    const mall = palmPlaza.scenery.mall!;
+    const s0 = track.sAt(mall.spiral!.from);
+    const s1 = track.sAt(mall.spiral!.to);
+    expect(track.pointAt(s1).y - track.pointAt(s0).y).toBeGreaterThan(UPPER - 1.5);
+    let turn = 0;
+    for (let s = s0; s < s1; s += track.spacing) turn += Math.abs(track.samples[track.pointAt(s).index].curvature) * track.spacing;
+    expect((turn * 180) / Math.PI).toBeGreaterThan(300);
+  });
+});
+
+describe('nothing clips a road', () => {
+  const shell = planMallShell(track);
+  const plan = planScenery(track);
+  const outer = (p: TrackSample) => p.width / 2 + palmPlaza.offroadWidth;
+  const lines = [track.samples, ...track.branches.map((b) => b.samples)];
+  const roads = allRoadSamples(track);
+
+  it('every road passes through the building only at an opening tall enough, never along a wall', () => {
+    for (const [li, ss] of lines.entries()) {
+      for (const p of ss) {
+        const half = outer(p);
+        const a = { x: p.x - p.rx * half, z: p.z - p.rz * half };
+        const b = { x: p.x + p.rx * half, z: p.z + p.rz * half };
+        for (const w of shell.walls) {
+          // Does the road's cross-section (kerb to kerb, verge included) cross the wall segment?
+          const ux = w.bx - w.ax;
+          const uz = w.bz - w.az;
+          const den = (b.x - a.x) * uz - (b.z - a.z) * ux;
+          if (Math.abs(den) < 1e-9) continue;
+          const t = ((w.ax - a.x) * uz - (w.az - a.z) * ux) / den;
+          const u = ((w.ax - a.x) * (b.z - a.z) - (w.az - a.z) * (b.x - a.x)) / den;
+          if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+          const at = u * Math.hypot(ux, uz);
+          const open = w.openings.find((o) => at >= o.u0 && at <= o.u1);
+          expect(open, `road ${li} at (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) runs into a wall`).toBeDefined();
+          expect(open!.top).toBeGreaterThan(p.y + 4);
+        }
+      }
+    }
+  });
+
+  it('no road runs through or under an upper-floor slab or the parking deck', () => {
+    const S = track.samples;
+    const check = (spans: typeof shell.upper, levelOf: (i: number) => number) => {
+      for (const sp of spans) {
+        const p = S[sp.i];
+        const y = levelOf(sp.i);
+        for (const q of roads) {
+          if (Math.abs(q.y - y) < 1.5 || q.y > y) continue; // on the slab itself, or above it
+          // q in p's frame: along the road and across it.
+          const dx = q.x - p.x;
+          const dz = q.z - p.z;
+          if (Math.abs(dx * p.tx + dz * p.tz) > track.spacing) continue;
+          // (The road's own strip may pass over another road: that is an overpass. The slab beyond it may not.)
+          const across = dx * p.rx + dz * p.rz;
+          const reach = q.width / 2;
+          const o = outer(p);
+          const left = across - reach < -o && across + reach > -sp.left && sp.left > o;
+          const right = across + reach > o && across - reach < sp.right && sp.right > o;
+          expect(left || right, `slab at ${p.s.toFixed(0)} over a road at y ${q.y.toFixed(1)}`).toBe(false);
+        }
+      }
+    };
+    check(shell.upper, () => UPPER);
+    check(shell.deck, (i) => S[i].y);
+  });
+
+  it('no solid prop stands on any road (main road or branch, at its level)', () => {
+    const dist = (c: Collider, x: number, z: number) => {
+      if (c.shape === 'circle') return Math.max(0, Math.hypot(x - c.x, z - c.z) - c.r);
+      const cos = Math.cos(c.rotY);
+      const sin = Math.sin(c.rotY);
+      const lx = (x - c.x) * cos - (z - c.z) * sin;
+      const lz = (x - c.x) * sin + (z - c.z) * cos;
+      return Math.hypot(Math.max(0, Math.abs(lx) - c.hw), Math.max(0, Math.abs(lz) - c.hd));
+    };
+    const gantry = new Set(plan.gantryPosts.map((g) => g.collider));
+    for (const c of plan.colliders) {
+      if (gantry.has(c)) continue; // (the start gantry's posts stand at the plaza's kerbs)
+      for (const q of roads) {
+        if (q.y > c.y + c.height + 1 || q.y < c.y - 3) continue; // a road well above it, or below it
+        expect(dist(c, q.x, q.z), `collider at (${c.x.toFixed(0)}, ${c.z.toFixed(0)})`).toBeGreaterThan(outer(q) - 0.01);
+      }
+    }
   });
 });
 
@@ -118,7 +248,7 @@ describe('escalators', () => {
     const ride = (dir: number): number => {
       const def: TrackDef = { ...palmPlaza, hazards: [{ ...escDef, schedule: [[dir, -dir, 1e6]] }] };
       const t = new Track(def);
-      const e = escalatorOf(t);
+      const e = escalatorOf(t, def.hazards![0] as EscalatorDef);
       const start = t.pointAt(e.s0 - 50);
       const k = createKart(start.x, start.z, start.heading, start.y);
       k.trackIndex = start.index;
@@ -191,33 +321,56 @@ describe('escalators', () => {
   });
 });
 
-describe('parking-lot cars', () => {
-  const cars = track.def.hazards!.map((h, i) => [h, i] as const).filter(([h]) => h.kind === 'car').map(([h, i]) => new Car(i, h as Extract<typeof h, { kind: 'car' }>, track));
+describe('deck traffic', () => {
+  const cars = palmPlaza.hazards!.map((h, i) => [h, i] as const).filter(([h]) => h.kind === 'car').map(([h, i]) => new Car(i, h as CarDef, track));
+  const hw = palmPlaza.width / 2;
 
-  it('drive across the road from gate to gate (pure function of the clock), hidden in between', () => {
+  it('cars drive along the road on one half of it (pure function of the clock), hidden in the garages in between', () => {
+    expect(cars.length).toBeGreaterThanOrEqual(2);
+    expect(cars.some((c) => c.dir > 0) && cars.some((c) => c.dir < 0)).toBe(true);
+    expect(cars.some((c) => new Set(c.sides).size > 1)).toBe(true); // one changes sides
     for (const c of cars) {
       for (const t of [0.4, 3.3, 8.8]) {
         expect(c.pose(t).phase).toBe(c.pose(t + c.period * 3).phase);
         expect(c.cars(t)[0].lat).toBeCloseTo(c.cars(t + c.period * 3)[0].lat, 6);
       }
-      let seen = false;
-      let hidden = false;
-      for (let t = 0; t < c.period; t += 0.1) {
-        const car = c.cars(t)[0];
-        if (car.visible) {
-          seen = true;
-          expect(Math.abs(car.lat)).toBeLessThanOrEqual(c.reach + 1e-9);
-        } else hidden = true;
+      let seen = 0;
+      let hidden = 0;
+      let onHalf = 0;
+      let blinked = 0;
+      for (let t = 0; t < c.period * 2; t += 0.05) {
+        for (const car of c.cars(t)) {
+          if (!car.visible) {
+            hidden++;
+            continue;
+          }
+          if (car.blink !== 0) blinked++;
+          const into = c.dir > 0 ? track.deltaS(c.s0, car.s) : track.deltaS(car.s, c.s1);
+          if (into < GATE || into > c.length - GATE) continue; // coming out of / going into a gate
+          seen++;
+          // On the road, and on one half of it (except for the SWING metres where it changes sides).
+          expect(Math.abs(car.lat)).toBeLessThan(hw - 1);
+          if (Math.abs(car.lat) > 2.5) onHalf++;
+        }
       }
-      expect(seen && hidden).toBe(true);
+      expect(seen > 0 && hidden > 0).toBe(true);
+      expect(onHalf / seen).toBeGreaterThan(0.65);
+      if (new Set(c.sides).size > 1) expect(blinked).toBeGreaterThan(0);
+      expect(SWING).toBeLessThan(c.length / c.sides.length);
     }
   });
 
-  it('a kart that hits a car is flipped (spin-out and a hop); a Nova kart drives through', () => {
+  it('there is always room to pass: two cars side by side never block both halves', () => {
+    for (let t = 0; t < 40; t += 0.1) {
+      const all = cars.flatMap((c) => c.cars(t)).filter((x) => x.visible && Math.abs(x.lat) < hw);
+      for (const a of all) for (const b of all) if (a !== b && Math.abs(track.deltaS(a.s, b.s)) < CAR_LENGTH + 6) expect(Math.sign(a.lat)).toBe(Math.sign(b.lat));
+    }
+  });
+
+  it('a kart that hits a car is flipped (spin-out and a hop); a Nova kart drives through; bots see it coming', () => {
     const c = cars[0];
-    // A moment when the car is in the middle of the road.
     let t = 0;
-    while (Math.abs(c.cars(t)[0].lat) > 0.5 || !c.cars(t)[0].visible) t += 0.01;
+    while (!c.cars(t)[0].visible || Math.abs(c.cars(t)[0].lat) > 5 || Math.abs(c.cars(t)[0].lat) < 3.5) t += 0.01;
     const car = c.cars(t)[0];
     const k = createKart(car.x + car.fz * 0.5, car.z - car.fx * 0.5, 0, car.y);
     k.trackIndex = track.project(k.pos.x, k.pos.z).index;
@@ -229,13 +382,16 @@ describe('parking-lot cars', () => {
     expect(c.affect(k, t, SIM_DT, KART)).not.toBe('hit');
     const nova = { ...createKart(car.x, car.z, 0, car.y), starTime: 3 };
     expect(c.affect(nova, t, SIM_DT, KART)).toBeNull();
-    // Far from any car: nothing.
-    const far = createKart(car.x + car.fx * (CAR_LENGTH + 6), car.z + car.fz * (CAR_LENGTH + 6), 0, car.y);
-    expect(c.affect(far, t, SIM_DT, KART)).toBeNull();
+    // On the other half of the road: nothing.
+    const p = track.pointAt(car.s, -Math.sign(car.lat) * 4);
+    expect(c.affect(createKart(p.x, p.z, 0, car.y), t, SIM_DT, KART)).toBeNull();
+    // The bots see it coming on its half, and not on the other half.
+    expect(c.dangerFor(car.s - 30, 26, car.lat, t)).toBe(1);
+    expect(c.dangerFor(car.s - 30, 26, -Math.sign(car.lat) * 5, t)).toBe(0);
   });
 });
 
-/** A race of 4 bots of one difficulty on Palm Plaza; counts respawns, car hits and the escalator lanes taken. */
+/** A race of 4 bots of one difficulty on Palm Plaza; counts respawns, car hits, the escalator lanes and the level taken. */
 function race(difficulty: Difficulty, laps = 3) {
   const world = new World(track, track);
   const slots = [0, 1, 2, 3];
@@ -243,9 +399,10 @@ function race(difficulty: Difficulty, laps = 3) {
   const pack = new BotPack(difficulty);
   const respawns = new Map<number, number>();
   let carHits = 0;
-  /** Escalator rides: was the lane taken the better one (by the average belt speed while on it)? */
-  const riding = new Map<number, { lane: number; sum: [number, number]; n: number }>();
+  /** Escalator rides: was the lane taken the better one (by the average belt speed while on it)? Keyed by slot and pair. */
+  const riding = new Map<string, { lane: number; sum: [number, number]; n: number }>();
   const rides: { good: boolean; equal: boolean }[] = [];
+  const levels = new Set<number>();
   let ticks = 0;
   while (world.race!.phase !== 'done' && ticks < 60 * 400) {
     const ev = world.tick((slot): ControlInput => pack.input(world, slot));
@@ -255,26 +412,30 @@ function race(difficulty: Difficulty, laps = 3) {
     }
     if (world.race!.phase === 'racing') {
       for (const [slot, k] of world.karts) {
-        const on = esc.laneAt(k);
-        const r = riding.get(slot);
-        if (on && k.grounded) {
-          const t = world.race!.time;
-          const cur = r ?? { lane: on.lane, sum: [0, 0] as [number, number], n: 0 };
-          cur.sum[0] += esc.velocity(0, t);
-          cur.sum[1] += esc.velocity(1, t);
-          cur.n++;
-          riding.set(slot, cur);
-        } else if (r && !on && r.n > 30) {
-          riding.delete(slot);
-          const mine = r.sum[r.lane] / r.n;
-          const other = r.sum[1 - r.lane] / r.n;
-          rides.push({ good: mine >= other - 0.5, equal: Math.abs(mine - other) < 0.5 });
+        if (track.onRoute(k) === low.route) levels.add(slot);
+        for (const e of escs) {
+          const key = `${slot}:${e.id}`;
+          const on = e.laneAt(k);
+          const r = riding.get(key);
+          if (on && k.grounded) {
+            const t = world.race!.time;
+            const cur = r ?? { lane: on.lane, sum: [0, 0] as [number, number], n: 0 };
+            cur.sum[0] += e.velocity(0, t);
+            cur.sum[1] += e.velocity(1, t);
+            cur.n++;
+            riding.set(key, cur);
+          } else if (r && !on && r.n > 30) {
+            riding.delete(key);
+            const mine = r.sum[r.lane] / r.n;
+            const other = r.sum[1 - r.lane] / r.n;
+            rides.push({ good: mine >= other - 0.5, equal: Math.abs(mine - other) < 0.5 });
+          }
         }
       }
     }
     ticks++;
   }
-  return { world, respawns, carHits, rides };
+  return { world, respawns, carHits, rides, levels };
 }
 
 describe('Palm Plaza bots', () => {
@@ -296,20 +457,26 @@ describe('Palm Plaza bots', () => {
   it('hard bots nearly always ride the escalator that runs their way; easy bots often do not', () => {
     const hard = get('hard').rides.filter((r) => !r.equal);
     const easy = get('easy').rides.filter((r) => !r.equal);
-    expect(hard.length).toBeGreaterThanOrEqual(6);
+    expect(hard.length).toBeGreaterThanOrEqual(8);
     const share = (rs: { good: boolean }[]) => rs.filter((r) => r.good).length / Math.max(1, rs.length);
     if (process.env.PRINT_LAPS) console.log('escalator picks: hard', share(hard).toFixed(2), 'of', hard.length, 'easy', share(easy).toFixed(2), 'of', easy.length, 'normal', share(get('normal').rides.filter((r) => !r.equal)).toFixed(2));
     expect(share(hard)).toBeGreaterThanOrEqual(0.85);
     expect(share(easy)).toBeLessThan(share(hard));
   }, 120_000);
 
-  it('hard bots dodge the parking-lot cars better than easy bots', () => {
+  it('bots use both levels of the atrium split', () => {
+    // (Normal bots take the lower level every other lap, half of them on odd laps; see bots.ts pickAlternate.)
+    expect(get('normal').levels.size).toBeGreaterThanOrEqual(2);
+    expect(get('normal').levels.size).toBeLessThanOrEqual(4);
+  }, 120_000);
+
+  it('hard bots dodge the deck traffic at least as well as easy bots', () => {
     if (process.env.PRINT_LAPS) console.log('car hits (4 bots, 3 laps): easy', get('easy').carHits, 'normal', get('normal').carHits, 'hard', get('hard').carHits);
     expect(get('hard').carHits).toBeLessThanOrEqual(get('easy').carHits);
     expect(get('hard').carHits).toBeLessThanOrEqual(4);
   }, 120_000);
 
-  it('a normal bot laps in about 50 to 57 s', () => {
+  it('a normal bot laps in about 48 to 58 s', () => {
     const world = new World(track, track);
     world.startRace([1], 1, new Map([[1, botLoadoutFor(1)]]));
     const pack = new BotPack('normal');

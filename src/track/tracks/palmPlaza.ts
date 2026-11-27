@@ -17,7 +17,7 @@
  *          atrium floor and rejoins.
  *   4. GARDEN ATRIUM (ground floor, 0 m) S-bends with grass patches (slow) and the FOUNTAIN: its rim is a kicker with a
  *                                        row of item boxes floating over the pool.
- *   5. THE SPIRAL   (0 -> 13 m)          a wide helix (r 30 m, 330 degrees) climbing round the atrium's sculpture
+ *   5. THE SPIRAL   (0 -> 13 m)          a wide helix (r 38 m, 330 degrees) climbing round the atrium's sculpture
  *                                        column; it leaves the building at the top, over its own entry.
  *   6. PARKING DECK (outside, 13 m)      cars drive ALONG the road (sim/hazards/car.ts): oncoming ones first, then
  *                                        slow ones going your way that change sides with their indicators on. Each
@@ -49,7 +49,7 @@ const ESC_R = 40;
 const ESC_DEG = 25;
 const ESC_LINE = 14;
 /** The spiral: radius (m) and how far round it goes (degrees). */
-export const SPIRAL_R = 30;
+export const SPIRAL_R = 38;
 export const SPIRAL_DEG = 330;
 /** Height of the kicker at the gallery's edge (m above the upper floor) and its length (m). */
 export const LEDGE_KICK = 1.7;
@@ -74,27 +74,26 @@ t.line(44);
 escalators('e1', UPPER, -1);
 
 // ---- 2. Sky Gallery (upper floor): an S along the gallery, then the split ----
-t.line(6).mark('gallery').turn(56, 24).mark('gal1').turn(56, -24).mark('split');
+t.line(6).mark('gallery').turn(56, 30).mark('gal1').turn(56, -30).mark('split');
 
 // ---- 3. The atrium split: the main road stays up (gallery, then the down escalators); the lower route turns off ----
 t.line(56).mark('galPad').turn(44, 90).mark('galTurn').line(8);
 escalators('e2', -UPPER, 1);
 
 // ---- 4. Garden atrium (ground floor): right into the garden, an S with grass, the fountain ----
-t.line(4).turn(40, 90).mark('gardenIn').line(40).mark('rejoin');
-t.turn(48, -30).mark('g1').turn(48, 30).mark('g2');
+t.line(4).turn(40, 90).mark('gardenIn').turn(90, -15).turn(90, 15).line(36).mark('rejoin');
 t.line(14).mark('fountain'); //   the rim's kicker (10 m), the pool, and a straight run-out
-t.line(32).mark('fountainOut');
-t.turn(48, 14).mark('gardenOut');
+t.line(28).mark('fountainOut');
+t.turn(48, -30).mark('g1').turn(48, 30).mark('g2').turn(48, 14).mark('gardenOut');
 
 // ---- 5. The spiral: a climbing helix round the sculpture column, out of the building at the top ----
-t.line(4).mark('spiralIn').turn(SPIRAL_R, SPIRAL_DEG, UPPER).mark('spiralOut').line(22).mark('mallExit');
+t.line(4).mark('spiralIn').turn(SPIRAL_R, SPIRAL_DEG, UPPER).mark('spiralOut').line(14).mark('mallExit');
 
 // ---- 6. Parking deck (outside, upper level): a right bend, then the car stretch (gentle S-bends) ----
-t.turn(44, 60).mark('deckIn').line(20).turn(80, -22).mark('cars1').turn(80, 22).mark('cars2').line(14).turn(80, 22).mark('cars3').turn(80, -22).mark('deckEnd');
+t.turn(44, 60).mark('deckIn').line(12).turn(70, -26).mark('cars1').turn(70, 26).mark('cars2').line(12).turn(70, 26).mark('cars3').turn(70, -26).mark('deckEnd');
 
 // ---- 7. Deck ramp: S-bends down to the plaza ----
-t.turn(50, -30, -1.5).mark('ramp1').turn(50, 60, -5).mark('ramp2').turn(50, -60, -5).mark('ramp3').turn(50, 30, -1.5).mark('rampEnd');
+t.turn(56, -30, -1.5).mark('ramp1').turn(56, 60, -5).mark('ramp2').turn(56, -40, -5).mark('ramp3').turn(56, 40, -1.5).mark('rampEnd');
 
 /** The pose the turtle stands in. */
 const here = () => ({ x: t.x, z: t.z, heading: t.heading });
@@ -103,7 +102,7 @@ const here = () => ({ x: t.x, z: t.z, heading: t.heading });
  * Close the lap: a circle arc, a straight, then a second circle arc that ends on the pose (targetX, targetZ, targetHeading)
  * (copied from Rainbow Route: the shortest of the four left/right combinations).
  */
-function closeTo(radius: number, targetX: number, targetZ: number, targetHeading: number, maxDeg = 360): { a1: number; len: number; a2: number } {
+function closeTo(radius: number, targetX: number, targetZ: number, targetHeading: number, maxDeg = 360, firstSide = 0): { a1: number; len: number; a2: number } {
   const p = here();
   const centre = (x: number, z: number, heading: number, side: number) => ({ x: x + side * radius * Math.cos(rad(heading)), z: z - side * radius * Math.sin(rad(heading)) });
   const wrapDeg = (d: number, side: number) => {
@@ -111,7 +110,7 @@ function closeTo(radius: number, targetX: number, targetZ: number, targetHeading
     return (v > 350 ? v - 360 : v) * side;
   };
   let best: { a1: number; len: number; a2: number; total: number } | null = null;
-  for (const s1 of [-1, 1]) {
+  for (const s1 of firstSide ? [firstSide] : [-1, 1]) {
     for (const s2 of [-1, 1]) {
       const c1 = centre(p.x, p.z, p.heading, s1);
       const c2 = centre(targetX, targetZ, targetHeading, s2);
@@ -143,12 +142,12 @@ function closeTo(radius: number, targetX: number, targetZ: number, targetHeading
 
 // ---- back to the grid on the entrance plaza: whatever it takes to arrive heading east on the start line ----
 /** The road arrives heading east at x = END_X, then a gentle S and a straight grid to the start line. */
-const END_X = -100;
-const S_R = 110;
-const S_DEG = 14;
+const END_X = -50;
+const S_R = 80;
+const S_DEG = 10;
 const END_Z = 2 * S_R * (1 - Math.cos(rad(S_DEG))); // (the final S shifts the road this far to its right)
-const CLOSE_R = 44;
-const close = closeTo(CLOSE_R, END_X, END_Z, 90);
+const CLOSE_R = 36;
+const close = closeTo(CLOSE_R, END_X, END_Z, 90, 150);
 {
   if (Math.abs(close.a1) > 0.01) t.turn(CLOSE_R, close.a1).mark('home1');
   if (close.len > 100) {
@@ -274,28 +273,39 @@ const LOW_POINTS: P3[] = (() => {
   // Leave towards the right of the main road (a turtle right turn = +degrees): the inside of the coming bend.
   const h0 = a.heading + ANG;
   const lt = new Turtle(a.p[0] + Math.sin(rad(h0)) * LEAD, a.p[1] + Math.cos(rad(h0)) * LEAD, UPPER, h0);
-  lt.turn(46, 86).line(6);
+  // (Arcs in small steps: the branch builder joins the points with Hermite curves, which only stay round when the points are dense.)
+  const arc = (r: number, deg: number) => {
+    const n = Math.max(1, Math.ceil(Math.abs(deg) / 6));
+    for (let k = 0; k < n; k++) lt.turn(r, deg / n);
+    return lt;
+  };
+  lt.line(3).line(3);
+  arc(90, 12);
+  arc(46, 74).line(6);
   const kickFrom = lt.route.length - 1;
   lt.line(LEDGE_KICK_LEN, LEDGE_KICK).mark('lip');
   const lip = lt.route.length - 1;
   // The drop: 2 m past the lip the height line is down on the ground floor; then a long straight landing.
-  lt.line(2, -UPPER - LEDGE_KICK).line(30).mark('landed');
+  lt.line(2, -UPPER - LEDGE_KICK).line(10).line(10).line(10).mark('landed');
   // Down the atrium floor: S-bends round the palm islands.
-  lt.turn(46, 26).turn(46, -52).turn(46, 26);
+  arc(46, -14);
+  arc(46, 14);
   // Close onto the start of the end lead: arriving at 'rejoin' from the main road's right at 9 degrees.
   const q = route[at('rejoin')];
   const hq = q.heading - ANG;
-  const ex = q.p[0] - Math.sin(rad(hq)) * LEAD;
-  const ez = q.p[1] - Math.cos(rad(hq)) * LEAD;
-  const c = closeWith(lt, 32, ex, ez, hq);
-  if (Math.abs(c.a1) > 0.01) lt.turn(32, c.a1);
-  if (c.len > 0.01) lt.line(c.len);
-  if (Math.abs(c.a2) > 0.01) lt.turn(32, c.a2);
+  // (Aim 20 m short of the lead's start and run in straight: the joint stays round. The last 3 steps are left out.)
+  const ex = q.p[0] - Math.sin(rad(hq)) * (LEAD + 20);
+  const ez = q.p[1] - Math.cos(rad(hq)) * (LEAD + 20);
+  const c = closeWith(lt, 36, ex, ez, hq);
+  if (Math.abs(c.a1) > 0.01) arc(36, c.a1);
+  if (c.len > 0.01) for (let k = 0; k < Math.ceil(c.len / 8); k++) lt.line(c.len / Math.ceil(c.len / 8));
+  if (Math.abs(c.a2) > 0.01) arc(36, c.a2);
+  for (let k = 0; k < 5; k++) lt.line(4);
   // The first point (the lead's end) is the builder's own; heights: the upper floor up to the kicker, then the kicker,
   // then the ground floor.
   // (The last point is where the builder's end lead starts: left out too.)
-  return lt.route.slice(1, -1).map((r, i): P3 => {
-    const k = i + 1;
+  return lt.route.slice(3, -3).map((r, i): P3 => {
+    const k = i + 3;
     const y = k <= kickFrom ? UPPER : k <= lip ? r.p[2] : 0;
     return [r.p[0], r.p[1], y];
   });
@@ -335,7 +345,7 @@ function forkWalls(a: string, b: string, side: 'left' | 'right', open = 52): Wal
  */
 const CAR_STRETCHES: { from: [string, number]; to: [string, number]; dir: 1 | -1; sides: (1 | -1)[]; period: number; phase: number; cars: number }[] = [
   { from: ['deckIn', 4], to: ['cars2', 0], dir: -1, sides: [1], period: 9, phase: 0, cars: 2 },
-  { from: ['cars2', 14], to: ['deckEnd', 0], dir: 1, sides: [-1, 1], period: 11, phase: 3, cars: 2 },
+  { from: ['cars2', 16], to: ['deckEnd', 6], dir: 1, sides: [-1, 1], period: 11, phase: 3, cars: 2 },
 ];
 
 /**
@@ -411,7 +421,7 @@ export const palmPlaza: TrackDef = {
     pad('galPad', -6, 0.3),
     pad('galPad', 18, -0.3),
     pad('galTurn', 4, 0.35),
-    pad('g2', 4, 0, 8, 7), //  the run-up to the fountain
+    pad('rejoin', 2, 0, 8, 7), //  the run-up to the fountain
     pad('spiralIn', 0),
     pad('rampEnd', 10),
   ],
@@ -422,7 +432,7 @@ export const palmPlaza: TrackDef = {
   floatingItemRows: [{ at: along('fountain', 19), lift: 2.2 }],
   laps: 3,
   checkpoints: 10,
-  itemRowSpacing: 150,
+  itemRowSpacing: 130,
   scenery: {
     seed: 88,
     trees: 0,
@@ -439,10 +449,10 @@ export const palmPlaza: TrackDef = {
       // The building: round everything from the top of the entrance escalators to the top of the spiral.
       building: [
         [155, 34],
-        [398, 34],
-        [398, -318],
-        [128, -318],
-        [128, -130],
+        [405, 34],
+        [405, -318],
+        [72, -318],
+        [72, -190],
         [155, -100],
       ],
     },
@@ -463,7 +473,7 @@ export const palmPlaza: TrackDef = {
     {
       kind: 'escalator',
       period: ESCALATOR_SCHEDULE.reduce((a, s) => a + s[2], 0),
-      phase: 23,
+      phase: 12,
       from: at('e1On'),
       to: at('e1Off'),
       branch: 0,
