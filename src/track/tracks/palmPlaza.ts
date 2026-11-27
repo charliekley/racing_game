@@ -325,7 +325,7 @@ export const palmPlaza: TrackDef = {
       storeBranch: 0,
     },
   },
-  theme: { grass: '#7fbf5a', offroad: '#d9d2c4', sky: '#8fcfff', horizon: '#d8ecff', mood: 'day' },
+  theme: { grass: '#7fbf5a', offroad: '#d9d2c4', sky: '#8fcfff', horizon: '#ead8bd', mood: 'mall' },
   // (The terrain is only the floor the scenery stands on: level with the road for 12 m either side, then a wide blend, so
   // the palms beside the upper floor stand at its height. The renderer draws its own floors instead of the terrain.)
   terrain: { blend: 30 },

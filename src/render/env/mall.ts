@@ -1,20 +1,24 @@
 /**
- * Palm Plaza's look (gated by `scenery.mall`, see TrackDef): a bright, modern two-storey shopping mall. Everything is
+ * Palm Plaza's look (gated by `scenery.mall`, see TrackDef): a bright, colourful, modern two-storey shopping mall. Everything is
  * procedural (canvas textures and primitives, no asset files) and ORIGINAL: the store names, signs, posters and their
  * mascots are made up for this game.
  *
- *   - FLOORS: a polished tile floor for the ground floor and the garden, a thick upper-floor slab (with a walkway, shops
- *     and columns) along the upper-floor stretches, the store floor, the parking-deck ramp, and asphalt with painted bays
- *     for the outdoor parking lot. (The terrain mesh is not drawn on this track: these floors replace it.)
+ *   - the BUILDING SHELL (mallShell.ts): outer walls with a shop zone and a glass clerestory on both sides of the indoor part of
+ *     the lap, two gates, a glass skylight roof with sunbeams. From the road you never see the world outside.
+ *   - FLOORS: a polished terracotta/cream tile floor for the ground floor and the garden, a thick upper-floor slab (with a
+ *     walkway, shops and columns) along the upper-floor stretches, the store floor, the parking-deck ramp, and asphalt with
+ *     painted bays for the outdoor parking lot. (The terrain mesh is not drawn on this track: these floors replace it.)
  *   - the DECK LANES (the store aisle and the second escalator lane: `deck` branches): tiled road ribbons with glass rails.
- *   - SHOPFRONTS with original sign boards (a canvas atlas of made-up names), lit windows, and POSTERS (abstract ads with
- *     made-up mascots) on the columns.
- *   - a SKYLIGHT roof (a steel lattice high above, 17 m over the upper floor, so it never gets near the chase camera) and
- *     slender columns.
- *   - PALMS in round planters (from the scenery plan, solid), festive STRING LIGHTS across the road, the GARDEN (lawns,
- *     grass patches on the road, the fountain's pool, rim and jets), the PARKING LOT (parked cars, lamp posts, garage gates).
+ *   - SHOPFRONTS: coloured bodies, three display windows each (a canvas atlas of 8 made-up shop scenes), striped awnings,
+ *     neon-style sign boards (a canvas atlas of made-up names), product crates; POSTERS (abstract ads with made-up mascots)
+ *     on the columns and the walls.
+ *   - PALMS in round planters (pinnate fronds; from the scenery plan, solid), FLOWER PLANTERS, festive STRING LIGHTS on wires.
+ *   - the GARDEN: lawns with stone edging and hedges, flower beds, grass patches on the road, the FOUNTAIN (a round water
+ *     surface in a rim, two tiered stone fountains with jets and a spray of droplets).
+ *   - the PARKING LOT: bays, kerbs, hedges, lamp posts, garage gates with roll-up doors and "P" signs, parked cars of three
+ *     body shapes, a row of palms and the city behind.
  *
- * Cost: about 25 draw calls (instancing for palms, columns, cars, lamps, bulbs; one merged mesh per material otherwise).
+ * Cost: about 40 draw calls (instancing for palms, columns, cars, lamps, bulbs, planters; one merged mesh per material).
  * The escalators and the guide robot are drawn by render/hazards/escalatorView.ts, the moving cars by carView.ts.
  */
 import * as THREE from 'three';
@@ -24,10 +28,12 @@ import type { MallPlan } from '../../track/mallPlan';
 import { CURB_WIDTH, type Track, type TrackSample } from '../../sim/track';
 import { grassMaps } from '../textures';
 import { ENV_TIME } from './materials';
-import { blobGeo, latheGeo, matrix, merge, paint, ribbonGeo, scratch, tubeGeo } from './geo';
+import { blobGeo, fromArrays, latheGeo, matrix, merge, paint, ribbonGeo, tubeGeo } from './geo';
 import { boxPart } from './parts';
 import { noise3 } from './noise';
 import type { RibbonTools } from './rainbow';
+import { buildShell, SHOP_ZONE } from './mallShell';
+import { awningAtlas, boutiqueWallTexture, canvas, displayAtlas, hedgeTexture, PALETTE, rand, tex, waterTexture } from './mallStyle';
 
 /** Does this track use the shopping-mall look? */
 export const isMall = (track: Track): boolean => track.def.scenery.mall !== undefined;
@@ -36,50 +42,28 @@ export const isMall = (track: Track): boolean => track.def.scenery.mall !== unde
 const ROOF_ABOVE_UPPER = 17;
 
 const _c = new THREE.Color();
-const rand = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
 
 // ---------------------------------------------------------------------------------------------
 // Textures (canvas)
 // ---------------------------------------------------------------------------------------------
 
-function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  return [c, c.getContext('2d')!];
-}
-
-function tex(c: HTMLCanvasElement, repeat = true): THREE.CanvasTexture {
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-
 /**
- * The mall's road: large polished stone tiles (4 across the road, 3 per 12 m), a soft darker band along each edge and a
- * dashed gold inlay down the middle (the "lane line" of an indoor floor).
+ * The mall's road: large polished sandstone tiles (4 across the road, 3 per 12 m) with a soft sheen on each, dark grout, a
+ * teal band with a white line along each edge and a dashed gold inlay down the middle (the "lane line" of an indoor floor).
  */
 export function mallRoadTexture(): THREE.CanvasTexture {
   const [c, g] = canvas(512, 384);
   const rnd = rand(11);
   for (let i = 0; i < 4; i++) {
     for (let j = 0; j < 3; j++) {
-      const k = 196 + Math.floor(rnd() * 14);
-      g.fillStyle = `rgb(${k},${k - 6},${k - 16})`;
+      const k = 218 + Math.floor(rnd() * 14);
+      const grd = g.createLinearGradient(i * 128, j * 128, i * 128 + 128, j * 128 + 128);
+      grd.addColorStop(0, `rgb(${k + 14},${k - 14},${k - 62})`);
+      grd.addColorStop(1, `rgb(${k - 6},${k - 38},${k - 92})`);
+      g.fillStyle = grd;
       g.fillRect(i * 128, j * 128, 128, 128);
       // marble veins
-      g.strokeStyle = 'rgba(160,150,140,0.18)';
+      g.strokeStyle = 'rgba(150,110,80,0.2)';
       g.lineWidth = 1.5;
       g.beginPath();
       g.moveTo(i * 128 + rnd() * 128, j * 128);
@@ -87,70 +71,107 @@ export function mallRoadTexture(): THREE.CanvasTexture {
       g.stroke();
     }
   }
-  g.fillStyle = 'rgba(120,110,100,0.55)';
+  g.fillStyle = 'rgba(92,64,44,0.75)';
   for (let i = 0; i <= 4; i++) g.fillRect(i * 128 - 1.5, 0, 3, 384);
   for (let j = 0; j <= 3; j++) g.fillRect(0, j * 128 - 1.5, 512, 3);
-  // Edge bands (darker stone) and the gold centre inlay.
-  g.fillStyle = 'rgba(70,80,95,0.55)';
-  g.fillRect(0, 0, 18, 384);
-  g.fillRect(494, 0, 18, 384);
-  g.fillStyle = '#d6a648';
-  for (let j = 0; j < 3; j++) g.fillRect(250, j * 128 + 24, 12, 80);
+  // Edge bands (deep teal stone with a white line) and the gold centre inlay.
+  for (const x of [0, 490]) {
+    g.fillStyle = '#157f86';
+    g.fillRect(x, 0, 22, 384);
+    g.fillStyle = '#f4f7f2';
+    g.fillRect(x + (x ? 4 : 16), 0, 3, 384);
+  }
+  g.fillStyle = '#e0a02c';
+  for (let j = 0; j < 3; j++) g.fillRect(249, j * 128 + 22, 14, 84);
   return tex(c);
 }
 
-/** Floor tiles for the walkways and the ground floor (2 m tiles, 8 per texture: repeat it every 16 m). */
+/** Floor tiles for the walkways and the ground floor (2 m tiles, 8 per texture: repeat it every 16 m): a two-tone checker with sheen. */
 function floorTexture(base: [number, number, number], seed: number): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   const rnd = rand(seed);
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
   for (let i = 0; i < 8; i++) {
     for (let j = 0; j < 8; j++) {
-      const k = (rnd() - 0.5) * 14 + ((i + j) % 2 ? 6 : 0);
-      g.fillStyle = `rgb(${base[0] + k},${base[1] + k},${base[2] + k})`;
-      g.fillRect(i * 32, j * 32, 32, 32);
+      const f = (i + j) % 2 ? 0.86 : 1;
+      const k = (rnd() - 0.5) * 12;
+      const x = i * 32;
+      const y = j * 32;
+      const grd = g.createLinearGradient(x, y, x + 32, y + 32);
+      grd.addColorStop(0, `rgb(${ch((base[0] + k) * f * 1.06)},${ch((base[1] + k) * f * 1.06)},${ch((base[2] + k) * f * 1.06)})`);
+      grd.addColorStop(1, `rgb(${ch((base[0] + k) * f * 0.92)},${ch((base[1] + k) * f * 0.9)},${ch((base[2] + k) * f * 0.88)})`);
+      g.fillStyle = grd;
+      g.fillRect(x, y, 32, 32);
     }
   }
-  g.fillStyle = 'rgba(90,80,70,0.35)';
+  g.fillStyle = 'rgba(70,46,32,0.8)';
   for (let i = 0; i <= 8; i++) {
-    g.fillRect(i * 32 - 0.5, 0, 1, 256);
-    g.fillRect(0, i * 32 - 0.5, 256, 1);
+    g.fillRect(i * 32 - 1, 0, 2, 256);
+    g.fillRect(0, i * 32 - 1, 256, 2);
   }
   return tex(c);
 }
 
-/** Asphalt with painted parking-bay lines (one bay = 3 m; the texture is 12 m square). */
+/** Asphalt with painted parking-bay lines (one bay = 3 m; the texture is 12 m square), a yellow aisle line and an arrow. */
 function lotTexture(): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   const rnd = rand(5);
-  g.fillStyle = '#5b5e63';
+  g.fillStyle = '#51545a';
   g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 1600; i++) {
-    const k = 70 + Math.floor(rnd() * 40);
+    const k = 62 + Math.floor(rnd() * 40);
     g.fillStyle = `rgba(${k},${k},${k + 4},0.5)`;
     g.fillRect(rnd() * 256, rnd() * 256, 2, 2);
   }
-  g.fillStyle = 'rgba(245,245,240,0.85)';
-  for (let i = 0; i < 4; i++) g.fillRect(i * 64 + 30, 0, 4, 110);
-  for (let i = 0; i < 4; i++) g.fillRect(i * 64 + 30, 146, 4, 110);
+  g.fillStyle = 'rgba(255,255,250,0.95)';
+  for (let i = 0; i < 4; i++) g.fillRect(i * 64 + 30, 0, 5, 112);
+  for (let i = 0; i < 4; i++) g.fillRect(i * 64 + 30, 144, 5, 112);
+  g.fillStyle = '#f2c230';
+  g.fillRect(0, 126, 256, 4); // aisle line
+  g.fillStyle = 'rgba(255,255,250,0.9)'; // a small arrow in the aisle
+  g.beginPath();
+  g.moveTo(40, 122);
+  g.lineTo(76, 128);
+  g.lineTo(40, 134);
+  g.fill();
   return tex(c);
 }
 
-/** Original, made-up store names for the sign boards (no real brands). */
-const STORE_NAMES = ['Sunny Sips', 'Pixel Pals', 'Kiwi & Co.', 'Moonbeam Books', 'Zippy Shoes', 'Coco Cones', 'Bloom Room', 'Gadget Grove', 'Tidal Tees', 'Puffin Pops', 'Velvet Boutique', 'Maple Mugs', 'Comet Toys', 'Lemon Loft', 'Breeze Bikes', 'Honey Hats'];
-const SIGN_COLORS = ['#ff6b6b', '#4ecdc4', '#ffbe0b', '#8338ec', '#3a86ff', '#fb5607', '#06d6a0', '#ef476f'];
+/** Original, made-up store names for the sign boards (no real brands). The last board is the mall's own name for its gates. */
+const STORE_NAMES = ['Sunny Sips', 'Pixel Pals', 'Kiwi & Co.', 'Moonbeam Books', 'Zippy Shoes', 'Coco Cones', 'Bloom Room', 'Gadget Grove', 'Tidal Tees', 'Puffin Pops', 'Velvet Boutique', 'Maple Mugs', 'Comet Toys', 'Lemon Loft', 'Breeze Bikes', 'Honey Hats', 'PALM PLAZA'];
+const SIGN_COLORS = PALETTE;
+const GATE_SIGN = 16;
 
-/** Sign atlas: 2 columns x 8 rows of 256 x 64 boards. Returns the texture and the UV rectangle of board i. */
+/**
+ * Sign atlas: 2 columns x 9 rows of 256 x 64 boards. Every third board is a dark NEON board (glowing coloured letters in a
+ * tube frame); the others are bright panels with a made-up logo. Returns the texture and the UV rectangle of board i.
+ */
 function signAtlas(): { map: THREE.CanvasTexture; uv: (i: number) => [number, number, number, number] } {
-  const [c, g] = canvas(512, 512);
+  const [c, g] = canvas(512, 576);
   STORE_NAMES.forEach((name, i) => {
     const x = (i % 2) * 256;
     const y = Math.floor(i / 2) * 64;
     const col = SIGN_COLORS[i % SIGN_COLORS.length];
-    g.fillStyle = '#fbfaf7';
+    const neon = i % 3 === 1 || i === GATE_SIGN;
+    g.fillStyle = neon ? '#17112b' : '#fbfaf7';
     g.fillRect(x, y, 256, 64);
+    if (neon) {
+      g.strokeStyle = col;
+      g.lineWidth = 4;
+      g.shadowColor = col;
+      g.shadowBlur = 10;
+      g.strokeRect(x + 5, y + 5, 246, 54);
+      g.fillStyle = '#ffffff';
+      g.font = 'bold 30px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(name, x + 128, y + 34, 226);
+      g.shadowBlur = 0;
+      return;
+    }
     g.fillStyle = col;
     g.fillRect(x + 4, y + 4, 248, 56);
-    // A little made-up logo: a circle with a star or a leaf.
+    // A little made-up logo: a circle with a star.
     g.fillStyle = '#ffffff';
     g.beginPath();
     g.arc(x + 32, y + 32, 20, 0, Math.PI * 2);
@@ -170,7 +191,7 @@ function signAtlas(): { map: THREE.CanvasTexture; uv: (i: number) => [number, nu
     g.fillText(name, x + 60, y + 34, 188);
   });
   const map = tex(c, false);
-  return { map, uv: (i) => [((i % 2) * 256) / 512, 1 - (Math.floor(i / 2) * 64 + 64) / 512, 256 / 512, 64 / 512] };
+  return { map, uv: (i) => [((i % 2) * 256) / 512, 1 - (Math.floor(i / 2) * 64 + 64) / 576, 256 / 512, 64 / 576] };
 }
 
 /**
@@ -298,26 +319,73 @@ function posterAtlas(): { map: THREE.CanvasTexture; uv: (i: number) => [number, 
 // Models
 // ---------------------------------------------------------------------------------------------
 
+/** Number of car body shapes: 0 hatchback, 1 saloon, 2 SUV. */
+export const CAR_SHAPES = 3;
+/** Wheel radius (m) and the wheels' places on a car (x, z), for the moving cars' turning wheels (see carView.ts). */
+export const WHEEL_R = 0.36;
+export const WHEEL_SPOTS: [number, number][] = [[-0.86, 1.35], [0.86, 1.35], [-0.86, -1.35], [0.86, -1.35]];
+
+/** One tyre with a bright rim (axis along x, centred on the origin). */
+export function carWheelGeometry(simple = false): THREE.BufferGeometry {
+  const tyre = new THREE.Color('#1c1c1e');
+  const rim = new THREE.Color('#cfd5dc');
+  // (The parked cars only get a plain 8-sided tyre: they are many and their wheels do not turn.)
+  if (simple) return paint(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.3, 8).deleteAttribute('uv').rotateZ(Math.PI / 2), () => tyre);
+  return merge([
+    paint(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.3, 10).deleteAttribute('uv').rotateZ(Math.PI / 2), () => tyre),
+    paint(new THREE.CylinderGeometry(0.2, 0.2, 0.34, 6).deleteAttribute('uv').rotateZ(Math.PI / 2), () => rim),
+    // spokes (a cross) so the turning shows
+    boxPart(0, 0, 0, 0.36, 0.06, 0.34, rim, 0, 1),
+    boxPart(0, 0, 0, 0.36, 0.34, 0.06, rim, 0, 1),
+  ]);
+}
+
+/** The head and tail lights of a moving car (HDR colours: they glow and bloom). Drawn with a MeshBasicMaterial. */
+export function carLightGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const sx of [-1, 1]) {
+    parts.push(boxPart(sx * 0.62, 0.74, 2.21, 0.4, 0.16, 0.05, new THREE.Color(3.2, 3, 2.2), 0, 1));
+    parts.push(boxPart(sx * 0.62, 0.74, -2.21, 0.4, 0.14, 0.05, new THREE.Color(2.8, 0.25, 0.2), 0, 1));
+  }
+  return merge(parts);
+}
+
 /**
- * A simple, original hatchback (about 4.3 x 1.9 m, facing +z): body, cabin with dark glass, wheels, lights. The body is
- * painted WHITE so an InstancedMesh's per-instance colour tints it (the glass and tyres stay dark).
+ * A simple, original car (about 4.4 x 1.9 m, facing +z). `shape`: 0 hatchback, 1 saloon, 2 SUV. The body is painted WHITE so an
+ * InstancedMesh's per-instance colour tints it (glass, bumpers and tyres stay dark). `wheels` = false leaves the wheels out
+ * (the moving cars draw their own turning wheels, see carWheelGeometry).
  */
-export function carGeometry(): THREE.BufferGeometry {
+export function carGeometry(shape = 0, wheels = true): THREE.BufferGeometry {
   const white = new THREE.Color('#f4f4f4');
   const glass = new THREE.Color('#26303c');
-  const tyre = new THREE.Color('#1c1c1e');
-  const parts = [
-    boxPart(0, 0.62, 0, 1.9, 0.62, 4.3, white, 0, 0.8),
-    boxPart(0, 1.16, -0.25, 1.66, 0.5, 2.3, glass, 0, 0.95),
-    boxPart(0, 1.43, -0.25, 1.5, 0.06, 2.1, white, 0, 1),
-  ];
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1.35, 1.35]) {
-      const w = paint(new THREE.CylinderGeometry(0.36, 0.36, 0.3, 10).deleteAttribute('uv').rotateZ(Math.PI / 2).translate(sx * 0.86, 0.36, sz), () => tyre);
-      parts.push(w);
-    }
-    parts.push(boxPart(sx * 0.62, 0.72, 2.16, 0.36, 0.16, 0.04, new THREE.Color(1.8, 1.7, 1.2), 0, 1));
-    parts.push(boxPart(sx * 0.62, 0.72, -2.16, 0.36, 0.16, 0.04, new THREE.Color(1.4, 0.2, 0.15), 0, 1));
+  const dark = new THREE.Color('#2a2c31');
+  const parts: THREE.BufferGeometry[] = [];
+  if (shape === 0) {
+    // Hatchback: a short cabin and a sloping rear window.
+    parts.push(boxPart(0, 0.62, 0, 1.9, 0.62, 4.4, white, 0, 0.8));
+    parts.push(boxPart(0, 1.16, -0.35, 1.66, 0.5, 2.3, glass, 0, 0.95));
+    parts.push(boxPart(0, 1.43, -0.35, 1.5, 0.06, 2.0, white, 0, 1));
+  } else if (shape === 1) {
+    // Saloon: a lower cabin with a separate boot.
+    parts.push(boxPart(0, 0.58, 0, 1.9, 0.56, 4.4, white, 0, 0.8));
+    parts.push(boxPart(0, 1.08, -0.1, 1.64, 0.44, 2.1, glass, 0, 0.95));
+    parts.push(boxPart(0, 1.32, -0.1, 1.48, 0.06, 1.7, white, 0, 1));
+    parts.push(boxPart(0, 0.9, -1.75, 1.8, 0.1, 0.8, white, 0, 1)); // boot lid
+  } else {
+    // SUV: tall and boxy with a roof rack.
+    parts.push(boxPart(0, 0.8, 0, 1.96, 0.9, 4.4, white, 0, 0.8));
+    parts.push(boxPart(0, 1.5, -0.3, 1.8, 0.58, 2.9, glass, 0, 0.95));
+    parts.push(boxPart(0, 1.82, -0.3, 1.7, 0.06, 2.7, white, 0, 1));
+    for (const sx of [-1, 1]) parts.push(boxPart(sx * 0.7, 1.9, -0.3, 0.06, 0.06, 2.4, dark, 0, 1));
+  }
+  // Bumpers, grille (the moving cars add glowing lamps, see carLightGeometry; there are many parked cars, so no more detail).
+  parts.push(boxPart(0, 0.34, 2.2, 1.86, 0.2, 0.12, dark, 0, 1));
+  parts.push(boxPart(0, 0.34, -2.2, 1.86, 0.2, 0.12, dark, 0, 1));
+  parts.push(boxPart(0, 0.66, 2.2, 0.9, 0.18, 0.05, dark, 0, 1));
+  if (wheels) {
+    const w = carWheelGeometry(true);
+    for (const [x, z] of WHEEL_SPOTS) parts.push(w.clone().translate(x, WHEEL_R, z));
+    w.dispose();
   }
   return merge(parts);
 }
@@ -325,30 +393,93 @@ export function carGeometry(): THREE.BufferGeometry {
 /** Car paint colours (InstancedMesh instance colours). */
 export const CAR_COLORS = ['#e63946', '#1d6fd1', '#f4d35e', '#ffffff', '#2a9d8f', '#3d3d45', '#ff8fab', '#7b2cbf'];
 
-/** A palm in a round white planter (planter radius ~1.3 m, palm ~7 m tall), facing any way. */
+/**
+ * A palm in a round white planter (planter radius ~1.3 m, palm ~7 m tall), facing any way. Pinnate fronds: a curved midrib with
+ * a pair of narrow leaflets at each station, drooping towards the tip (single triangles, drawn double-sided).
+ */
 function palmGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  parts.push(paint(latheGeo([[0, 0], [1.3, 0], [1.35, 0.9], [1.2, 0.95], [1.0, 0.85], [0, 0.85]], 14), (p) => (p.y > 0.8 && Math.hypot(p.x, p.z) < 1.15 ? _c.set('#6b4a2f') : _c.set('#f1ede4'))));
+  parts.push(paint(latheGeo([[0, 0], [1.3, 0], [1.35, 0.9], [1.2, 0.95], [1.0, 0.85], [0, 0.85]], 10), (p) => (p.y > 0.8 && Math.hypot(p.x, p.z) < 1.15 ? _c.set('#6b4a2f') : _c.set('#f1ede4'))));
   // Trunk: a gently curved tube with ring bands.
   const path = [new THREE.Vector3(0, 0.8, 0), new THREE.Vector3(0.15, 2.6, 0.05), new THREE.Vector3(0.45, 4.6, 0.1), new THREE.Vector3(0.8, 6.4, 0.15)];
   parts.push(paint(tubeGeo(path, [0.3, 0.26, 0.22, 0.2], 7), (p) => _c.set('#8a6a46').multiplyScalar(0.8 + 0.25 * (Math.sin(p.y * 9) > 0 ? 1 : 0))));
   const top = path[path.length - 1];
-  // Fronds: long drooping leaves (thin flattened tubes) radiating from the top.
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2;
+  const STATIONS = 5;
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + (k % 2) * 0.2;
     const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+    const len = k % 2 ? 3.4 : 4.0;
+    const droop = k % 2 ? 2.7 : 2.2;
     const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 5; i++) {
-      const u = i / 5;
-      pts.push(top.clone().addScaledVector(dir, u * 3.6).add(new THREE.Vector3(0, 0.7 * u - 2.1 * u * u, 0)));
+    for (let i = 0; i <= STATIONS; i++) {
+      const u = i / STATIONS;
+      pts.push(top.clone().addScaledVector(dir, u * len).add(new THREE.Vector3(0, (k % 2 ? 0.2 : 0.8) * u - droop * u * u, 0)));
     }
-    // A double-sided leaf ribbon, spread across the frond's direction.
-    const leaf = ribbonGeo(pts, [0.1, 0.8, 0.95, 0.8, 0.5, 0.06], new THREE.Vector3(-dir.z, 0, dir.x));
-    parts.push(paint(leaf, (p) => _c.set(k % 2 ? '#2f8f3a' : '#3fa94a').multiplyScalar(0.8 + 0.3 * Math.min(1, (p.y - top.y + 2) / 2.5))));
+    const green = k % 2 ? '#2f8f3a' : '#43b04c';
+    // The midrib.
+    parts.push(paint(ribbonGeo(pts, [0.07, 0.1, 0.1, 0.08, 0.05, 0.02], perp), () => _c.set('#7c8a3c')));
+    // Leaflets: a pair per station, longest in the middle of the frond.
+    for (let i = 1; i <= STATIONS; i++) {
+      const u = i / STATIONS;
+      const L = 0.5 + 0.95 * Math.sin(Math.PI * Math.min(1, u * 0.92)) ** 0.7;
+      const base = pts[i];
+      for (const side of [-1, 1]) {
+        const tip = base.clone().addScaledVector(perp, side * L).addScaledVector(dir, 0.55 * L).add(new THREE.Vector3(0, -0.55 * L, 0));
+        const b0 = base.clone().addScaledVector(dir, -0.2);
+        const b1 = base.clone().addScaledVector(dir, 0.2);
+        const tri = fromArrays([b0.x, b0.y, b0.z, b1.x, b1.y, b1.z, tip.x, tip.y, tip.z], [0, 1, 2]);
+        parts.push(paint(tri, (p) => _c.set(green).multiplyScalar(0.75 + 0.35 * Math.min(1, Math.max(0, (p.y - top.y + 2.6) / 2.6)))));
+      }
+    }
   }
   // Coconuts.
-  for (let k = 0; k < 3; k++) parts.push(paint(blobGeo(1, k + 2, 0.05, 1, noise3).applyMatrix4(matrix(top.x + Math.cos(k * 2.1) * 0.3, top.y - 0.25, top.z + Math.sin(k * 2.1) * 0.3, 0.2)), () => _c.set('#5a4022')));
+  for (let k = 0; k < 2; k++) parts.push(paint(blobGeo(0, k + 2, 0.05, 1, noise3).applyMatrix4(matrix(top.x + Math.cos(k * 2.1) * 0.3, top.y - 0.3, top.z + Math.sin(k * 2.1) * 0.3, 0.2)), () => _c.set('#5a4022')));
   return merge(parts);
+}
+
+/** A low stone planter box full of bright flowers (1.8 x 0.8 m, facing any way); the flower colours are baked in. */
+function planterGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [boxPart(0, 0.35, 0, 1.8, 0.7, 0.8, new THREE.Color('#f1ece2')), boxPart(0, 0.72, 0, 1.6, 0.08, 0.6, new THREE.Color('#5a3d28'))];
+  const rnd = rand(4);
+  const bloom = (x: number, y: number, z: number, r: number, color: string) => parts.push(paint(new THREE.SphereGeometry(1, 4, 2).deleteAttribute('uv').scale(r, r, r).translate(x, y, z), () => _c.set(color)));
+  for (let k = 0; k < 5; k++) bloom((rnd() - 0.5) * 1.5, 0.82, (rnd() - 0.5) * 0.5, 0.22, '#2f9a47');
+  for (let k = 0; k < 9; k++) bloom((rnd() - 0.5) * 1.5, 0.98 + rnd() * 0.22, (rnd() - 0.5) * 0.5, 0.13 + rnd() * 0.07, PALETTE[Math.floor(rnd() * PALETTE.length)]);
+  return merge(parts);
+}
+
+/** A round flower bed for the lawns (about 2.4 m across): green mound with many bright blooms. */
+function bedGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [paint(new THREE.SphereGeometry(1, 7, 2, 0, Math.PI * 2, 0, Math.PI / 2).deleteAttribute('uv').scale(1.25, 0.45, 1.25), () => _c.set('#2e8f43'))];
+  const rnd = rand(8);
+  const main = PALETTE[Math.floor(rnd() * PALETTE.length)];
+  for (let k = 0; k < 14; k++) {
+    const a = rnd() * Math.PI * 2;
+    const r = Math.sqrt(rnd()) * 1.05;
+    const y = 0.45 * Math.sqrt(Math.max(0, 1 - (r / 1.25) ** 2)) + 0.05;
+    const color = rnd() < 0.6 ? main : PALETTE[Math.floor(rnd() * PALETTE.length)];
+    parts.push(paint(new THREE.SphereGeometry(1, 4, 2).deleteAttribute('uv').scale(0.2, 0.2, 0.2).translate(Math.cos(a) * r, y, Math.sin(a) * r), () => _c.set(color)));
+  }
+  return merge(parts);
+}
+
+/** A three-tier stone fountain (about 5 m tall, base radius 2.3 m) with water in each bowl and a gold finial. */
+function fountainGeometry(): { geo: THREE.BufferGeometry; top: number } {
+  const stone = new THREE.Color('#efe7d6');
+  const water = new THREE.Color('#58c3ee');
+  const gold = new THREE.Color('#f2b632');
+  const bowl = (profile: [number, number][], level: number, rWater: number) =>
+    paint(latheGeo(profile, 20), (p) => (Math.abs(p.y - level) < 0.001 && Math.hypot(p.x, p.z) < rWater ? water : stone));
+  const parts = [
+    bowl([[0, 0], [2.3, 0], [2.4, 0.15], [2.4, 0.95], [2.2, 1.0], [2.1, 0.75], [0, 0.75]], 0.75, 2.15),
+    paint(new THREE.CylinderGeometry(0.5, 0.62, 1.7, 12).deleteAttribute('uv').translate(0, 1.6, 0), () => stone),
+    bowl([[0, 2.35], [1.6, 2.5], [1.72, 2.85], [1.5, 2.9], [1.42, 2.7], [0, 2.7]], 2.7, 1.4),
+    paint(new THREE.CylinderGeometry(0.3, 0.4, 1.3, 10).deleteAttribute('uv').translate(0, 3.35, 0), () => stone),
+    bowl([[0, 3.85], [0.95, 4.0], [1.05, 4.3], [0.88, 4.34], [0.8, 4.15], [0, 4.15]], 4.15, 0.78),
+    paint(new THREE.CylinderGeometry(0.07, 0.1, 0.9, 6).deleteAttribute('uv').translate(0, 4.6, 0), () => gold),
+    paint(new THREE.SphereGeometry(0.17, 8, 6).deleteAttribute('uv').translate(0, 5.1, 0), () => gold),
+  ];
+  return { geo: merge(parts), top: 5.1 };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -357,10 +488,20 @@ function palmGeometry(): THREE.BufferGeometry {
 
 type Edge = { d: number; h: number };
 
+/** Droplets per fountain in the spray. */
+const SPRAY = 90;
+/** Seconds a droplet is in the air, and its launch speeds (m/s). */
+const SPRAY_T = 1.5;
+
 export class MallView {
   readonly group = new THREE.Group();
   private readonly water: THREE.Texture;
+  /** The translucent jet columns (static: their tops are kept in userData for the spray). */
   private readonly jets: THREE.Mesh;
+  /** The spray's droplets: where each fountain's top is, and each droplet's launch (angle, radial speed, vertical speed, phase). */
+  private readonly spray: THREE.Points;
+  private readonly sprayTops: THREE.Vector3[] = [];
+  private readonly sprayLaunch: [number, number, number, number][] = [];
 
   constructor(
     readonly track: Track,
@@ -378,6 +519,9 @@ export class MallView {
     const onUpper = (p: TrackSample) => mall.upperFloor.some((r) => inRange(p.s, r.from, r.to));
     const inLot = (p: TrackSample) => track.deltaS(track.sAt(mall.lot.from) - 30, p.s) >= 0 && track.deltaS(p.s, track.sAt(mall.lot.to) + 160) >= 0;
     const inGarden = (p: TrackSample) => inRange(p.s, mall.garden.from, mall.garden.to);
+    // The building: from the start of the upper floor to the end of the garden.
+    const mallFrom = mall.upperFloor[0].from;
+    const inMall = (s: number) => inRange(s, mallFrom, mall.garden.to);
     const escRanges = (def.hazards ?? []).filter((h) => h.kind === 'escalator').map((h) => [track.sAt(h.from) - 50, track.sAt(h.to) + 50]);
     const nearEsc = (s: number) => escRanges.some(([a, b]) => track.deltaS(a, s) >= 0 && track.deltaS(s, b) >= 0);
     /** Distance to the nearest road sample (main or branch) at about the same level as y. */
@@ -394,6 +538,19 @@ export class MallView {
       this.group.add(m);
       return m;
     };
+    /** Instance `geo` at the given matrices (and colours) as one draw call. */
+    const instances = (geo: THREE.BufferGeometry, mat: THREE.Material, list: [THREE.Matrix4, THREE.Color?][], shadow = false) => {
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach(([m, c], i) => {
+        mesh.setMatrixAt(i, m);
+        if (c) mesh.setColorAt(i, c);
+      });
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      return mesh;
+    };
+    const glowParts: THREE.BufferGeometry[] = []; // HDR vertex colours, drawn unlit (they bloom)
 
     // ---- Floors -------------------------------------------------------------------------------
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -404,18 +561,23 @@ export class MallView {
       maxZ = Math.max(maxZ, p.z);
     }
     const M = 90;
-    const groundTex = floorTexture([182, 172, 156], 3);
+    // The city beyond the paving: a huge dull ground (the sky dome and fog do the rest).
+    const city = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#8d877d', roughness: 1 }));
+    city.position.set((minX + maxX) / 2, -0.7, (minZ + maxZ) / 2);
+    this.group.add(city);
+    const groundTex = floorTexture([214, 158, 116], 3);
     groundTex.repeat.set((maxX - minX + 2 * M) / 16, (maxZ - minZ + 2 * M) / 16);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(maxX - minX + 2 * M, maxZ - minZ + 2 * M).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.55 }));
+    // Polished: a low roughness so the sun and the sky glint off the tiles.
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(maxX - minX + 2 * M, maxZ - minZ + 2 * M).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.28, metalness: 0.05 }));
     ground.position.set((minX + maxX) / 2, -0.04, (minZ + maxZ) / 2);
     ground.receiveShadow = true;
     this.group.add(ground);
 
     // Upper-floor slabs (walkway, shops and columns stand on them), the store floor, the parking-deck ramp.
-    const slabTex = floorTexture([196, 188, 174], 8);
+    const slabTex = floorTexture([226, 176, 128], 8);
     slabTex.repeat.set(4, 1);
-    const slabMat = new THREE.MeshStandardMaterial({ map: slabTex, roughness: 0.5 });
-    const sideMat = new THREE.MeshStandardMaterial({ color: '#d9d3c8', roughness: 0.7 });
+    const slabMat = new THREE.MeshStandardMaterial({ map: slabTex, roughness: 0.3, metalness: 0.05 });
+    const sideMat = new THREE.MeshStandardMaterial({ color: '#e3d6c2', roughness: 0.7 });
     const SLAB_W = 30;
     const slab = (run: TrackSample[], half: number, drop: (p: TrackSample) => number, lift = -0.03) => {
       add(tools.ribbon(run, false, () => [{ d: -half, h: lift }, { d: half, h: lift }], 16), slabMat);
@@ -433,8 +595,8 @@ export class MallView {
     if (store) slab(store.samples, 16, () => 0.9, -0.05);
 
     // The deck lanes' road ribbons and kerbs (the main road is drawn by trackView with the same material).
-    const roadMat = new THREE.MeshStandardMaterial({ map: mallRoadTexture(), roughness: 0.35, metalness: 0.05 });
-    const kerbMat = new THREE.MeshStandardMaterial({ color: '#9aa3ad', roughness: 0.5 });
+    const roadMat = new THREE.MeshStandardMaterial({ map: mallRoadTexture(), roughness: 0.3, metalness: 0.05 });
+    const kerbMat = new THREE.MeshStandardMaterial({ color: '#8d99a6', roughness: 0.5 });
     for (const b of track.branches) {
       const bw = b.samples[0].width / 2;
       add(tools.ribbon(b.samples, false, () => [{ d: -bw, h: 0.025 }, { d: bw, h: 0.025 }], 12), roadMat);
@@ -450,39 +612,76 @@ export class MallView {
       }
     }
 
-    // ---- Parking lot: asphalt with bays, parked cars, lamps, garage gates -------------------------
+    // ---- The building shell: walls on both sides, gates, glass roof, sunbeams -------------------------
+    const shell = buildShell({ track, tools, group: this.group, inMall, roadDist, roofY });
+
+    // ---- Parking lot: asphalt with bays, kerbs and hedges, parked cars, lamps, garage gates, palms -------------------
     const lotMat = new THREE.MeshStandardMaterial({ map: lotTexture(), roughness: 0.9 });
-    for (const run of tools.runs(S, (p) => inLot(p))) add(tools.ribbon(run, false, () => [{ d: -44, h: 0.0 }, { d: 44, h: 0.0 }], 12), lotMat);
-    const carGeo = carGeometry();
-    const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.3 });
-    if (mp.parkedCars.length) {
-      const cars = new THREE.InstancedMesh(carGeo, carMat, mp.parkedCars.length);
-      mp.parkedCars.forEach((c, i) => {
-        cars.setMatrixAt(i, matrix(c.x, c.y, c.z, 1, 1, 1, c.rotationY));
-        cars.setColorAt(i, _c.set(CAR_COLORS[c.color % CAR_COLORS.length]));
+    const hedgeMat = new THREE.MeshStandardMaterial({ map: hedgeTexture(), roughness: 1, side: THREE.DoubleSide });
+    const curbMat = new THREE.MeshStandardMaterial({ color: '#d8d4ca', roughness: 0.6 });
+    const palmMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide });
+    const palmGeo = palmGeometry();
+    for (const run of tools.runs(S, (p) => inLot(p))) {
+      add(tools.ribbon(run, false, () => [{ d: -44, h: 0.0 }, { d: 44, h: 0.0 }], 12), lotMat);
+      for (const side of [-1, 1]) {
+        // A kerb along each edge, then a clipped hedge: a finished edge to the lot.
+        add(tools.ribbon(run, false, () => [{ d: side * 44, h: 0 }, { d: side * 44, h: 0.22 }, { d: side * 45, h: 0.22 }, { d: side * 45, h: 0 }], 4), curbMat);
+        add(tools.ribbon(run, false, () => [{ d: side * 45.6, h: 0 }, { d: side * 45.6, h: 1.5 }, { d: side * 47, h: 1.5 }, { d: side * 47, h: 0 }], 6), hedgeMat);
+      }
+    }
+    // The backdrop of the lot: a row of palms behind each hedge, with the city skyline behind them (see scenery.ts).
+    {
+      const list: [THREE.Matrix4][] = [];
+      const step = Math.max(1, Math.round(34 / track.spacing));
+      S.forEach((p, i) => {
+        if (i % step !== 0 || !inLot(p)) return;
+        for (const side of [-1, 1]) {
+          const x = p.x + p.rx * side * (52 + ((i * 5) % 7));
+          const z = p.z + p.rz * side * (52 + ((i * 5) % 7));
+          if (roadDist(x, z, p.y) < 49) continue;
+          const sc = 1.05 + ((i * 13) % 5) * 0.08;
+          list.push([matrix(x, p.y, z, sc, sc, sc, (i * 1.7) % 6.28)]);
+        }
       });
-      cars.castShadow = true;
-      cars.receiveShadow = true;
-      this.group.add(cars);
+      if (list.length) instances(palmGeo, palmMat, list, true);
+    }
+    const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.35 });
+    for (let shape = 0; shape < CAR_SHAPES; shape++) {
+      const list: [THREE.Matrix4, THREE.Color][] = mp.parkedCars.filter((c) => c.seed % CAR_SHAPES === shape).map((c) => [matrix(c.x, c.y, c.z, 1, 1, 1, c.rotationY), new THREE.Color(CAR_COLORS[c.color % CAR_COLORS.length])]);
+      if (list.length) instances(carGeometry(shape), carMat, list, true);
     }
     if (mp.lamps.length) {
       const lampGeo = merge([paint(new THREE.CylinderGeometry(0.12, 0.16, 7, 6).deleteAttribute('uv').translate(0, 3.5, 0), () => _c.set('#7d8590')), boxPart(0, 7.05, 0.6, 0.5, 0.18, 1.5, new THREE.Color('#7d8590')), boxPart(0, 6.94, 0.9, 0.4, 0.04, 0.7, new THREE.Color(3, 2.9, 2.4), 0, 1)]);
-      const lamps = new THREE.InstancedMesh(lampGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4 }), mp.lamps.length);
-      mp.lamps.forEach((l, i) => lamps.setMatrixAt(i, matrix(l.x, l.y, l.z, 1, 1, 1, l.rotationY + Math.PI / 2)));
-      this.group.add(lamps);
+      instances(lampGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4 }), mp.lamps.map((l) => [matrix(l.x, l.y, l.z, 1, 1, 1, l.rotationY + Math.PI / 2)]));
     }
     if (mp.garages.length) {
       const parts: THREE.BufferGeometry[] = [];
+      const hazard = [new THREE.Color('#f2c230'), new THREE.Color('#25262b')];
       for (const gar of mp.garages) {
         const m = matrix(gar.x, gar.y, gar.z, 1, 1, 1, gar.rotationY);
-        // local x = along the car lane (away from / toward the road), local z = along the road
-        const g = merge([
-          boxPart(0, gar.h / 2, 0, gar.d, gar.h, gar.w, new THREE.Color('#d9d4c7')),
-          boxPart(0, gar.h + 0.25, 0, gar.d + 0.6, 0.5, gar.w + 0.6, new THREE.Color('#2a9d8f')),
+        const gp: THREE.BufferGeometry[] = [
+          // local x = along the car lane (away from / toward the road), local z = along the road
+          boxPart(0, gar.h / 2, 0, gar.d, gar.h, gar.w, new THREE.Color('#e6dfcf')),
+          boxPart(0, gar.h + 0.25, 0, gar.d + 0.6, 0.5, gar.w + 0.6, new THREE.Color('#1fb6a6')),
           // The dark opening on both lane ends (the cars drive in and out here).
           boxPart(0, 1.3, 0, gar.d + 0.04, 2.6, 3.2, new THREE.Color('#15181c'), 0, 1),
-        ]);
-        parts.push(g.applyMatrix4(m));
+        ];
+        for (const fx of [-1, 1]) {
+          const x = fx * (gar.d / 2 + 0.05);
+          // A roll-up shutter pulled up at the top of the opening (ribbed), a frame, hazard stripes on both sides.
+          gp.push(boxPart(x, 2.4, 0, 0.12, 0.45, 3.3, new THREE.Color('#9aa3ad'), 0, 1));
+          for (let k = 0; k < 3; k++) gp.push(boxPart(x + fx * 0.02, 2.56 - k * 0.15, 0, 0.06, 0.05, 3.3, new THREE.Color('#6f7882'), 0, 1));
+          for (const sz of [-1, 1]) {
+            gp.push(boxPart(x, 1.3, sz * 1.72, 0.14, 2.7, 0.16, new THREE.Color('#d9d4c7'), 0, 1));
+            for (let k = 0; k < 6; k++) gp.push(boxPart(x + fx * 0.03, 0.2 + k * 0.45, sz * 1.9, 0.1, 0.45, 0.3, hazard[k % 2], 0, 1));
+          }
+          // The glowing "P" sign above the opening.
+          glowParts.push(boxPart(x + fx * 0.12, gar.h - 0.5, 0, 0.1, 1.3, 1.3, new THREE.Color(0.15, 0.45, 2.6), 0, 1).applyMatrix4(m));
+          glowParts.push(boxPart(x + fx * 0.2, gar.h - 0.5, -0.1, 0.06, 0.9, 0.18, new THREE.Color(2.5, 2.5, 2.5), 0, 1).applyMatrix4(m));
+          glowParts.push(boxPart(x + fx * 0.2, gar.h - 0.2, 0.1, 0.06, 0.2, 0.55, new THREE.Color(2.5, 2.5, 2.5), 0, 1).applyMatrix4(m));
+          glowParts.push(boxPart(x + fx * 0.2, gar.h - 0.62, 0.1, 0.06, 0.2, 0.55, new THREE.Color(2.5, 2.5, 2.5), 0, 1).applyMatrix4(m));
+        }
+        parts.push(merge(gp).applyMatrix4(m));
       }
       add(merge(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), true);
     }
@@ -490,8 +689,11 @@ export class MallView {
     // ---- Shops, columns, posters (indoors: the upper floor and the garden) ---------------------------
     const signs = signAtlas();
     const posters = posterAtlas();
+    const displays = displayAtlas();
+    const awnings = awningAtlas();
     const shopParts: THREE.BufferGeometry[] = [];
     const windows: THREE.BufferGeometry[] = [];
+    const awningQuads: THREE.BufferGeometry[] = [];
     const signQuads: THREE.BufferGeometry[] = [];
     const posterQuads: THREE.BufferGeometry[] = [];
     const quad = (w: number, h: number, m: THREE.Matrix4, uvRect?: [number, number, number, number]) => {
@@ -523,19 +725,30 @@ export class MallView {
         // Facing the road: local +z points at it.
         const rot = Math.atan2(-side * p.rx, -side * p.rz);
         const m = matrix(x, p.y, z, 1, 1, 1, rot);
-        const h = 7 + Math.floor(rnd() * 2);
-        _c.set(SIGN_COLORS[shopIndex % SIGN_COLORS.length]).lerp(new THREE.Color('#ffffff'), 0.75);
+        const h = SHOP_ZONE - 0.4;
+        _c.set(SIGN_COLORS[shopIndex % SIGN_COLORS.length]).lerp(new THREE.Color('#ffffff'), 0.5);
         shopParts.push(boxPart(0, h / 2, 0, SHOP_W, h, SHOP_D, _c.clone()).applyMatrix4(m));
-        shopParts.push(boxPart(0, h - 1.2, SHOP_D / 2 + 0.15, SHOP_W + 0.2, 1.6, 0.3, new THREE.Color('#f8f8f8')).applyMatrix4(m));
-        // Mullions between the window panes.
-        for (const mx of [-SHOP_W / 2 + 0.3, -2.2, 2.2, SHOP_W / 2 - 0.3]) shopParts.push(boxPart(mx, 2.6, SHOP_D / 2 + 0.06, 0.18, 4.6, 0.14, new THREE.Color('#c8ccd2')).applyMatrix4(m));
-        windows.push(quad(SHOP_W - 0.6, 4.4, m.clone().multiply(matrix(0, 2.6, SHOP_D / 2 + 0.02))));
-        signQuads.push(quad(SHOP_W - 1.6, (SHOP_W - 1.6) / 4, m.clone().multiply(matrix(0, h - 1.2, SHOP_D / 2 + 0.32)), signs.uv(shopIndex % STORE_NAMES.length)));
+        shopParts.push(boxPart(0, h - 1.2, SHOP_D / 2 + 0.15, SHOP_W + 0.2, 1.6, 0.3, new THREE.Color('#fbf8f2')).applyMatrix4(m));
+        // Mullions between the display windows.
+        for (const mx of [-2.2, 2.2]) shopParts.push(boxPart(mx, 2.7, SHOP_D / 2 + 0.06, 0.18, 4.4, 0.14, new THREE.Color('#d7dce2')).applyMatrix4(m));
+        // Three display windows (each a different made-up shop scene), a striped awning, a few product crates in front.
+        [[-4.15, 3.9], [0, 4.2], [4.15, 3.9]].forEach(([wx, ww], k) => windows.push(quad(ww, 4.2, m.clone().multiply(matrix(wx, 2.8, SHOP_D / 2 + 0.02)), displays.uv((shopIndex * 3 + k + side + 1) % 8))));
+        const awn = new THREE.PlaneGeometry(SHOP_W, 1.9).rotateX(-Math.PI / 2 + 0.38);
+        const au = awn.getAttribute('uv') as THREE.BufferAttribute;
+        const aRect = awnings.uv(shopIndex % 8);
+        for (let q = 0; q < au.count; q++) au.setXY(q, aRect[0] + au.getX(q) * aRect[2], aRect[1] + au.getY(q) * aRect[3]);
+        awningQuads.push(awn.applyMatrix4(m.clone().multiply(matrix(0, 5.3, SHOP_D / 2 + 1.0))));
+        for (let k = 0; k < 2; k++) {
+          const bx = (rnd() - 0.5) * (SHOP_W - 3);
+          shopParts.push(boxPart(bx, 0.45, SHOP_D / 2 + 1.1 + rnd() * 0.5, 0.9, 0.9, 0.9, new THREE.Color(PALETTE[Math.floor(rnd() * 8)]), rnd() * 1.5).applyMatrix4(m));
+        }
+        signQuads.push(quad(SHOP_W - 1.2, (SHOP_W - 1.2) / 4, m.clone().multiply(matrix(0, h - 1.2, SHOP_D / 2 + 0.32)), signs.uv(shopIndex % (STORE_NAMES.length - 1))));
         shopIndex++;
       }
     }
     if (shopParts.length) add(merge(shopParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), true);
-    if (windows.length) add(mergeGeometries(windows)!, new THREE.MeshStandardMaterial({ color: '#cfe8ff', emissive: new THREE.Color('#ffe8b8'), emissiveIntensity: 0.9, roughness: 0.1, metalness: 0.2 }));
+    if (windows.length) add(mergeGeometries(windows)!, new THREE.MeshBasicMaterial({ map: displays.map, color: new THREE.Color(1.08, 1.04, 0.98) }));
+    if (awningQuads.length) add(mergeGeometries(awningQuads)!, new THREE.MeshStandardMaterial({ map: awnings.map, roughness: 0.8, side: THREE.DoubleSide }), true);
 
     // Columns: along the outer edges of the upper-floor slabs, up to the roof (posters on the side facing the road).
     const colPos: [number, number, number, number][] = [];
@@ -560,43 +773,58 @@ export class MallView {
         posterQuads.push(quad(1.6, 2.2, matrix(x, y + 3.4, z, 1, 1, 1, rot).multiply(matrix(0, 0, 0.52)), posters.uv(i % 6)));
       });
     }
+    // Big posters on the glass clerestory above the shops, every ~28 m along both walls.
+    shell.walls.forEach((pts, wi) => {
+      let next = 14 + wi * 9;
+      pts.forEach((w, i) => {
+        if (w.u < next) return;
+        next = w.u + 28;
+        posterQuads.push(quad(5.2, 5.2, matrix(w.x + w.nx * 0.08, w.y + SHOP_ZONE + 4.2, w.z + w.nz * 0.08, 1, 1, 1, Math.atan2(w.nx, w.nz)), posters.uv((i + wi) % 6)));
+      });
+    });
     if (posterQuads.length) add(mergeGeometries(posterQuads)!, new THREE.MeshBasicMaterial({ map: posters.map, color: new THREE.Color(1.1, 1.1, 1.1) }));
-
-    // ---- Skylight roof: a steel lattice with glass over the indoor part (not over the parking lot or the entrance plaza) ----
-    {
-      const indoorPts = S.filter((p) => onUpper(p) || inGarden(p) || nearEsc(p.s));
-      const CELL = 12;
-      const cells = new Set<string>();
-      for (const p of indoorPts) {
-        for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) cells.add(`${Math.floor(p.x / CELL) + dx},${Math.floor(p.z / CELL) + dz}`);
-      }
-      const beams: THREE.Matrix4[] = [];
-      const panes: THREE.BufferGeometry[] = [];
-      for (const key of cells) {
-        const [cx, cz] = key.split(',').map(Number);
-        const x = (cx + 0.5) * CELL;
-        const z = (cz + 0.5) * CELL;
-        beams.push(matrix(x - CELL / 2, roofY, z, 0.3, 0.45, CELL));
-        beams.push(matrix(x, roofY, z - CELL / 2, CELL, 0.45, 0.3));
-        panes.push(new THREE.PlaneGeometry(CELL, CELL).rotateX(Math.PI / 2).translate(x, roofY + 0.25, z));
-      }
-      const beamMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#e8ecf0', roughness: 0.4, metalness: 0.5 }), beams.length);
-      beams.forEach((m, i) => beamMesh.setMatrixAt(i, m));
-      this.group.add(beamMesh);
-      if (panes.length) this.group.add(new THREE.Mesh(mergeGeometries(panes)!, new THREE.MeshBasicMaterial({ color: '#bfe6ff', transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide })));
+    // The mall's name over both gates (each seen from outside the gate and from inside it).
+    for (const g of shell.gates) {
+      for (const flip of [0, Math.PI]) signQuads.push(quad(18, 4.5, matrix(g.x, g.y + 10.8, g.z, 1, 1, 1, g.rotY + flip).multiply(matrix(0, 0, 0.1)), signs.uv(GATE_SIGN)));
     }
 
-    // ---- The Boutique: the store the shortcut runs through (walls with shop windows, a sign over each door) ----------
+    // ---- The Boutique: the store the shortcut runs through (walls with shelves of clothes, racks, a sign over each door) ----------
     if (store) {
       const bw = store.samples[0].width / 2 + def.offroadWidth + 0.3;
-      const wallMat = new THREE.MeshStandardMaterial({ color: '#f6d7e3', roughness: 0.6, side: THREE.DoubleSide });
-      const winMat = new THREE.MeshStandardMaterial({ color: '#ffe9f2', emissive: new THREE.Color('#ffd0e4'), emissiveIntensity: 0.7, roughness: 0.2, side: THREE.DoubleSide });
+      const wallMat = new THREE.MeshStandardMaterial({ map: boutiqueWallTexture(), roughness: 0.6, side: THREE.DoubleSide });
       const walled = store.samples.filter((p) => p.wallLeft || p.wallRight);
       if (walled.length > 2) {
         for (const side of [-1, 1]) {
-          add(tools.ribbon(walled, false, (): Edge[] => [{ d: side * bw, h: 0 }, { d: side * bw, h: 6 }], 8), wallMat);
-          add(tools.ribbon(walled, false, (): Edge[] => [{ d: side * (bw - 0.05), h: 1.2 }, { d: side * (bw - 0.05), h: 4.2 }], 8), winMat);
+          // (The ribbon's uv runs (across = 0..1, along = metres / repeat); the texture wants them the other way round: 12 m x 6 m.)
+          const g = tools.ribbon(walled, false, (): Edge[] => [{ d: side * bw, h: 0 }, { d: side * bw, h: 6 }], 12);
+          const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+          for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getY(k), uv.getX(k));
+          add(g, wallMat);
         }
+        // Display racks along both walls: three shelves of colourful products on slim pink uprights.
+        const racks: THREE.BufferGeometry[] = [];
+        const rrnd = rand(19);
+        for (let i = 0; i + 2 < walled.length; i += 2) {
+          const a = walled[i];
+          const b = walled[i + 2];
+          const len = Math.hypot(b.x - a.x, b.z - a.z);
+          const rot = Math.atan2(b.x - a.x, b.z - a.z);
+          for (const side of [-1, 1]) {
+            const cx = (a.x + b.x) / 2 + a.rx * side * (bw - 0.4);
+            const cz = (a.z + b.z) / 2 + a.rz * side * (bw - 0.4);
+            racks.push(boxPart(cx, a.y + 0.12, cz, 0.6, 0.24, len, new THREE.Color('#e04f8a'), rot, 1));
+            for (let sh = 0; sh < 3; sh++) {
+              const y = a.y + 1.1 + sh * 1.1;
+              racks.push(boxPart(cx, y, cz, 0.5, 0.06, len, new THREE.Color('#fffaf5'), rot, 1));
+              for (let k = 0; k < 3; k++) {
+                const t = (k + 0.5) / 3 - 0.5;
+                racks.push(boxPart(cx + Math.sin(rot) * len * t, y + 0.25, cz + Math.cos(rot) * len * t, 0.42, 0.4 + rrnd() * 0.3, len / 3.6, new THREE.Color(PALETTE[Math.floor(rrnd() * 8)]), rot, 1));
+              }
+            }
+            racks.push(boxPart(cx, a.y + 1.9, cz, 0.12, 3.8, 0.12, new THREE.Color('#e04f8a'), rot, 1));
+          }
+        }
+        if (racks.length) add(merge(racks), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }));
         // Door frames with the store's sign at both ends.
         const frame: THREE.BufferGeometry[] = [];
         for (const p of [walled[0], walled[walled.length - 1]]) {
@@ -609,91 +837,166 @@ export class MallView {
         add(merge(frame), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }), true);
       }
     }
-    if (signQuads.length) add(mergeGeometries(signQuads)!, new THREE.MeshBasicMaterial({ map: signs.map, color: new THREE.Color(1.25, 1.25, 1.25) }));
+    if (signQuads.length) add(mergeGeometries(signQuads)!, new THREE.MeshBasicMaterial({ map: signs.map, color: new THREE.Color(1.3, 1.3, 1.3) }));
 
-    // ---- Palms in planters (solid: from the scenery plan) -------------------------------------------
-    if (mp.palms.length) {
-      const palms = new THREE.InstancedMesh(palmGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide }), mp.palms.length);
-      mp.palms.forEach((pl, i) => palms.setMatrixAt(i, matrix(pl.x, pl.y, pl.z, pl.scale, pl.scale, pl.scale, pl.rotationY)));
-      palms.castShadow = true;
-      this.group.add(palms);
+    // ---- Palms in planters (solid: from the scenery plan) and flower planters between them -------------------------------
+    if (mp.palms.length) instances(palmGeo, palmMat, mp.palms.map((pl) => [matrix(pl.x, pl.y, pl.z, pl.scale, pl.scale, pl.scale, pl.rotationY)]), true);
+    {
+      const list: [THREE.Matrix4][] = [];
+      const pstep = Math.max(1, Math.round(34 / track.spacing));
+      for (let i = Math.round(pstep / 2); i < S.length; i += pstep) {
+        const p = S[i];
+        if (!(onUpper(p) || inGarden(p)) || nearEsc(p.s)) continue;
+        for (const side of [-1, 1]) {
+          const x = p.x + p.rx * side * (outer + 2.4);
+          const z = p.z + p.rz * side * (outer + 2.4);
+          if (roadDist(x, z, p.y) < outer + 1.5) continue;
+          list.push([matrix(x, p.y, z, 1, 1, 1, Math.atan2(p.tx, p.tz))]);
+        }
+      }
+      if (list.length) instances(planterGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), list, true);
     }
 
-    // ---- Festive string lights across the road (indoors) ----------------------------------------------
+    // ---- Festive string lights on wires across the road (indoors) ------------------------------------------------------------
     {
       const bulbs: [THREE.Matrix4, THREE.Color][] = [];
+      const wire: number[] = [];
       const hues = [new THREE.Color(3, 0.6, 0.5), new THREE.Color(3, 2.4, 0.6), new THREE.Color(0.6, 2.6, 1.2), new THREE.Color(0.7, 1.4, 3.2), new THREE.Color(2.6, 0.8, 2.8)];
       for (let i = 0; i < S.length; i += Math.round(30 / track.spacing)) {
         const p = S[i];
         if (!(onUpper(p) || inGarden(p)) || nearEsc(p.s)) continue;
         const span = outer + 1.5;
+        let prev: [number, number, number] | null = null;
         for (let k = 0; k <= 16; k++) {
           const u = k / 16;
           const d = -span + 2 * span * u;
           const y = p.y + 8.5 - 2.2 * (1 - (2 * u - 1) ** 2);
-          bulbs.push([matrix(p.x + p.rx * d, y, p.z + p.rz * d, 0.16), hues[(k + i) % hues.length]]);
+          const cur: [number, number, number] = [p.x + p.rx * d, y, p.z + p.rz * d];
+          bulbs.push([matrix(cur[0], cur[1], cur[2], 0.16), hues[(k + i) % hues.length]]);
+          if (prev) wire.push(...prev, ...cur);
+          prev = cur;
         }
       }
       if (bulbs.length) {
-        const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4), new THREE.MeshBasicMaterial({ color: '#ffffff' }), bulbs.length);
+        const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 4, 2), new THREE.MeshBasicMaterial({ color: '#ffffff' }), bulbs.length);
         bulbs.forEach(([m, c], i) => {
           mesh.setMatrixAt(i, m);
           mesh.setColorAt(i, c);
         });
         this.group.add(mesh);
+        const wg = new THREE.BufferGeometry();
+        wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+        this.group.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#35343c' })));
       }
     }
 
-    // ---- Garden: lawns beside the road, grass patches on it, the fountain -----------------------------
-    const grass = grassMaps('#5fae4a');
+    // ---- Garden: lawns with edging and hedges, flower beds, grass patches on the road, the fountain ----------------------------
+    const grass = grassMaps('#58b043');
     for (const t of [grass.map, grass.normalMap, grass.roughnessMap]) t.repeat.set(1, 1);
     const lawnMat = new THREE.MeshStandardMaterial({ ...grass, roughness: 1 });
+    const LAWN = 17.5;
     for (const run of tools.runs(S, (p) => inGarden(p))) {
-      for (const side of [-1, 1]) add(tools.ribbon(run, false, () => (side < 0 ? [{ d: -15, h: 0.0 }, { d: -outer - 0.3, h: 0.0 }] : [{ d: outer + 0.3, h: 0.0 }, { d: 15, h: 0.0 }]), 8), lawnMat);
+      for (const side of [-1, 1]) {
+        add(tools.ribbon(run, false, () => (side < 0 ? [{ d: -LAWN, h: 0.0 }, { d: -outer - 0.3, h: 0.0 }] : [{ d: outer + 0.3, h: 0.0 }, { d: LAWN, h: 0.0 }]), 8), lawnMat);
+        // Stone edging next to the road, a clipped hedge at the lawn's outer edge.
+        add(tools.ribbon(run, false, () => [{ d: side * (outer + 0.3), h: 0 }, { d: side * (outer + 0.3), h: 0.3 }, { d: side * (outer + 0.95), h: 0.3 }, { d: side * (outer + 0.95), h: 0 }], 4), curbMat);
+        add(tools.ribbon(run, false, () => [{ d: side * LAWN, h: 0 }, { d: side * LAWN, h: 1.3 }, { d: side * (LAWN + 1.2), h: 1.3 }, { d: side * (LAWN + 1.2), h: 0 }], 6), hedgeMat);
+      }
     }
     const patchMat = new THREE.MeshStandardMaterial({ ...grass, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     for (const g of track.grassPatches) {
       const ss = between(track, g.s0, g.s1);
       add(tools.ribbon(ss, false, () => [{ d: g.d0, h: 0.06 }, { d: g.d1, h: 0.06 }], 6), patchMat);
     }
-    // The fountain: a pool over the road after the rim's kicker, a round rim either side of the road, and two jets.
+    // The fountain: a round water surface where the road gaps (after the rim's kicker), a stone rim round it, two tiered fountains.
     this.water = waterTexture();
     const fs = track.sAt(mall.fountain.at);
     const ramp = track.ramps.find((r) => Math.abs(track.deltaS(r.s0, fs)) < 1);
     const poolS0 = ramp ? ramp.s1 : fs + 10;
     const poolS1 = poolS0 + mall.fountain.length;
-    const pool = between(track, poolS0, poolS1);
-    add(tools.ribbon(pool, false, () => [{ d: -hw - 3, h: 0.07 }, { d: hw + 3, h: 0.07 }], 8), new THREE.MeshStandardMaterial({ map: this.water, color: '#7fd3ff', transparent: true, opacity: 0.78, roughness: 0.05, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
     const mid = track.pointAt((poolS0 + poolS1) / 2);
-    const R = Math.max(mall.fountain.length / 2 + 2, hw + 4);
+    const poolR = mall.fountain.length / 2;
+    const R = Math.max(poolR + 2, hw + 4);
+    const poolMat = new THREE.MeshStandardMaterial({ map: this.water, color: '#8fdcff', transparent: true, opacity: 0.85, roughness: 0.05, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const water = new THREE.Mesh(new THREE.CircleGeometry(poolR, 40).rotateX(-Math.PI / 2), poolMat);
+    water.position.set(mid.x, mid.y + 0.07, mid.z);
+    water.receiveShadow = true;
+    // The ripples tile every 4 m.
+    const wuv = water.geometry.getAttribute('uv') as THREE.BufferAttribute;
+    for (let k = 0; k < wuv.count; k++) wuv.setXY(k, (wuv.getX(k) - 0.5) * (2 * poolR) / 4, (wuv.getY(k) - 0.5) * (2 * poolR) / 4);
+    this.group.add(water);
+    // A paved ring and a stone rim (the road passes through both).
     const rimParts: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < 48; k++) {
-      const a = (k / 48) * Math.PI * 2;
+    for (let k = 0; k < 56; k++) {
+      const a = (k / 56) * Math.PI * 2;
       const x = mid.x + Math.cos(a) * R;
       const z = mid.z + Math.sin(a) * R;
       const pr = track.project(x, z, mid.index);
       if (Math.abs(pr.d) < outer + 0.5) continue; // the road passes through the rim
-      rimParts.push(boxPart(x, mid.y + 0.35, z, 1.2, 0.7, (2 * Math.PI * R) / 48 + 0.15, new THREE.Color('#f2efe8'), -a));
+      const seg = (2 * Math.PI * R) / 56 + 0.2;
+      rimParts.push(boxPart(x, mid.y + 0.45, z, 1.7, 0.9, seg, new THREE.Color('#f4efe4'), -a));
+      rimParts.push(boxPart(x, mid.y + 0.95, z, 2.0, 0.12, seg + 0.1, new THREE.Color('#d9d1c0'), -a, 1));
     }
-    if (rimParts.length) add(merge(rimParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }), true);
-    const jetGeo = new THREE.CylinderGeometry(0.25, 0.7, 1, 10, 1, true).translate(0, 0.5, 0);
-    const jetMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.8, 2.2), transparent: true, opacity: 0.55, depthWrite: false });
-    this.jets = new THREE.Mesh(new THREE.BufferGeometry(), jetMat);
+    if (rimParts.length) add(merge(rimParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4 }), true);
+    // Two tiered fountains flank the road at the pool, each with a jet column and a spray of droplets.
+    const fount = fountainGeometry();
+    const jetGeo = new THREE.CylinderGeometry(0.1, 0.3, 1, 8, 1, true).translate(0, 0.5, 0);
     const jetParts: THREE.BufferGeometry[] = [];
+    const fountParts: THREE.BufferGeometry[] = [];
+    const spraySeed = rand(13);
     for (const side of [-1, 1]) {
-      const p = track.pointAt((poolS0 + poolS1) / 2, side * (outer + 3.2));
-      jetParts.push(jetGeo.clone().applyMatrix4(matrix(p.x, mid.y, p.z, 1, 6, 1)));
-      jetParts.push(jetGeo.clone().applyMatrix4(matrix(p.x, mid.y, p.z, 2.2, 1.2, 2.2)));
+      const p = track.pointAt((poolS0 + poolS1) / 2, side * (outer + 2.6));
+      fountParts.push(fount.geo.clone().translate(p.x, mid.y, p.z));
+      jetParts.push(jetGeo.clone().applyMatrix4(matrix(p.x, mid.y + fount.top, p.z, 1, 2.4, 1)));
+      this.sprayTops.push(new THREE.Vector3(p.x, mid.y + fount.top, p.z));
+      for (let k = 0; k < SPRAY; k++) this.sprayLaunch.push([spraySeed() * Math.PI * 2, 0.6 + spraySeed() * 1.8, 5.5 + spraySeed() * 2.2, k / SPRAY]);
     }
-    this.jets.geometry = mergeGeometries(jetParts)!;
+    add(merge(fountParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.05 }), true);
+    this.jets = new THREE.Mesh(mergeGeometries(jetParts)!, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.8, 2.2), transparent: true, opacity: 0.5, depthWrite: false }));
+    this.jets.userData.tops = this.sprayTops;
     this.group.add(this.jets);
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.sprayLaunch.length * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    this.spray = new THREE.Points(sg, new THREE.PointsMaterial({ color: new THREE.Color(1.5, 1.9, 2.3), size: 0.32, transparent: true, opacity: 0.85, depthWrite: false }));
+    this.spray.frustumCulled = false;
+    this.group.add(this.spray);
+    this.update(0);
+
+    // Flower beds on the lawns, away from the palms and the fountain.
+    {
+      const list: [THREE.Matrix4, THREE.Color][] = [];
+      const bstep = Math.max(1, Math.round(11 / track.spacing));
+      S.forEach((p, i) => {
+        if (i % bstep !== 0 || !inGarden(p)) return;
+        for (const side of [-1, 1]) {
+          const lat = outer + 2.6 + ((i * 7) % 3) * 1.6;
+          const x = p.x + p.rx * side * lat;
+          const z = p.z + p.rz * side * lat;
+          if (Math.hypot(x - mid.x, z - mid.z) < R + 3) continue;
+          if (mp.palms.some((pl) => Math.hypot(pl.x - x, pl.z - z) < 3.6)) continue;
+          const k = 0.8 + ((i * 3) % 4) * 0.1;
+          list.push([matrix(x, p.y, z, 1, 1, 1, i), new THREE.Color(k, k, k)]);
+        }
+      });
+      if (list.length) instances(bedGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), list);
+    }
+
+    // Everything that glows (HDR vertex colours, unlit): the garages' "P" signs.
+    if (glowParts.length) add(merge(glowParts), new THREE.MeshBasicMaterial({ vertexColors: true }));
   }
 
-  /** Animate the fountain (scrolling ripples, pulsing jets). */
+  /** Animate the fountain: scrolling ripples and the spray (droplets thrown up from the tiers and falling back). */
   update(time: number): void {
     ENV_TIME.value = time;
     this.water.offset.set(time * 0.03, time * 0.05);
-    this.jets.scale.y = 1 + 0.08 * Math.sin(time * 6);
+    const tops: THREE.Vector3[] = this.jets.userData.tops;
+    const pos = this.spray.geometry.getAttribute('position') as THREE.BufferAttribute;
+    this.sprayLaunch.forEach(([a, vr, vy, phase], i) => {
+      const top = tops[Math.floor(i / SPRAY)];
+      const tau = ((time / SPRAY_T + phase) % 1) * SPRAY_T;
+      pos.setXYZ(i, top.x + Math.cos(a) * vr * tau, top.y + vy * tau - 4.5 * tau * tau - 0.3, top.z + Math.sin(a) * vr * tau);
+    });
+    pos.needsUpdate = true;
   }
 }
 
@@ -705,22 +1008,6 @@ function between(track: Track, s0: number, s1: number): TrackSample[] {
   const steps = Math.ceil((s1 - s0) / track.spacing);
   for (let k = 0; k <= steps; k++) out.push(track.samples[(((i0 + k) % n) + n) % n]);
   return out;
-}
-
-/** Soft ripples for the fountain pool. */
-function waterTexture(): THREE.CanvasTexture {
-  const [c, g] = canvas(128, 128);
-  g.fillStyle = '#6cc7f0';
-  g.fillRect(0, 0, 128, 128);
-  const rnd = rand(21);
-  g.strokeStyle = 'rgba(255,255,255,0.45)';
-  g.lineWidth = 2;
-  for (let i = 0; i < 26; i++) {
-    g.beginPath();
-    g.arc(rnd() * 128, rnd() * 128, 6 + rnd() * 18, 0, Math.PI * (0.6 + rnd()));
-    g.stroke();
-  }
-  return tex(c);
 }
 
 let glassMat: THREE.MeshStandardMaterial | null = null;
@@ -737,4 +1024,3 @@ export function railMetal(): THREE.MeshStandardMaterial {
   return railMat;
 }
 
-void scratch;

@@ -328,7 +328,7 @@ export interface TrackDef {
    * `mood` (optional) picks the lighting preset in src/render/scene.ts (sun colour and height, exposure,
    * bloom, colour grade, stars...). Default 'day'.
    */
-  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space' };
+  theme: { grass: string; offroad: string; sky: string; horizon: string; mood?: 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space' | 'mall' };
 
   // ---- v2 (all optional) ----
   terrain?: TerrainDef;

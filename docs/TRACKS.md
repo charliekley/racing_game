@@ -614,16 +614,25 @@ outlast the point where the roads have pulled apart.
   easy 4, normal 3, hard 1.
 * Four lanes (periods 8-10 s), each with a boost pad on it.
 
-### Look (`render/env/mall.ts`, gated by `scenery.mall` = `MallDef`; `trackView.ts` switches when `isMall`)
+### Look (`render/env/mall.ts`, `mallShell.ts`, `mallStyle.ts`, gated by `scenery.mall` = `MallDef`; `trackView.ts` switches when `isMall`)
 
-No terrain mesh: a tiled ground floor, upper-floor slabs 30 m wide (walkway, shops, columns), the store floor, a concrete parking-deck ramp,
-asphalt with painted bays for the lot. Main road: polished stone tiles (`mallRoadTexture`), grey stone kerbs, glass railings (`GLASS_PROFILE`).
-The deck lanes are drawn by MallView (branchView is skipped). Shops with an atlas of 16 made-up store names, lit windows; posters (6 original
-ads with made-up mascots) on the columns; a skylight lattice 17 m above the upper floor (30 m) only over the indoor part, far above the chase
-camera; palms in planters, parked cars, lamp posts and garage gates come from the scenery plan (`track/mallPlan.ts`, solid); string lights
-(instanced HDR bulbs); garden lawns, grass patches, the fountain pool, rim and jets; the Boutique's walls, windows and door signs.
-Perf (headless, 1 viewport, `renderer.info`): Low 85-154 draw calls / 156-189 k triangles (Mushroom Valley Low at the same harness: 197-218 /
-274-284 k); Medium 95-151 / 231-277 k.
+No terrain mesh: a tiled ground floor (polished terracotta checker, low roughness), upper-floor slabs 30 m wide, the store floor, a concrete
+parking-deck ramp, asphalt with painted bays for the lot. Mood `'mall'` (`scene.ts`): warm sun through the glass, less haze, more contrast and
+saturation; the mountain/hill backdrop and the balloons are skipped (`scenery.ts`, `extras.ts`): only a hazy city skyline all round.
+* **Shell** (`mallShell.ts`): outer walls on both sides of the indoor part (upper-floor start to garden end), ~30.6 m from the road, bulging
+  (smoothed) where another lane is close; bands: base wall, painted shop zone (9 m, `facadeTexture`), glass clerestory; lintels with the mall's
+  name close both gates; skylight roof = one transparent lattice mesh + slim instanced beams (16 m grid); a few additive sunbeams.
+* **Shops**: coloured bodies, three display windows each (atlas of 8 made-up shop scenes), striped awnings, neon/bright sign boards (17 made-up names),
+  crates; posters on columns and walls; flower planters (instanced), palms with pinnate fronds, string lights on wires.
+* **Garden**: lawns with stone edging and hedges, flower beds, a round water surface in a stone rim, two tiered fountains with jets and a
+  droplet spray (a `Points` mesh moved on the CPU, 180 points). **Lot**: kerbs and hedges, a palm row, three car body shapes (`carGeometry(shape)`),
+  garage gates with roll-up doors, hazard stripes and glowing "P" signs. **Boutique**: shelf-printed walls plus 3D display racks.
+* **Cars** (`carView.ts`): 3 body meshes, instanced turning wheels (rolling with the speed) and a glowing head/tail light mesh.
+* **Escalators** (`escalatorView.ts`): ribbed steps with bump map, comb plates, black rubber hand rails with posts, steel skirts, GREEN/RED/AMBER
+  light strips under the rail and on the skirt plus a bar across the top end, overhead signs with chevrons (down/up/bars), truss panels. The guide
+  robot has a curved screen face (expressions: smile, joy, shrug, wow, blinking), a head that follows the nearest kart (`HazardViews.update` passes
+  the camera-followed karts), and two-joint arms for pointing, shrugging and waving.
+Perf (headless, 1 viewport, `renderer.info`, Low): 71-145 draw calls / 128-174 k triangles (before this pass: 67-132 / 150-190 k).
 
 ### Tests
 

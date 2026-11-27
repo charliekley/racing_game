@@ -153,7 +153,7 @@ export function applySceneQuality(scene: THREE.Scene, sun: THREE.DirectionalLigh
 // Looks: the mood of each track
 // ---------------------------------------------------------------------------
 
-export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space';
+export type Mood = 'day' | 'dusk' | 'evening' | 'bright' | 'snow' | 'night' | 'autumn' | 'space' | 'mall';
 
 /** Everything that gives a track its lighting mood. All colours are CSS strings. */
 export interface Look {
@@ -233,6 +233,13 @@ const LOOKS: Record<Mood, Look> = {
     sunColor: '#ffe6f4', sunIntensity: 2.6, sunAzimuth: 215, sunElevation: 38, hemiIntensity: 1.05, envIntensity: 0.9,
     exposure: 1.0, fogNear: 4000, fogFar: 9000, bloom: 0.55, bloomThreshold: 1.0, saturation: 1.22, contrast: 1.08,
     tint: '#f6f0ff', vignette: 0.3, stars: 0, aurora: 0.9, cloudCover: 0,
+  },
+  // Palm Plaza: indoors under a skylight. A warm, fairly high sun through the glass (its azimuth/elevation match the sunbeams in
+  // env/mallShell.ts, MALL_SUN), less haze, a bit more contrast and saturation so the shop colours pop, soft bloom on the signs.
+  mall: {
+    sunColor: '#ffe2b4', sunIntensity: 2.7, sunAzimuth: 30, sunElevation: 62, hemiIntensity: 0.5, envIntensity: 0.55,
+    exposure: 0.96, fogNear: 150, fogFar: 520, bloom: 0.42, bloomThreshold: 1.0, saturation: 1.3, contrast: 1.16,
+    tint: '#fff2e0', vignette: 0.3, stars: 0, aurora: 0, cloudCover: 0.1,
   },
   // Not used by the current tracks, but ready: stars, aurora and a cool moon-ish light.
   night: {

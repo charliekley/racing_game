@@ -251,6 +251,21 @@ function buildBackdrop(site: Site, style: Style, def: TrackDef, rnd: () => numbe
   out.name = 'backdrop';
   if (def.scenery.openSky) return out;
   const horizon = new THREE.Color(def.theme.horizon);
+  // Palm Plaza: a mall in a city, not in the mountains: only a hazy skyline all round (the building shell hides it from inside).
+  if (def.scenery.mall) {
+    const skyline: THREE.BufferGeometry[] = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + 0.3;
+      const dist = site.radius + 300;
+      const g = skylineGeo(rnd, 24, 330, horizon, false);
+      g.applyMatrix4(matrix(site.cx + Math.cos(a) * dist, 0, site.cz + Math.sin(a) * dist, 1, 1, 1, -a + Math.PI / 2));
+      skyline.push(g);
+    }
+    const mesh = new THREE.Mesh(merge(skyline), backdropMaterial(false));
+    mesh.frustumCulled = false;
+    out.add(mesh);
+    return out;
+  }
   const kind: BackdropKind = style === 'alpine' ? 'alpine' : style === 'volcanic' ? 'volcanic' : style === 'desert' ? 'desert' : style === 'autumn' ? 'autumn' : style === 'harbour' ? 'harbour' : 'meadow';
   const SECTORS = 8;
   const buckets: THREE.BufferGeometry[][] = Array.from({ length: SECTORS }, () => []);

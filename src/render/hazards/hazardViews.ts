@@ -59,7 +59,7 @@ export class HazardViews {
     this.bridges?.update(time);
     this.gusts?.update(time);
     this.beetles?.update(time);
-    this.escalators?.update(time);
+    this.escalators?.update(time, focus);
     this.cars?.update(time);
   }
 
